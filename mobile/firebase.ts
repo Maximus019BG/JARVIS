@@ -3,12 +3,12 @@ import { initializeApp } from "firebase/app";
 import { getMessaging } from "firebase/messaging";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDa9kMzePMbUKmJO7tx6akS9nkEP3N2W0s",
-  authDomain: "test-moble-25319.firebaseapp.com",
-  projectId: "test-moble-25319",
-  storageBucket: "test-moble-25319.appspot.com",
-  messagingSenderId: "1087098465481",
-  appId: "1:1087098465481:android:295bfc851f64c7af453118",
+  apiKey: "AIzaSyAnGX6rEpn729bKX8kXWfs0CQFyYcEW4bY",
+  authDomain: "jarvis-45a8c.firebaseapp.com",
+  projectId: "jarvis-45a8c",
+  storageBucket: "jarvis-45a8c.firebasestorage.app",
+  messagingSenderId: "496096498945",
+  appId: "1:496096498945:android:f1f0f47acb3fefaf267700",
 };
 
 export const firebaseApp = initializeApp(firebaseConfig);
