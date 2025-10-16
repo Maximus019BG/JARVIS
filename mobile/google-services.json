@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "806473399995",
-    "project_id": "next-guard-455e5",
-    "storage_bucket": "next-guard-455e5.firebasestorage.app"
+    "project_number": "496096498945",
+    "project_id": "jarvis-45a8c",
+    "storage_bucket": "jarvis-45a8c.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:806473399995:android:fe108f869419d13525b39e",
+        "mobilesdk_app_id": "1:496096498945:android:f1f0f47acb3fefaf267700",
         "android_client_info": {
-          "package_name": "com.maximus019.nextguard"
+          "package_name": "com.maximus019.jarvis"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBD_Ayi8lJ1Zrsql9YUrcPL4NQQCIw4Zf0"
+          "current_key": "AIzaSyAnGX6rEpn729bKX8kXWfs0CQFyYcEW4bY"
         }
       ],
       "services": {

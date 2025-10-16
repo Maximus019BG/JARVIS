@@ -2,7 +2,7 @@
   "expo": {
     "name": "JARVIS",
     "slug": "jarvis",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "jarvis",
@@ -60,7 +60,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b9411a72-0b5b-42cf-8e8b-3029cbe0775d"
+        "projectId": "df10fc0a-bcc9-4165-be15-d4afacc47863"
       }
     },
     "owner": "maximus019"
