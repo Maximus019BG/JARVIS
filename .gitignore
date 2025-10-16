@@ -1,6 +1,8 @@
 # dependencies
 */node_modules
+/node_modules
 */.pnp
+/.pnp
 .pnp.js
 node_modules
 pnpm-lock.yaml
@@ -14,11 +16,13 @@ db.sqlite
 
 # next.js
 */.next/
+/.next/
 /out/
 next-env.d.ts
 
 # production
 */build
+/build
 
 # misc
 .DS_Store
@@ -94,8 +98,9 @@ app-example
 service-account.json
 
 */android
+/android
 
 .vscode
 .cursor
 
-*/*.cursor
+*/.cursor
