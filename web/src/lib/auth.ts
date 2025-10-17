@@ -24,20 +24,20 @@ export const auth = betterAuth({
     expiresIn: Number(env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN),
   },
   socialProviders: {
-    github: {
-      clientId: env.GITHUB_CLIENT_ID!,
-      clientSecret: env.GITHUB_CLIENT_SECRET!,
-    },
+    // github: {
+    //   clientId: env.GITHUB_CLIENT_ID!,
+    //   clientSecret: env.GITHUB_CLIENT_SECRET!,
+    // },
     google: {
-      clientId: env.GOOGLE_CLIENT_ID!,
-      clientSecret: env.GOOGLE_CLIENT_SECRET!,
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
     },
   },
     plugins: [
     lastLoginMethod(),
     organization({
-      organizationLimit: env.BETTER_AUTH_ORGANIZATION_LIMIT!,
-      ac,
+      organizationLimit: env.BETTER_AUTH_ORGANIZATION_LIMIT,
+      accessControl: ac,
       roles: {
         owner,
       },
