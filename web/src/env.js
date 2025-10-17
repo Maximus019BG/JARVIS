@@ -11,6 +11,33 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    BETTER_AUTH_SECRET: z.string().min(32).max(248),
+    BETTER_AUTH_ORGANIZATION_LIMIT: z.coerce.number().default(5),
+    BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: z
+      .string()
+      .transform((val) => {
+        const parsed = parseInt(val, 10);
+        if (isNaN(parsed)) {
+          throw new Error(`Invalid number for BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: ${val}`);
+        }
+        return parsed;
+      })
+      .default("60"), // in minutes
+    BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: z
+      .string()
+      .transform((val) => {
+        const parsed = parseInt(val, 10);
+        if (isNaN(parsed)) {
+          throw new Error(`Invalid number for BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: ${val}`);
+        }
+        return parsed;
+      })
+      .default("1440"), // in minutes (1 day)
+    GITHUB_CLIENT_ID: z.string().min(1),
+    GITHUB_CLIENT_SECRET: z.string().min(1),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
+    RESEND_API_KEY: z.string().min(1),
   },
 
   /**
@@ -29,6 +56,16 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    BETTER_AUTH_ORGANIZATION_LIMIT: process.env.BETTER_AUTH_ORGANIZATION_LIMIT,
+    BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: process.env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
+    BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: process.env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**
