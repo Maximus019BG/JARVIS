@@ -15,6 +15,9 @@ import {
 
 import { cn } from "~/lib/utils"
 import { Label } from "~/components/ui/label"
+import { AnimatedContainer } from "../common/animated-container"
+import { CheckCircle2, TriangleAlert } from "lucide-react"
+import { cva, type VariantProps } from "class-variance-authority"
 
 const Form = FormProvider
 
@@ -135,33 +138,114 @@ function FormDescription({ className, ...props }: React.ComponentProps<"p">) {
   )
 }
 
-function FormMessage({ className, ...props }: React.ComponentProps<"p">) {
-  const { error, formMessageId } = useFormField()
-  const body = error ? String(error?.message ?? "") : props.children
-
-  if (!body) {
-    return null
-  }
+function FormMessage({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"p"> & { children?: React.ReactNode }) {
+  const { error, formMessageId } = useFormField();
+  const body = React.useMemo(() => {
+    return error ? (
+      <p
+        className={cn(
+          "text-destructive inline-flex w-full gap-1 text-sm",
+          className,
+        )}
+        {...props}
+      >
+        <TriangleAlert className="size-3.5 shrink-0 translate-y-[0.1875rem]" />
+        <span>{error.message ?? ""}</span>
+      </p>
+    ) : (
+      children
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error?.message]);
 
   return (
-    <p
+    <AnimatedContainer
       data-slot="form-message"
+      uniqueKey={error?.message}
       id={formMessageId}
-      className={cn("text-destructive text-sm", className)}
-      {...props}
+      variant="up"
+      heightDuration={0.125}
     >
       {body}
-    </p>
-  )
+    </AnimatedContainer>
+  );
+}
+
+const formResponseMessageVariants = cva(
+  "inline-flex items-center w-full gap-3 rounded-md border p-4",
+  {
+    variants: {
+      variant: {
+        destructive: "bg-destructive/5 border-destructive text-destructive",
+        success: "bg-primary/5 border-primary text-primary",
+      },
+    },
+    defaultVariants: {
+      variant: "destructive",
+    },
+  },
+);
+
+const formResponseMessageVariantIcons: Record<
+  NonNullable<FormResponseMessageProps["variant"]>,
+  React.ComponentType<React.SVGProps<SVGSVGElement>>
+> = {
+  destructive: TriangleAlert,
+  success: CheckCircle2,
+};
+
+export interface FormResponseMessageProps
+  extends VariantProps<typeof formResponseMessageVariants> {
+  message?: string;
+  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+}
+
+function FormResponseMessage({
+  className,
+  variant = "destructive",
+  message,
+  children,
+  icon,
+  ...props
+}: React.ComponentProps<"p"> & FormResponseMessageProps) {
+  const IconComponent = React.useMemo(() => {
+    if (icon) return icon;
+    if (variant && variant in formResponseMessageVariantIcons) {
+      return formResponseMessageVariantIcons[variant];
+    }
+    return TriangleAlert;
+  }, [icon, variant]);
+
+  const body = React.useMemo(() => {
+    return message ? (
+      <p
+        className={cn(formResponseMessageVariants({ variant, className }))}
+        {...props}
+      >
+        <IconComponent className="size-6 shrink-0" />
+        <span className="text-sm">{message}</span>
+      </p>
+    ) : (
+      children
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message, variant, IconComponent]);
+
+  return <AnimatedContainer uniqueKey={message}>{body}</AnimatedContainer>;
 }
 
 export {
-  useFormField,
   Form,
-  FormItem,
-  FormLabel,
   FormControl,
   FormDescription,
-  FormMessage,
   FormField,
-}
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormResponseMessage,
+  useFormField,
+};

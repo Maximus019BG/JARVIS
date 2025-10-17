@@ -1,0 +1,6 @@
+{
+	"dependencies": {
+		"motion": "^12.23.24",
+		"react-use-measure": "^2.1.7"
+	}
+}

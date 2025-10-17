@@ -1,26 +1,43 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Inter } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { ApiProvider } from "~/components/providers/api-provider";
+import { ThemeProvider } from "~/components/providers/theme-provider";
+import { TailwindIndicator } from "~/components/ui/tailwind-indicator";
 
 export const metadata: Metadata = {
-  title: "JARVIS Web",
-  description: "Web Application to customize your Job Acceleration Reference Visual Interface System",
+  title: "JARVIS",
+  description: "Job Acceleration Reference Visual Interface System",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
-const geist = Geist({
+const geist = Inter({
   subsets: ["latin"],
-  variable: "--font-geist-sans",
+  variable: "--font-sans",
 });
 
-//TODO: use better auth and add language support
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geist.variable}`}>
-      <body>{children}</body>
+    <html lang="en" className={`${geist.variable}`} suppressHydrationWarning>
+      <body className="flex min-h-dvh flex-col">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <ApiProvider>
+            <NuqsAdapter>
+              {children}
+              <TailwindIndicator />
+            </NuqsAdapter>
+          </ApiProvider>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
