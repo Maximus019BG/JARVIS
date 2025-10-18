@@ -31,7 +31,7 @@ export function SignInForm({
   const searchParams = useSearchParams();
   const router = useRouter();
   const redirectUrl = React.useMemo(
-    () => searchParams.get("redirect_url") ?? "/dashboard",
+    () => searchParams.get("redirect_url") ?? "/app",
     [searchParams],
   );
 
@@ -88,14 +88,7 @@ export function SignInForm({
   return (
     <Form {...form}>
       <FormResponseMessage className="mb-4" {...message} />
-      <div className={cn("grid gap-6", className)} {...props}>
-        <ContinueWithGoogleButton
-          redirectUrl={redirectUrl}
-          disabled={form.formState.disabled}
-          setIsLoadingProvider={setIsLoadingProvider}
-          setMessage={setMessage}
-        />
-        <AnotherMethodSeparator label="Or continue with" />
+      <div className="grid gap-6">
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6">
           <FormField
             control={form.control}
@@ -150,14 +143,25 @@ export function SignInForm({
             Sign In
           </LoadingButton>
         </form>
-        <div className="text-center text-sm">
-          Don&apos;t have an account?{" "}
-          <Link
-            href={`/auth/sign-up?${redirectSearchParams}`}
-            className="underline underline-offset-4"
-          >
-            Sign up
-          </Link>
+        <div className="grid gap-6 text-center text-sm">
+          <div className={cn("grid gap-6", className)} {...props}>
+            <AnotherMethodSeparator label="Or continue with" />
+            <ContinueWithGoogleButton
+              redirectUrl={redirectUrl}
+              disabled={form.formState.disabled}
+              setIsLoadingProvider={setIsLoadingProvider}
+              setMessage={setMessage}
+            />
+          </div>
+          <div>
+            Don&apos;t have an account?{" "}
+            <Link
+              href={`/auth/sign-up?${redirectSearchParams}`}
+              className="underline underline-offset-4"
+            >
+              Sign up
+            </Link>
+          </div>
         </div>
       </div>
     </Form>

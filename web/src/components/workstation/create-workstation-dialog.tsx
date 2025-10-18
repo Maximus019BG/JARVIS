@@ -30,22 +30,22 @@ import { authClient } from "~/lib/auth-client";
 import { convertToBase64 } from "~/lib/image";
 import {
   generateRandomSlug,
-  spaceCreateSchema,
-  type SpaceCreate,
-} from "~/lib/validation/spaces";
+  workstationCreateSchema,
+  type WorkstationCreate,
+} from "~/lib/validation/workstations";
 
-export function CreateSpaceDialog({
+export function CreateWorkstationDialog({
   children,
   ...props
 }: React.ComponentPropsWithoutRef<typeof Dialog>) {
-  const { refetch: refetchSpace } = authClient.useActiveOrganization();
+  const { refetch: refetchWorkstation } = authClient.useActiveOrganization();
   const { refetch: refetchMember } = authClient.useActiveMember();
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
-  const form = useForm<SpaceCreate>({
-    resolver: zodResolver(spaceCreateSchema),
+  const form = useForm<WorkstationCreate>({
+    resolver: zodResolver(workstationCreateSchema),
     defaultValues: {
       name: "",
       logo: undefined,
@@ -53,17 +53,18 @@ export function CreateSpaceDialog({
     disabled: isLoading,
   });
 
-  async function onSubmit(data: SpaceCreate) {
+  async function onSubmit(formData: WorkstationCreate) {
     setIsLoading(true);
     setMessage(undefined);
 
     const { data: response, error } = await authClient.organization.create({
-      name: data.name,
+      name: formData.name,
       slug: generateRandomSlug(),
-      logo: data.logo ? await convertToBase64(data.logo) : undefined,
+      logo: formData.logo ? await convertToBase64(formData.logo) : undefined,
       keepCurrentActiveOrganization: false,
     });
-    await Promise.all([refetchSpace(), refetchMember()]);
+    refetchWorkstation();
+    refetchMember();
     setIsLoading(false);
 
     if (error) {
@@ -97,7 +98,7 @@ export function CreateSpaceDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
-              <DialogTitle>Create a new space</DialogTitle>
+              <DialogTitle>Create a new workstation</DialogTitle>
               <FormResponseMessage {...message} />
             </DialogHeader>
             <div className="grid gap-6 py-4">
@@ -126,7 +127,7 @@ export function CreateSpaceDialog({
                   <FormItem>
                     <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter space name" {...field} />
+                      <Input placeholder="Enter workstation name" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -147,7 +148,7 @@ export function CreateSpaceDialog({
                 isLoading={isLoading}
                 disabled={form.formState.disabled}
               >
-                Create space
+                Create workstation
               </LoadingButton>
             </DialogFooter>
           </form>

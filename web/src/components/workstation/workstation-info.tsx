@@ -8,7 +8,13 @@ interface Props extends React.ComponentProps<"div"> {
   role?: string;
 }
 
-export function SpaceInfo({ className, image, name, role, ...props }: Props) {
+export function WorkstationInfo({
+  className,
+  image,
+  name,
+  role,
+  ...props
+}: Props) {
   return (
     <div
       className={cn("flex items-center gap-2 overflow-hidden", className)}
@@ -29,7 +35,7 @@ interface SkeletonProps extends React.ComponentProps<"div"> {
   hasRole?: boolean;
 }
 
-export function SpaceInfoSkeleton({
+export function WorkstationInfoSkeleton({
   className,
   hasRole = false,
   ...props

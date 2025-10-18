@@ -17,7 +17,7 @@ export function NotLoggedIn({ children, session }: Props) {
 
   React.useEffect(() => {
     if (!session) return;
-    const redirectUrl = searchParams.get("redirect_url") ?? "/dashboard";
+    const redirectUrl = searchParams.get("redirect_url") ?? "/app";
     router.push(redirectUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);

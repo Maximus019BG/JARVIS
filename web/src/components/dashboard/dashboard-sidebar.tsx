@@ -1,5 +1,5 @@
 import { DashboardSidebarNav } from "~/components/dashboard/dashboard-sidebar-nav";
-import { SpaceSidebarSelector } from "~/components/dashboard/space-sidebar-selector";
+import { WorkstationSidebarSelector } from "~/components/dashboard/workstation-sidebar-selector";
 import { UserSidebarMenu } from "~/components/dashboard/user-sidebar-menu";
 import {
   Sidebar,
@@ -12,9 +12,9 @@ export function DashboardSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar collapsible="offcanvas" variant="sidebar" {...props}>
       <SidebarHeader>
-        <SpaceSidebarSelector />
+        <WorkstationSidebarSelector />
       </SidebarHeader>
       <SidebarContent>
         <DashboardSidebarNav />

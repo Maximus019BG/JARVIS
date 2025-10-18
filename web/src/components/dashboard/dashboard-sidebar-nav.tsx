@@ -10,6 +10,7 @@ import {
   SidebarMenuItem,
 } from "~/components/ui/sidebar";
 import { dashboardSidebarNav } from "~/config/dashboard-sidebar-nav";
+import { AnimateIcon } from "../animate-ui/icons/icon";
 
 export function DashboardSidebarNav() {
   const href = usePathname();
@@ -19,18 +20,21 @@ export function DashboardSidebarNav() {
       <SidebarGroupContent>
         <SidebarMenu>
           {dashboardSidebarNav.map((item) => (
-            <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton
-                tooltip={item.title}
-                asChild
-                isActive={item.isActive(href)}
-              >
-                <Link href={item.href}>
-                  {item.icon && <item.icon />}
-                  <span>{item.title}</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            <AnimateIcon animateOnHover>
+              <SidebarMenuItem key={item.title}>
+                <SidebarMenuButton
+                  tooltip={item.title}
+                  asChild
+                  isActive={item.isActive(href)}
+                >
+                  <Link href={item.href}>
+                    {item.icon && <item.icon />}
+
+                    <span>{item.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </AnimateIcon>
           ))}
         </SidebarMenu>
       </SidebarGroupContent>
