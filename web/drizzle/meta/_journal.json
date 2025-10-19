@@ -15,6 +15,20 @@
       "when": 1760785463463,
       "tag": "0001_glorious_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1760804011555,
+      "tag": "0002_youthful_chameleon",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1760804165863,
+      "tag": "0003_brainy_fallen_one",
+      "breakpoints": true
     }
   ]
 }

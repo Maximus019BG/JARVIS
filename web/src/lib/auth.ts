@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "~/server/db";
+import { db, schema } from "~/server/db";
 import { env } from "~/env";
 import { ac, owner } from "~/lib/permissions";
 import { sendResetPasswordEmail } from "~/server/email/utils/send-password-reset-email";
@@ -10,14 +10,17 @@ import { lastLoginMethod, organization } from "better-auth/plugins";
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
+    schema,
   }),
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
     sendResetPassword: sendResetPasswordEmail,
-    resetPasswordTokenExpiresIn: Number(env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN),
+    resetPasswordTokenExpiresIn: Number(
+      env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
+    ),
   },
-    emailVerification: {
+  emailVerification: {
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: sendVerificationEmail,
@@ -33,7 +36,7 @@ export const auth = betterAuth({
       clientSecret: env.GOOGLE_CLIENT_SECRET,
     },
   },
-    plugins: [
+  plugins: [
     lastLoginMethod(),
     organization({
       organizationLimit: env.BETTER_AUTH_ORGANIZATION_LIMIT,
@@ -43,5 +46,4 @@ export const auth = betterAuth({
       },
     }),
   ],
-
 });
