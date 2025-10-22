@@ -16,6 +16,7 @@ interface EmailLayoutProps {
   children: React.ReactNode;
 }
 
+//TODO: Use different colors
 export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
   <Html>
     <Tailwind

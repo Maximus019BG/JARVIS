@@ -11,7 +11,6 @@ interface Props {
 }
 
 // TODO: Extract common components
-
 export default function PasswordResetEmail({
   name = "John Doe",
   resetUrl = "https://example.com/",
@@ -31,8 +30,7 @@ export default function PasswordResetEmail({
             Hi <span className="font-bold">{name}</span>,
           </Text>
           <Text className="mt-0 text-base">
-            We received a request to reset your{" "}
-            <span className="font-bold">JARVIS</span> password! You can use
+            We received a request to reset your password! You can use
             the following link to reset your password.
           </Text>
         </Section>
@@ -57,7 +55,6 @@ export default function PasswordResetEmail({
           <Link href={resetUrl} className="underline">
             click here
           </Link>
-          .
         </Text>
 
         <Hr className="my-6 border" />

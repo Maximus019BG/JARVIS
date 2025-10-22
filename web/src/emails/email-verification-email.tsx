@@ -10,6 +10,7 @@ interface EmailVerificationProps {
   requestedAt: string;
 }
 
+//TODO: Extract common components
 export default function EmailVerification({
   userName = "John Doe",
   verificationUrl = "https://example.com/",
