@@ -20,7 +20,7 @@ export default function PasswordResetEmail({
   requestedAt = "1 January 1970, 00:00 UTC",
 }: Props) {
   return (
-    <EmailLayout preview="Use the following link to reset your NextGuard password">
+    <EmailLayout preview="Use the following link to reset your JARVIS password">
       <Section className="px-2">
         <Heading as="h2" className="text-2xl font-bold">
           Password reset request
@@ -32,7 +32,7 @@ export default function PasswordResetEmail({
           </Text>
           <Text className="mt-0 text-base">
             We received a request to reset your{" "}
-            <span className="font-bold">NextGuard</span> password! You can use
+            <span className="font-bold">JARVIS</span> password! You can use
             the following link to reset your password.
           </Text>
         </Section>

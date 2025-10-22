@@ -72,7 +72,7 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
           <Section>
             <Img
               src="https://placehold.co/1000x200.jpg"
-              alt="NextGuard Logo"
+              alt="JARVIS Logo"
               className="mx-auto h-12"
             />
           </Section>

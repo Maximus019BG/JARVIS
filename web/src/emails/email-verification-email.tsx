@@ -18,7 +18,7 @@ export default function EmailVerification({
   requestedAt = "1 January 1970, 00:00 UTC",
 }: EmailVerificationProps) {
   return (
-    <EmailLayout preview="Use the following link to verify your email address to NextGuard">
+    <EmailLayout preview="Use the following link to verify your email address to JARVIS">
       <Section className="px-2">
         <Heading as="h2" className="text-2xl font-bold">
           Verify your email address
@@ -30,7 +30,7 @@ export default function EmailVerification({
           </Text>
           <Text className="mt-0 text-base">
             Thank you for signing up for{" "}
-            <span className="font-bold">NextGuard</span>! To complete your
+            <span className="font-bold">JARVIS</span>! To complete your
             account setup and ensure the security of your account, please verify
             your email address.
           </Text>
