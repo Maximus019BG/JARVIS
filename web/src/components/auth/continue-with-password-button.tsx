@@ -1,4 +1,5 @@
 import { Lock } from "lucide-react";
+import { motion } from "motion/react";
 import Link from "next/link";
 import React from "react";
 import { LastLoginBadge } from "~/components/auth/last-login-badge";
@@ -24,7 +25,7 @@ export function ContinueWithPasswordButton({
   return (
     <Button
       variant="outline"
-      className={cn("relative w-full", className)}
+      className={cn("group relative w-full", className)}
       disabled={true}
       asChild={!disabled}
       {...props}
@@ -58,7 +59,15 @@ export function ButtonContent({
   return (
     <>
       {isLastMethod && !hideLastMethod && <LastLoginBadge />}
-      <Lock />
+      <motion.span
+        initial={{ y: 0 }}
+        whileHover={{ y: -1 }}
+        whileTap={{ scale: 0.95 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20 }}
+        className="grid place-items-center"
+      >
+        <Lock className="h-4 w-4" />
+      </motion.span>
       Continue with your password
     </>
   );

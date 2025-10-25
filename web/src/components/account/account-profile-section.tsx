@@ -2,7 +2,6 @@
 
 import React from "react";
 import { AccountUpdateProfileCard } from "~/components/account/account-update-profile-card";
-import { AnimatedContainer } from "~/components/common/animated-container";
 import { AvatarWithFallback } from "~/components/common/avatar-with-fallback";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -26,11 +25,7 @@ export function AccountProfileSection({
       <div className="lg:w-52 lg:translate-y-3">
         <p>Profile</p>
       </div>
-      <AnimatedContainer
-        className="w-full lg:flex-1"
-        uniqueKey={isUpdating ? "updating" : "default"}
-        alwaysAvailable
-      >
+      <div className="w-full lg:flex-1">
         {!isUpdating || isSessionLoading ? (
           <div className="flex flex-1 items-center gap-2 max-lg:pl-2 lg:gap-4">
             {isSessionLoading ? (
@@ -67,7 +62,7 @@ export function AccountProfileSection({
             image={session.user.image}
           />
         )}
-      </AnimatedContainer>
+      </div>
     </div>
   );
 }

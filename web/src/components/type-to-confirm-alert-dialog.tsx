@@ -2,7 +2,7 @@
 
 import { TriangleAlert } from "lucide-react";
 import React from "react";
-import { AnimatedContainer } from "~/components/common/animated-container";
+// Removed AnimatedContainer dependency
 import { LoadingButton } from "~/components/common/loading-button";
 import {
   AlertDialog,
@@ -13,7 +13,6 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import { FormResponseMessage } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
@@ -89,14 +88,11 @@ export function TypeToConfirmAlertDialog() {
           </AlertDialogHeader>
           <Separator />
           <div className="flex flex-col gap-4 px-6">
-            <div className="-my-2">
-              <FormResponseMessage
-                variant={state.message?.variant}
-                message={state.message?.message}
-                icon={state.message?.icon}
-                className="my-2"
-              />
-            </div>
+            {state.message?.message && (
+              <p className="text-foreground bg-muted -my-2 rounded-md px-3 py-2 text-sm">
+                {state.message.message}
+              </p>
+            )}
             <Label htmlFor="confirm">
               Type &quot;{confirmText}&quot; to confirm
             </Label>
@@ -112,20 +108,14 @@ export function TypeToConfirmAlertDialog() {
                 disabled={isLoading}
                 ref={inputRef}
               />
-              <AnimatedContainer
-                uniqueKey={showIsWrong ? "display" : "hidden"}
-                variant="up"
-                heightDuration={0.1}
-              >
-                {showIsWrong && (
-                  <p className="text-destructive inline-flex w-full gap-1 text-sm">
-                    <TriangleAlert className="size-3.5 shrink-0 translate-y-[0.1875rem]" />
-                    <span>
-                      Please type &quot;{confirmText}&quot; to confirm
-                    </span>
-                  </p>
-                )}
-              </AnimatedContainer>
+              {showIsWrong && (
+                <p className="text-destructive inline-flex w-full gap-1 text-sm">
+                  <TriangleAlert className="size-3.5 shrink-0 translate-y-[0.1875rem]" />
+                  <span>
+                    Please type &quot;{confirmText}&quot; to confirm
+                  </span>
+                </p>
+              )}
             </div>
           </div>
           {warning && (

@@ -5,13 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import { AnotherMethodSeparator } from "~/components/auth/another-method-separator";
 import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
+import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
 import { LoadingButton } from "~/components/common/loading-button";
-import {
-  FormResponseMessage,
-  type FormResponseMessageProps,
-} from "~/components/ui/form";
 import { env } from "~/env";
-import { useCountdown } from "~/hooks/use-countdown";
+import { toast } from "sonner";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
 
@@ -22,7 +19,7 @@ export function VerifyEmail({
   const searchParams = useSearchParams();
   const router = useRouter();
   const redirectUrl = React.useMemo(
-    () => searchParams.get("redirect_url") ?? "/dashboard",
+    () => searchParams.get("redirect_url") ?? "/app",
     [searchParams],
   );
 
@@ -43,14 +40,33 @@ export function VerifyEmail({
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
   const disabled = isInitialLoading || isLoading || isLoadingProvider;
 
-  const [count, { startCountdown, resetCountdown }, isCountdownRunning] =
-    useCountdown({
-      countStart: 30,
-      intervalMs: 1000,
-    });
+  const [count, setCount] = React.useState(0);
+  const [isCountdownRunning, setIsCountdownRunning] = React.useState(false);
+  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const resetCountdown = React.useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setCount(0);
+    setIsCountdownRunning(false);
+  }, []);
+
+  const startCountdown = React.useCallback(() => {
+    resetCountdown();
+    setCount(30);
+    setIsCountdownRunning(true);
+    timerRef.current = setInterval(() => {
+      setCount((c) => {
+        if (c <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          setIsCountdownRunning(false);
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+  }, [resetCountdown]);
 
   function requestVerifyEmail() {
     const email = searchParams.get("email") ?? "";
@@ -63,7 +79,6 @@ export function VerifyEmail({
       {
         onRequest: () => {
           setIsLoading(true);
-          setMessage(undefined);
         },
         onResponse: () => {
           setIsInitialLoading(false);
@@ -72,13 +87,12 @@ export function VerifyEmail({
           startCountdown();
         },
         onSuccess: () => {
-          setMessage({
-            message: `We've sent an email to ${email}. Follow the link to verify your email address.`,
-            variant: "success",
-          });
+          toast.success(
+            `We've sent an email to ${email}. Follow the link to verify your email address.`,
+          );
         },
         onError: (ctx) => {
-          setMessage({ message: ctx.error.message });
+          toast.error(ctx.error.message);
         },
       },
     );
@@ -86,7 +100,6 @@ export function VerifyEmail({
 
   return (
     <>
-      <FormResponseMessage className="mb-4" {...message} />
       <div className={cn("grid gap-6", className)} {...props}>
         {isInitialLoading ? (
           <LoaderCircle className="size-12 animate-spin justify-self-center" />
@@ -105,11 +118,15 @@ export function VerifyEmail({
           </LoadingButton>
         )}
         <AnotherMethodSeparator />
+        <ContinueWithGitHubButton
+          redirectUrl={redirectUrl}
+          disabled={disabled}
+          setIsLoadingProvider={setIsLoadingProvider}
+        />
         <ContinueWithGoogleButton
           redirectUrl={redirectUrl}
           disabled={disabled}
           setIsLoadingProvider={setIsLoadingProvider}
-          setMessage={setMessage}
         />
       </div>
     </>

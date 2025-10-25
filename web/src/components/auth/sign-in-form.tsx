@@ -7,6 +7,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { AnotherMethodSeparator } from "~/components/auth/another-method-separator";
 import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
+import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
 import { LoadingButton } from "~/components/common/loading-button";
 import { PasswordInput } from "~/components/common/password-input";
 import {
@@ -15,14 +16,12 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
 import { signInSchema, type SignIn } from "~/lib/validation/auth/sign-in";
+import { toast } from "sonner";
 
 export function SignInForm({
   className,
@@ -36,7 +35,6 @@ export function SignInForm({
   );
 
   const [isLoading, setIsLoading] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
 
   const form = useForm<SignIn>({
@@ -62,6 +60,17 @@ export function SignInForm({
   }, [searchParams, form.getValues("email")]);
 
   function onSubmit(data: SignIn) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.email) {
+      toast.error(errors.email.message ?? "Invalid email");
+      return;
+    }
+    if (errors.password) {
+      toast.error(errors.password.message ?? "Invalid password");
+      return;
+    }
+
     void authClient.signIn.email(
       {
         ...data,
@@ -70,7 +79,6 @@ export function SignInForm({
       {
         onRequest: () => {
           setIsLoading(true);
-          setMessage(undefined);
         },
         onError: (ctx) => {
           if (ctx.error.code === "EMAIL_NOT_VERIFIED") {
@@ -79,7 +87,7 @@ export function SignInForm({
           }
 
           setIsLoading(false);
-          setMessage({ message: ctx.error.message });
+          toast.error(ctx.error.message);
         },
       },
     );
@@ -87,7 +95,6 @@ export function SignInForm({
 
   return (
     <Form {...form}>
-      <FormResponseMessage className="mb-4" {...message} />
       <div className="grid gap-6">
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6">
           <FormField
@@ -103,7 +110,6 @@ export function SignInForm({
                     {...field}
                   />
                 </FormControl>
-                <FormMessage />
               </FormItem>
             )}
           />
@@ -130,7 +136,6 @@ export function SignInForm({
                     {...field}
                   />
                 </FormControl>
-                <FormMessage />
               </FormItem>
             )}
           />
@@ -146,11 +151,15 @@ export function SignInForm({
         <div className="grid gap-6 text-center text-sm">
           <div className={cn("grid gap-6", className)} {...props}>
             <AnotherMethodSeparator label="Or continue with" />
+            <ContinueWithGitHubButton
+              redirectUrl={redirectUrl}
+              disabled={form.formState.disabled}
+              setIsLoadingProvider={setIsLoadingProvider}
+            />
             <ContinueWithGoogleButton
               redirectUrl={redirectUrl}
               disabled={form.formState.disabled}
               setIsLoadingProvider={setIsLoadingProvider}
-              setMessage={setMessage}
             />
           </div>
           <div>

@@ -6,6 +6,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { AnotherMethodSeparator } from "~/components/auth/another-method-separator";
 import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
+import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
 import { ContinueWithPasswordButton } from "~/components/auth/continue-with-password-button";
 import { LoadingButton } from "~/components/common/loading-button";
 import {
@@ -14,14 +15,12 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { env } from "~/env";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
+import { toast } from "sonner";
 import {
   resetPasswordRequestSchema,
   type ResetPasswordRequest,
@@ -33,13 +32,12 @@ export function RequestPasswordResetForm({
 }: React.ComponentProps<"div">) {
   const searchParams = useSearchParams();
   const redirectUrl = React.useMemo(
-    () => searchParams.get("redirect_url") ?? "/dashboard",
+    () => searchParams.get("redirect_url") ?? "/app",
     [searchParams],
   );
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
   const form = useForm<ResetPasswordRequest>({
     resolver: zodResolver(resetPasswordRequestSchema),
@@ -64,6 +62,13 @@ export function RequestPasswordResetForm({
   }, [searchParams, form.getValues("email")]);
 
   function onSubmit(data: ResetPasswordRequest) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.email) {
+      toast.error(errors.email.message ?? "Invalid email");
+      return;
+    }
+
     void authClient.requestPasswordReset(
       {
         ...data,
@@ -72,20 +77,17 @@ export function RequestPasswordResetForm({
       {
         onRequest: () => {
           setIsLoading(true);
-          setMessage(undefined);
         },
         onSuccess: () => {
           setIsLoading(false);
-          setMessage({
-            message:
-              "If the email address you entered is valid, you will receive an email with a link to reset your password.",
-            variant: "success",
-          });
+          toast.success(
+            "If the email address you entered is valid, you will receive an email with a link to reset your password.",
+          );
           form.reset({ email: "" });
         },
         onError: (ctx) => {
           setIsLoading(false);
-          setMessage({ message: ctx.error.message });
+          toast.error(ctx.error.message);
         },
       },
     );
@@ -93,7 +95,6 @@ export function RequestPasswordResetForm({
 
   return (
     <Form {...form}>
-      <FormResponseMessage className="mb-4" {...message} />
       <div className={cn("grid gap-6", className)} {...props}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6">
           <FormField
@@ -109,7 +110,6 @@ export function RequestPasswordResetForm({
                     {...field}
                   />
                 </FormControl>
-                <FormMessage />
               </FormItem>
             )}
           />
@@ -124,11 +124,15 @@ export function RequestPasswordResetForm({
         </form>
         <AnotherMethodSeparator />
         <div className="flex flex-col gap-3">
+          <ContinueWithGitHubButton
+            redirectUrl={redirectUrl}
+            disabled={form.formState.disabled}
+            setIsLoadingProvider={setIsLoadingProvider}
+          />
           <ContinueWithGoogleButton
             redirectUrl={redirectUrl}
             disabled={form.formState.disabled}
             setIsLoadingProvider={setIsLoadingProvider}
-            setMessage={setMessage}
           />
           <ContinueWithPasswordButton
             redirectSearchParams={redirectSearchParams}

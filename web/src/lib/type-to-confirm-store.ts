@@ -4,14 +4,19 @@ import type { VariantProps } from "class-variance-authority";
 import type React from "react";
 import { create } from "zustand";
 import type { buttonVariants } from "~/components/ui/button";
-import type { FormResponseMessageProps } from "~/components/ui/form";
+// Replace dependency on UI form types with a local lightweight message shape
+export type AlertMessage = {
+  message?: string;
+  variant?: "success" | "error" | "warning" | "info";
+  icon?: React.ReactNode;
+};
 
 export interface TypeToConfirmOptions {
   title?: string;
   description?: React.ReactNode;
   confirmText?: string;
   caseInensitive?: boolean;
-  message?: FormResponseMessageProps;
+  message?: AlertMessage;
   warning?: string | null;
   isLoading?: boolean;
   confirmButtonText?: string;
@@ -31,7 +36,7 @@ interface TypeToConfirmStore {
   resolve: ((value: boolean) => void) | null;
   show: (options: TypeToConfirmOptions) => Promise<boolean>;
   close: (success?: boolean) => void;
-  setMessage: (message?: FormResponseMessageProps) => void;
+  setMessage: (message?: AlertMessage) => void;
   setIsLoading: (isLoading: boolean) => void;
   _confirm: () => void | Promise<void>;
   _cancel: () => void;
@@ -77,7 +82,7 @@ export const useAlertStore = create<TypeToConfirmStore>((set, get) => ({
 export const typeToConfirm = {
   show: (opts: TypeToConfirmOptions) => useAlertStore.getState().show(opts),
   close: (success?: boolean) => useAlertStore.getState().close(success),
-  setMessage: (message?: FormResponseMessageProps) =>
+  setMessage: (message?: AlertMessage) =>
     useAlertStore.getState().setMessage(message),
   setIsLoading: (isLoading: boolean) =>
     useAlertStore.getState().setIsLoading(isLoading),

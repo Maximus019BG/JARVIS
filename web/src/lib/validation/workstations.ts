@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 export const workstationCreateSchema = z.object({
-  name: z.string().min(2).max(255),
+  id: z.string().min(3).max(255),
+  name: z.string().min(3).max(255),
   logo: z
     .instanceof(File)
     .refine((file) => file.size <= 10_000_000, {

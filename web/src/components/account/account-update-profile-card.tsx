@@ -17,14 +17,12 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth-client";
 import { convertFromBase64, convertToBase64 } from "~/lib/image";
 import { updateUserSchema, type UpdateUser } from "~/lib/validation/auth/user";
+import { toast } from "sonner";
 
 interface Props extends React.ComponentProps<typeof Card> {
   onClose?: () => void;
@@ -40,7 +38,6 @@ export function AccountUpdateProfileCard({
   ...props
 }: Props) {
   const [isLoading, setIsLoading] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
   const form = useForm<UpdateUser>({
     resolver: zodResolver(updateUserSchema),
@@ -53,8 +50,22 @@ export function AccountUpdateProfileCard({
   });
 
   async function onSubmit(data: UpdateUser) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.firstName) {
+      toast.error(errors.firstName.message ?? "Invalid first name");
+      return;
+    }
+    if (errors.lastName) {
+      toast.error(errors.lastName.message ?? "Invalid last name");
+      return;
+    }
+    if (errors.image) {
+      toast.error(errors.image.message ?? "Invalid image");
+      return;
+    }
+
     setIsLoading(true);
-    setMessage(undefined);
 
     const { data: response, error } = await authClient.updateUser({
       name: `${data.firstName} ${data.lastName}`,
@@ -63,11 +74,12 @@ export function AccountUpdateProfileCard({
     setIsLoading(false);
 
     if (error) {
-      setMessage({ message: error.message });
+      toast.error(error.message);
       return;
     }
     if (!response) return;
 
+    toast.success("Profile updated successfully");
     form.reset();
     onClose?.();
   }
@@ -90,7 +102,6 @@ export function AccountUpdateProfileCard({
     <Card className={className} {...props}>
       <CardHeader>
         <CardTitle>Update profile</CardTitle>
-        <FormResponseMessage className="mt-4" {...message} />
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6">
@@ -109,7 +120,6 @@ export function AccountUpdateProfileCard({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -127,7 +137,6 @@ export function AccountUpdateProfileCard({
                         {...field}
                       />
                     </FormControl>
-                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -144,7 +153,6 @@ export function AccountUpdateProfileCard({
                         {...field}
                       />
                     </FormControl>
-                    <FormMessage />
                   </FormItem>
                 )}
               />

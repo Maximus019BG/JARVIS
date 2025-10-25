@@ -7,25 +7,15 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { AnotherMethodSeparator } from "~/components/auth/another-method-separator";
 import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
+import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
 import { ContinueWithPasswordButton } from "~/components/auth/continue-with-password-button";
 import { LoadingButton } from "~/components/common/loading-button";
 import { PasswordInput } from "~/components/common/password-input";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
-} from "~/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel } from "~/components/ui/form";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
-import {
-  resetPasswordSchema,
-  type ResetPassword,
-} from "~/lib/validation/auth/password";
+import { resetPasswordSchema, type ResetPassword } from "~/lib/validation/auth/password";
+import { toast } from "sonner";
 
 export function PasswordResetForm({
   className,
@@ -34,7 +24,7 @@ export function PasswordResetForm({
   const searchParams = useSearchParams();
   const router = useRouter();
   const redirectUrl = React.useMemo(
-    () => searchParams.get("redirect_url") ?? "/dashboard",
+    () => searchParams.get("redirect_url") ?? "/app",
     [searchParams],
   );
 
@@ -51,7 +41,7 @@ export function PasswordResetForm({
       return;
     }
     if (searchParams.get("error") === "INVALID_TOKEN")
-      setMessage({ message: "Invalid or expired token" });
+      toast.error("Invalid or expired token");
     setIsInitialLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -59,7 +49,6 @@ export function PasswordResetForm({
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
   const form = useForm<ResetPassword>({
     resolver: zodResolver(resetPasswordSchema),
@@ -71,6 +60,17 @@ export function PasswordResetForm({
   });
 
   function onSubmit(data: ResetPassword) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.password) {
+      toast.error(errors.password.message ?? "Invalid password");
+      return;
+    }
+    if (errors.passwordConfirmation) {
+      toast.error(errors.passwordConfirmation.message ?? "Passwords do not match");
+      return;
+    }
+
     void authClient.resetPassword(
       {
         newPassword: data.password,
@@ -79,21 +79,18 @@ export function PasswordResetForm({
       {
         onRequest: () => {
           setIsLoading(true);
-          setMessage(undefined);
         },
         onSuccess: () => {
-          setMessage({
-            message:
-              "Password reset successfully. Now you can sign in with your new password. You will be redirected to the sign in page after 5 seconds.",
-            variant: "success",
-          });
+          toast.success(
+            "Password reset successfully. Now you can sign in with your new password. You will be redirected to the sign in page after 5 seconds.",
+          );
           setTimeout(() => {
             void router.push(`/auth/sign-in?${redirectSearchParams}`);
           }, 5000);
         },
         onError: (ctx) => {
           setIsLoading(false);
-          setMessage({ message: ctx.error.message });
+          toast.error(ctx.error.message);
         },
       },
     );
@@ -101,7 +98,6 @@ export function PasswordResetForm({
 
   return (
     <Form {...form}>
-      <FormResponseMessage className="mb-4" {...message} />
       <div className={cn("grid gap-6", className)} {...props}>
         {isInitialLoading ? (
           <LoaderCircle className="size-12 animate-spin justify-self-center" />
@@ -121,7 +117,6 @@ export function PasswordResetForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -139,7 +134,6 @@ export function PasswordResetForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -155,11 +149,15 @@ export function PasswordResetForm({
         )}
         <AnotherMethodSeparator />
         <div className="flex flex-col gap-3">
+          <ContinueWithGitHubButton
+            redirectUrl={redirectUrl}
+            disabled={form.formState.disabled}
+            setIsLoadingProvider={setIsLoadingProvider}
+          />
           <ContinueWithGoogleButton
             redirectUrl={redirectUrl}
             disabled={form.formState.disabled}
             setIsLoadingProvider={setIsLoadingProvider}
-            setMessage={setMessage}
           />
           <ContinueWithPasswordButton
             redirectSearchParams={redirectSearchParams}

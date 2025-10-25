@@ -33,8 +33,14 @@ export function GlobalSheet() {
     typeof state.footer === "function" ? state.footer(renderCtx) : state.footer;
 
   return (
-    <Sheet open={state.isOpen} modal={false}>
-      <SheetContent side={state.side} onCloseButtonClick={close}>
+    <Sheet
+      open={state.isOpen}
+      modal={false}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <SheetContent side={state.side}>
         {(state.title ?? state.description) && (
           <SheetHeader>
             {state.title && <SheetTitle>{state.title}</SheetTitle>}

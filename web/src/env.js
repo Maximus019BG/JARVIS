@@ -38,6 +38,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: z.string().min(1),
     GOOGLE_CLIENT_SECRET: z.string().min(1),
     RESEND_API_KEY: z.string().min(1),
+  
   },
 
   /**
@@ -46,6 +47,7 @@ export const env = createEnv({
    * `NEXT_PUBLIC_`.
    */
   client: {
+    NEXT_PUBLIC_BASE_URL: z.string().url(),
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
   },
 
@@ -65,7 +67,7 @@ export const env = createEnv({
     BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: process.env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
     BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: process.env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
-
+    NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

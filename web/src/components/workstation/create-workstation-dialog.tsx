@@ -21,9 +21,6 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth-client";
@@ -33,6 +30,7 @@ import {
   workstationCreateSchema,
   type WorkstationCreate,
 } from "~/lib/validation/workstations";
+import { toast } from "sonner";
 
 export function CreateWorkstationDialog({
   children,
@@ -42,11 +40,11 @@ export function CreateWorkstationDialog({
   const { refetch: refetchMember } = authClient.useActiveMember();
 
   const [isLoading, setIsLoading] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
   const form = useForm<WorkstationCreate>({
     resolver: zodResolver(workstationCreateSchema),
     defaultValues: {
+      id: "",
       name: "",
       logo: undefined,
     },
@@ -54,8 +52,18 @@ export function CreateWorkstationDialog({
   });
 
   async function onSubmit(formData: WorkstationCreate) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.name) {
+      toast.error(errors.name.message ?? "Invalid workstation name");
+      return;
+    }
+    if (errors.logo) {
+      toast.error(errors.logo.message ?? "Invalid logo");
+      return;
+    }
+
     setIsLoading(true);
-    setMessage(undefined);
 
     const { data: response, error } = await authClient.organization.create({
       name: formData.name,
@@ -68,11 +76,12 @@ export function CreateWorkstationDialog({
     setIsLoading(false);
 
     if (error) {
-      setMessage({ message: error.message });
+      toast.error(error.message);
       return;
     }
     if (!response) return;
 
+    toast.success("Workstation created successfully");
     form.reset();
     props.onOpenChange?.(false);
   }
@@ -99,7 +108,6 @@ export function CreateWorkstationDialog({
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
               <DialogTitle>Create a new workstation</DialogTitle>
-              <FormResponseMessage {...message} />
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <FormField
@@ -116,7 +124,6 @@ export function CreateWorkstationDialog({
                         {...field}
                       />
                     </FormControl>
-                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -125,11 +132,22 @@ export function CreateWorkstationDialog({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>Workstation Name</FormLabel>
                     <FormControl>
                       <Input placeholder="Enter workstation name" {...field} />
                     </FormControl>
-                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Workstation ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter workstation id" {...field} />
+                    </FormControl>
                   </FormItem>
                 )}
               />

@@ -1,7 +1,6 @@
-import { LoaderCircle } from "lucide-react";
-import { motion } from "motion/react";
+import { LoaderCircle, Github } from "lucide-react";
 import React from "react";
-import Image from "next/image";
+import { motion } from "motion/react";
 import { LastLoginBadge } from "~/components/auth/last-login-badge";
 import { Button } from "~/components/ui/button";
 import { toast } from "sonner";
@@ -17,7 +16,7 @@ interface Props extends React.ComponentProps<typeof Button> {
   setMessage?: never;
 }
 
-export function ContinueWithGoogleButton({
+export function ContinueWithGitHubButton({
   className,
   redirectUrl,
   hideLastMethod,
@@ -26,12 +25,12 @@ export function ContinueWithGoogleButton({
   ...props
 }: Props) {
   const [isLoading, setIsLoading] = React.useState(false);
-  const isLastMethod = authClient.isLastUsedLoginMethod("google");
+  const isLastMethod = authClient.isLastUsedLoginMethod("github");
 
-  function googleSignIn() {
+  function githubSignIn() {
     void authClient.signIn.social(
       {
-        provider: "google",
+        provider: "github",
         callbackURL: redirectUrl,
       },
       {
@@ -53,29 +52,23 @@ export function ContinueWithGoogleButton({
       variant="outline"
       className={cn("group relative w-full", className)}
       disabled={disabled}
-      onClick={googleSignIn}
+      onClick={githubSignIn}
       {...props}
     >
       {isLastMethod && !hideLastMethod && <LastLoginBadge />}
       {isLoading ? (
         <LoaderCircle className="animate-spin" />
       ) : (
-        <motion.div
-          initial={{ scale: 1 }}
-          whileHover={{ scale: 1.05 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        <motion.span
+          initial={{ rotate: 0, scale: 1 }}
+          whileHover={{ rotate: -8, scale: 1.05 }}
+          transition={{ type: "spring", stiffness: 300, damping: 15 }}
           className="grid place-items-center"
         >
-          <Image
-            src="/icons/google.svg"
-            alt="Google"
-            width={16}
-            height={16}
-            className="h-4 w-4"
-          />
-        </motion.div>
+          <Github className="h-4 w-4" />
+        </motion.span>
       )}
-      Continue with Google
+      Continue with GitHub
     </Button>
   );
 }

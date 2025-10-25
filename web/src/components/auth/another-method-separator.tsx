@@ -12,14 +12,12 @@ export function AnotherMethodSeparator({
   return (
     <div
       className={cn(
-        "after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t",
+        "after:border-border text-muted-foreground relative text-center text-xs tracking-wider uppercase after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t",
         className,
       )}
       {...props}
     >
-      <span className="bg-card text-muted-foreground relative z-10 px-2">
-        {label}
-      </span>
+      <span className="bg-card relative z-10 px-2">{label}</span>
     </div>
   );
 }

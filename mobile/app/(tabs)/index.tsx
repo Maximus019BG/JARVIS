@@ -55,7 +55,7 @@ export default function HomeScreen() {
 
                     //Notifications setup after redirect from the callback
                     setTimeout(() => {
-                        if (currentUrl.includes("/dashboard")) {
+                        if (currentUrl.includes("/app")) {
                             SetNotifications();
                         }
                     }, 2000); // 2 seconds
@@ -72,7 +72,7 @@ export default function HomeScreen() {
         console.log("[WebView Navigation]", navState.url);
         
         // Setup notifications when reaching dashboard
-        if (navState.url.includes("/dashboard")) {
+        if (navState.url.includes("/app")) {
             SetNotifications();
         }
     }, []);

@@ -17,9 +17,6 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
 } from "~/components/ui/form";
 import { authClient } from "~/lib/auth-client";
 import {
@@ -27,6 +24,7 @@ import {
   type UpdatePassword,
 } from "~/lib/validation/auth/password";
 import { PasswordInput } from "../common/password-input";
+import { toast } from "sonner";
 
 interface Props extends React.ComponentProps<typeof Card> {
   onClose?: () => void;
@@ -38,7 +36,6 @@ export function AccountUpdatePasswordCard({
   ...props
 }: Props) {
   const [isLoading, setIsLoading] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
   const form = useForm<UpdatePassword>({
     resolver: zodResolver(updatePasswordSchema),
@@ -52,8 +49,24 @@ export function AccountUpdatePasswordCard({
   });
 
   async function onSubmit(data: UpdatePassword) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.password) {
+      toast.error(errors.password.message ?? "Invalid current password");
+      return;
+    }
+    if (errors.newPassword) {
+      toast.error(errors.newPassword.message ?? "Invalid new password");
+      return;
+    }
+    if (errors.newPasswordConfirmation) {
+      toast.error(
+        errors.newPasswordConfirmation.message ?? "Passwords do not match",
+      );
+      return;
+    }
+
     setIsLoading(true);
-    setMessage(undefined);
 
     const { data: response, error } = await authClient.changePassword({
       currentPassword: data.password,
@@ -64,18 +77,16 @@ export function AccountUpdatePasswordCard({
 
     if (error) {
       if (error.code === "INVALID_PASSWORD") {
-        form.setError("password", {
-          type: "custom",
-          message: "Invalid password",
-        });
+        toast.error("Invalid password");
         return;
       }
 
-      setMessage({ message: error.message });
+      toast.error(error.message);
       return;
     }
     if (!response) return;
 
+    toast.success("Password updated successfully");
     form.reset();
     onClose?.();
   }
@@ -84,7 +95,6 @@ export function AccountUpdatePasswordCard({
     <Card className={className} {...props}>
       <CardHeader>
         <CardTitle>Update password</CardTitle>
-        <FormResponseMessage className="mt-4" {...message} />
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6">
@@ -103,7 +113,6 @@ export function AccountUpdatePasswordCard({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -121,7 +130,6 @@ export function AccountUpdatePasswordCard({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -139,7 +147,6 @@ export function AccountUpdatePasswordCard({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />

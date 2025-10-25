@@ -7,6 +7,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { AnotherMethodSeparator } from "~/components/auth/another-method-separator";
 import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
+import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
 import { LoadingButton } from "~/components/common/loading-button";
 import { PasswordInput } from "~/components/common/password-input";
 import {
@@ -15,14 +16,12 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
-  FormResponseMessage,
-  type FormResponseMessageProps,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
 import { signUpSchema, type SignUp } from "~/lib/validation/auth/sign-up";
+import { toast } from "sonner";
 
 export function SignUpForm({
   className,
@@ -31,13 +30,12 @@ export function SignUpForm({
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = React.useMemo(
-    () => searchParams.get("redirect_url") ?? "/dashboard",
+    () => searchParams.get("redirect_url") ?? "/app",
     [searchParams],
   );
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
-  const [message, setMessage] = React.useState<FormResponseMessageProps>();
 
   const form = useForm<SignUp>({
     resolver: zodResolver(signUpSchema),
@@ -64,6 +62,31 @@ export function SignUpForm({
   }, [searchParams, form.getValues("email")]);
 
   function onSubmit(data: SignUp) {
+    // Check for client-side validation errors
+    const errors = form.formState.errors;
+    if (errors.firstName) {
+      toast.error(errors.firstName.message ?? "Invalid first name");
+      return;
+    }
+    if (errors.lastName) {
+      toast.error(errors.lastName.message ?? "Invalid last name");
+      return;
+    }
+    if (errors.email) {
+      toast.error(errors.email.message ?? "Invalid email");
+      return;
+    }
+    if (errors.password) {
+      toast.error(errors.password.message ?? "Invalid password");
+      return;
+    }
+    if (errors.passwordConfirmation) {
+      toast.error(
+        errors.passwordConfirmation.message ?? "Passwords do not match",
+      );
+      return;
+    }
+
     void authClient.signUp.email(
       {
         email: data.email,
@@ -74,14 +97,13 @@ export function SignUpForm({
       {
         onRequest: () => {
           setIsLoading(true);
-          setMessage(undefined);
         },
         onSuccess: () => {
           router.push(redirectUrl);
         },
         onError: (ctx) => {
           setIsLoading(false);
-          setMessage({ message: ctx.error.message });
+          toast.error(ctx.error.message);
         },
       },
     );
@@ -89,14 +111,18 @@ export function SignUpForm({
 
   return (
     <Form {...form}>
-      <FormResponseMessage className="mb-4" {...message} />
       <div className={cn("grid gap-6", className)} {...props}>
+        <ContinueWithGitHubButton
+          redirectUrl={redirectUrl}
+          hideLastMethod={true}
+          disabled={form.formState.disabled}
+          setIsLoadingProvider={setIsLoadingProvider}
+        />
         <ContinueWithGoogleButton
           redirectUrl={redirectUrl}
           hideLastMethod={true}
           disabled={form.formState.disabled}
           setIsLoadingProvider={setIsLoadingProvider}
-          setMessage={setMessage}
         />
         <AnotherMethodSeparator label="Or continue with" />
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6">
@@ -114,7 +140,6 @@ export function SignUpForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -131,7 +156,6 @@ export function SignUpForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -149,7 +173,6 @@ export function SignUpForm({
                     {...field}
                   />
                 </FormControl>
-                <FormMessage />
               </FormItem>
             )}
           />
@@ -167,7 +190,6 @@ export function SignUpForm({
                     {...field}
                   />
                 </FormControl>
-                <FormMessage />
               </FormItem>
             )}
           />
@@ -185,7 +207,6 @@ export function SignUpForm({
                     {...field}
                   />
                 </FormControl>
-                <FormMessage />
               </FormItem>
             )}
           />
