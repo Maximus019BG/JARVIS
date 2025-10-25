@@ -2,10 +2,9 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, schema } from "~/server/db";
 import { env } from "~/env";
-import { ac, owner } from "~/lib/permissions";
 import { sendResetPasswordEmail } from "~/server/email/utils/send-password-reset-email";
 import { sendVerificationEmail } from "~/server/email/utils/send-verification-email";
-import { lastLoginMethod, organization } from "better-auth/plugins";
+import { lastLoginMethod } from "better-auth/plugins";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -36,14 +35,5 @@ export const auth = betterAuth({
       clientSecret: env.GOOGLE_CLIENT_SECRET,
     },
   },
-  plugins: [
-    lastLoginMethod(),
-    organization({
-      organizationLimit: env.BETTER_AUTH_ORGANIZATION_LIMIT,
-      accessControl: ac,
-      roles: {
-        owner,
-      },
-    }),
-  ],
+  plugins: [lastLoginMethod()],
 });

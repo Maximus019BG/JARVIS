@@ -18,8 +18,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { authClient } from "~/lib/auth-client";
 import { AnimateIcon } from "../animate-ui/icons/icon";
+import {
+  useListWorkstations,
+  useActiveWorkstation,
+  useSetActiveWorkstation,
+} from "~/lib/workstation-hooks";
 
 interface Props extends React.ComponentProps<typeof DropdownMenuContent> {
   children: React.ReactNode;
@@ -34,21 +38,18 @@ export function WorkstationSelectDropdownMenu({ children, ...props }: Props) {
     data: workstations,
     refetch: refetchWorkstations,
     isPending: isWorkstationsPending,
-  } = authClient.useListOrganizations();
-  const { data: activeWorkstation } = authClient.useActiveOrganization();
-  const { data: member, refetch: refetchMember } = authClient.useActiveMember();
+  } = useListWorkstations();
+  const { data: activeWorkstation } = useActiveWorkstation();
+  const setActiveMutation = useSetActiveWorkstation();
 
-  const [isLoading, setIsLoading] = React.useState(false);
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
 
   async function switchWorkstation(workstationId: string) {
-    setIsLoading(true);
-    await authClient.organization.setActive({ organizationId: workstationId });
-    refetchWorkstations();
-    refetchMember();
+    await setActiveMutation.mutateAsync(workstationId);
     void queryClient.resetQueries();
-    setIsLoading(false);
   }
+
+  const isLoading = setActiveMutation.isPending;
 
   return (
     <>
@@ -64,7 +65,6 @@ export function WorkstationSelectDropdownMenu({ children, ...props }: Props) {
                 <WorkstationInfo
                   image={activeWorkstation.logo}
                   name={activeWorkstation.name}
-                  role={member?.role}
                 />
                 <AnimateIcon animateOnHover>
                   <DropdownMenuItem asChild disabled={isLoading}>

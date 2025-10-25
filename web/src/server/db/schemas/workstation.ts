@@ -2,7 +2,7 @@ import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "~/server/db/schemas/user";
 
 // This represents a workstation in the UI, but uses "organization" table name for Better-Auth compatibility
-export const organization = pgTable("organization", {
+export const workstation = pgTable("workstation", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").unique(),

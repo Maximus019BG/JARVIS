@@ -9,14 +9,14 @@ import {
   SidebarMenuItem,
 } from "~/components/ui/sidebar";
 import { Skeleton } from "~/components/ui/skeleton";
-import { authClient } from "~/lib/auth-client";
+import { useActiveWorkstation } from "~/lib/workstation-hooks";
 
 export function WorkstationSidebarSelector() {
   const {
     data: activeWorkstation,
     isPending,
     isRefetching,
-  } = authClient.useActiveOrganization();
+  } = useActiveWorkstation();
 
   let body = activeWorkstation ? (
     <>

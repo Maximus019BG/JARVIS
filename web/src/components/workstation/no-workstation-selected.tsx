@@ -1,13 +1,13 @@
 "use client";
 
-import { authClient } from "~/lib/auth-client";
+import { useActiveWorkstation } from "~/lib/workstation-hooks";
 
 interface Props {
   children: React.ReactNode;
 }
 
 export function NoWorkstationSelected({ children }: Props) {
-  const { data: activeWorkstation } = authClient.useActiveOrganization();
+  const { data: activeWorkstation } = useActiveWorkstation();
 
   if (!activeWorkstation) {
     return children;
@@ -17,7 +17,7 @@ export function NoWorkstationSelected({ children }: Props) {
 }
 
 export function WorkstationSelected({ children }: Props) {
-  const { data: activeWorkstation } = authClient.useActiveOrganization();
+  const { data: activeWorkstation } = useActiveWorkstation();
 
   if (activeWorkstation) {
     return children;

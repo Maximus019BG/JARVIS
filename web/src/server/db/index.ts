@@ -4,7 +4,7 @@ import { env } from "~/env";
 import * as session from "~/server/db/schemas/session";
 import * as user from "~/server/db/schemas/user";
 import * as account from "~/server/db/schemas/account";
-import * as organization from "~/server/db/schemas/workstation";
+import * as workstation from "~/server/db/schemas/workstation";
 import * as verification from "~/server/db/schemas/verification";
 
 const globalForDb = globalThis as unknown as {
@@ -19,7 +19,7 @@ export const schema = {
   ...user,
   ...account,
   ...verification,
-  ...organization,
+  ...workstation,
 };
 
 export const db = drizzle(conn, {

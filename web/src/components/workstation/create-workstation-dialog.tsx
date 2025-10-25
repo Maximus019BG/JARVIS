@@ -23,7 +23,6 @@ import {
   FormLabel,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
-import { authClient } from "~/lib/auth-client";
 import { convertToBase64 } from "~/lib/image";
 import {
   generateRandomSlug,
@@ -31,13 +30,13 @@ import {
   type WorkstationCreate,
 } from "~/lib/validation/workstations";
 import { toast } from "sonner";
+import { useCreateWorkstation } from "~/lib/workstation-hooks";
 
 export function CreateWorkstationDialog({
   children,
   ...props
 }: React.ComponentPropsWithoutRef<typeof Dialog>) {
-  const { refetch: refetchWorkstation } = authClient.useActiveOrganization();
-  const { refetch: refetchMember } = authClient.useActiveMember();
+  const createMutation = useCreateWorkstation();
 
   const [isLoading, setIsLoading] = React.useState(false);
 
@@ -65,25 +64,23 @@ export function CreateWorkstationDialog({
 
     setIsLoading(true);
 
-    const { data: response, error } = await authClient.organization.create({
-      name: formData.name,
-      slug: generateRandomSlug(),
-      logo: formData.logo ? await convertToBase64(formData.logo) : undefined,
-      keepCurrentActiveOrganization: false,
-    });
-    refetchWorkstation();
-    refetchMember();
-    setIsLoading(false);
+    try {
+      await createMutation.mutateAsync({
+        name: formData.name,
+        slug: generateRandomSlug(),
+        logo: formData.logo ? await convertToBase64(formData.logo) : undefined,
+      });
 
-    if (error) {
-      toast.error(error.message);
-      return;
+      toast.success("Workstation created successfully");
+      form.reset();
+      props.onOpenChange?.(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create workstation",
+      );
+    } finally {
+      setIsLoading(false);
     }
-    if (!response) return;
-
-    toast.success("Workstation created successfully");
-    form.reset();
-    props.onOpenChange?.(false);
   }
 
   const onFileReject = React.useCallback(
