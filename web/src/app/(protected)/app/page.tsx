@@ -6,6 +6,6 @@ interface Props {
   searchParams: Promise<SearchParams>;
 }
 
-export default function DashboardPage({ searchParams }: Props) {
-  return <>app</>;
+export default function DashboardPage({ searchParams: _searchParams }: Props) {
+  return <>app + {JSON.stringify(_searchParams)}</>;
 }

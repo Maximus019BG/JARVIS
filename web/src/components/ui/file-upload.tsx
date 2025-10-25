@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/prefer-optional-chain */
+/* eslint-disable jsx-a11y/role-supports-aria-props */
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { Slot } from "@radix-ui/react-slot";

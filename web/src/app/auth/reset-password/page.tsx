@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { RequestPasswordResetForm } from "~/components/auth/request-password-reset-form";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 
@@ -8,7 +9,9 @@ export default function ResetPasswordPage() {
         <CardTitle className="text-xl">Forgot your password?</CardTitle>
       </CardHeader>
       <CardContent>
-        <RequestPasswordResetForm />
+        <Suspense fallback={<div className="h-10" />}>
+          <RequestPasswordResetForm />
+        </Suspense>
       </CardContent>
     </Card>
   );

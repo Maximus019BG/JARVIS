@@ -1,14 +1,15 @@
-'use client';
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
+"use client";
 
-import * as React from 'react';
-import { motion, type Variants } from 'motion/react';
+import * as React from "react";
+import { motion, type Variants } from "motion/react";
 
 import {
   getVariants,
   useAnimateIconContext,
   IconWrapper,
   type IconProps,
-} from '~/components/animate-ui/icons/icon';
+} from "~/components/animate-ui/icons/icon";
 
 type ChartColumnProps = IconProps<keyof typeof animations>;
 
@@ -25,7 +26,7 @@ const animations = {
           opacity: [0, 1],
           pathLength: [0, 1],
           transition: {
-            ease: 'easeInOut',
+            ease: "easeInOut",
             duration: 0.4,
             delay: (i - 1) * 0.3,
           },
@@ -35,7 +36,7 @@ const animations = {
 
     return animation as Record<string, Variants>;
   })() satisfies Record<string, Variants>,
-  'default-loop': (() => {
+  "default-loop": (() => {
     const n = 3;
     const delayStep = 0.3;
     const segDuration = 0.4;
@@ -68,7 +69,7 @@ const animations = {
           pathLength: [1, 1, 0, 0, 1],
           opacity: [1, 1, 0, 0, 1],
           transition: {
-            ease: 'easeInOut',
+            ease: "easeInOut",
             duration: totalDuration,
             times: [0, tSO, tEO, tSI, tEI],
           },
@@ -80,47 +81,47 @@ const animations = {
   })() satisfies Record<string, Variants>,
   increasing: {
     path1: {
-      initial: { d: 'M8 17V13' },
+      initial: { d: "M8 17V13" },
       animate: {
-        d: 'M8 17V13',
-        transition: { duration: 0.5, ease: 'easeInOut' },
+        d: "M8 17V13",
+        transition: { duration: 0.5, ease: "easeInOut" },
       },
     },
     path2: {
-      initial: { d: 'M13 17V5' },
+      initial: { d: "M13 17V5" },
       animate: {
-        d: 'M13 17V9',
-        transition: { duration: 0.5, ease: 'easeInOut' },
+        d: "M13 17V9",
+        transition: { duration: 0.5, ease: "easeInOut" },
       },
     },
     path3: {
-      initial: { d: 'M18 17V9' },
+      initial: { d: "M18 17V9" },
       animate: {
-        d: 'M18 17V5',
-        transition: { duration: 0.5, ease: 'easeInOut' },
+        d: "M18 17V5",
+        transition: { duration: 0.5, ease: "easeInOut" },
       },
     },
   } satisfies Record<string, Variants>,
   decreasing: {
     path1: {
-      initial: { d: 'M8 17V13' },
+      initial: { d: "M8 17V13" },
       animate: {
-        d: 'M8 17V5',
-        transition: { duration: 0.5, ease: 'easeInOut' },
+        d: "M8 17V5",
+        transition: { duration: 0.5, ease: "easeInOut" },
       },
     },
     path2: {
-      initial: { d: 'M13 17V5' },
+      initial: { d: "M13 17V5" },
       animate: {
-        d: 'M13 17V9',
-        transition: { duration: 0.5, ease: 'easeInOut' },
+        d: "M13 17V9",
+        transition: { duration: 0.5, ease: "easeInOut" },
       },
     },
     path3: {
-      initial: { d: 'M18 17V9' },
+      initial: { d: "M18 17V9" },
       animate: {
-        d: 'M18 17V13',
-        transition: { duration: 0.5, ease: 'easeInOut' },
+        d: "M18 17V13",
+        transition: { duration: 0.5, ease: "easeInOut" },
       },
     },
   } satisfies Record<string, Variants>,

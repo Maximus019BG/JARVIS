@@ -34,11 +34,8 @@ export function WorkstationSelectDropdownMenu({ children, ...props }: Props) {
 
   const [isOpen, setIsOpen] = React.useState(false);
 
-  const {
-    data: workstations,
-    refetch: refetchWorkstations,
-    isPending: isWorkstationsPending,
-  } = useListWorkstations();
+  const { data: workstations, isPending: isWorkstationsPending } =
+    useListWorkstations();
   const { data: activeWorkstation } = useActiveWorkstation();
   const setActiveMutation = useSetActiveWorkstation();
 

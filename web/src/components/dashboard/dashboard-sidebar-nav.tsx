@@ -20,8 +20,8 @@ export function DashboardSidebarNav() {
       <SidebarGroupContent>
         <SidebarMenu>
           {dashboardSidebarNav.map((item) => (
-            <AnimateIcon animateOnHover>
-              <SidebarMenuItem key={item.title}>
+            <AnimateIcon animateOnHover key={item.title}>
+              <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip={item.title}
                   asChild
