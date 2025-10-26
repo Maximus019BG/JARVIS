@@ -12,7 +12,7 @@ interface sendEmailProps {
 
 export const sendEmail = async ({ to, subject, body }: sendEmailProps) => {
   const { error } = await resend.emails.send({
-    from: "JARVIS <no-reply@jarvis.com>", //TODO: change this
+    from: "JARVIS <no-reply@jarvisweb.cloud>", //TODO: change this
     to,
     subject,
     react: body,
