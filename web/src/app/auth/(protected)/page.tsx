@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { SignInForm } from "~/components/auth/sign-in-form";
 import { SignUpForm } from "~/components/auth/sign-up-form";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -27,7 +27,6 @@ const quotes = [
 
 export default function AuthPage() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const mode = searchParams.get("mode") ?? "sign-in";
   const isSignUp = mode === "sign-up";
 
@@ -41,12 +40,6 @@ export default function AuthPage() {
   }, []);
 
   const currentQuote = quotes[currentQuoteIndex];
-
-  const setMode = (newMode: "sign-in" | "sign-up") => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("mode", newMode);
-    router.push(`/auth?${params.toString()}`);
-  };
 
   return (
     <>

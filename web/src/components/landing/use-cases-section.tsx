@@ -103,8 +103,8 @@ export default function UseCasesSection() {
             }}
           >
             <img
-              src={useCases[activeIndex].image || "/placeholder.svg"}
-              alt={useCases[activeIndex].title}
+              src={(useCases[activeIndex] ?? useCases[0])!.image || "/placeholder.svg"}
+              alt={(useCases[activeIndex] ?? useCases[0])!.title}
               className="w-full h-[500px] object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent opacity-60" />
