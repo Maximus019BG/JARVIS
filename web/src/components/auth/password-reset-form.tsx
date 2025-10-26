@@ -11,10 +11,19 @@ import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github
 import { ContinueWithPasswordButton } from "~/components/auth/continue-with-password-button";
 import { LoadingButton } from "~/components/common/loading-button";
 import { PasswordInput } from "~/components/common/password-input";
-import { Form, FormControl, FormField, FormItem, FormLabel } from "~/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+} from "~/components/ui/form";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
-import { resetPasswordSchema, type ResetPassword } from "~/lib/validation/auth/password";
+import {
+  resetPasswordSchema,
+  type ResetPassword,
+} from "~/lib/validation/auth/password";
 import { toast } from "sonner";
 
 export function PasswordResetForm({
@@ -37,7 +46,7 @@ export function PasswordResetForm({
 
   React.useEffect(() => {
     if (!searchParams.get("token")) {
-      void router.push(`/auth/sign-in?${redirectSearchParams}`);
+      void router.push(`/auth?${redirectSearchParams}`);
       return;
     }
     if (searchParams.get("error") === "INVALID_TOKEN")
@@ -67,7 +76,9 @@ export function PasswordResetForm({
       return;
     }
     if (errors.passwordConfirmation) {
-      toast.error(errors.passwordConfirmation.message ?? "Passwords do not match");
+      toast.error(
+        errors.passwordConfirmation.message ?? "Passwords do not match",
+      );
       return;
     }
 
@@ -85,7 +96,7 @@ export function PasswordResetForm({
             "Password reset successfully. Now you can sign in with your new password. You will be redirected to the sign in page after 5 seconds.",
           );
           setTimeout(() => {
-            void router.push(`/auth/sign-in?${redirectSearchParams}`);
+            void router.push(`/auth?${redirectSearchParams}`);
           }, 5000);
         },
         onError: (ctx) => {

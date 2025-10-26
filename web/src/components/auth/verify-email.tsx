@@ -28,7 +28,7 @@ export function VerifyEmail({
   const initialRequest = React.useRef(true);
   React.useEffect(() => {
     if (!searchParams.get("email")) {
-      void router.push(`/auth/sign-in?${redirectSearchParams}`);
+      void router.push(`/auth?${redirectSearchParams}`);
       return;
     }
     if (!initialRequest.current) return;

@@ -36,7 +36,7 @@ export function ContinueWithPasswordButton({
           hideLastMethod={hideLastMethod}
         />
       ) : (
-        <Link href={`/auth/sign-in?${redirectSearchParams ?? ""}`}>
+        <Link href={`/auth?${redirectSearchParams ?? ""}`}>
           <ButtonContent
             isLastMethod={isLastMethod}
             hideLastMethod={hideLastMethod}
