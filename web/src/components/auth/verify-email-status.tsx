@@ -41,7 +41,7 @@ export function VerifyEmailStatus({
       "Email verified successfully. You will be redirected after 5 seconds.",
     );
     setTimeout(() => {
-      void router.push(`/auth/sign-in?${redirectSearchParams}`);
+      void router.push(`/auth?${redirectSearchParams}`);
     }, 5000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

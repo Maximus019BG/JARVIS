@@ -15,7 +15,7 @@ export default async function ProtectedLayout({ children }: Props) {
   if (!session) {
     const currentPath = (await headers()).get("x-href") ?? "/";
     const encodedRedirectUrl = encodeURIComponent(currentPath);
-    redirect(`/auth/sign-in?redirect_url=${encodedRedirectUrl}`);
+    redirect(`/auth?redirect_url=${encodedRedirectUrl}`);
   }
 
   return children;

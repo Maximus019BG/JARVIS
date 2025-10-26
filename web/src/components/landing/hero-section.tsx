@@ -148,6 +148,7 @@ export default function HeroSection() {
                 opacity: displayedSubtext.length === fullSubtext.length && mounted ? 1 : 0,
                 transform: mounted ? "translateY(0)" : "translateY(20px)",
               }}
+              onClick={()=>{window.location.href="/app"}}
             >
               Get Started
               <ArrowRight className="ml-2 w-5 h-5" />

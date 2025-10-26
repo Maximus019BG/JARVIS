@@ -1,41 +1,29 @@
-"use client";
+"use client"
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import React from "react";
-import { useForm } from "react-hook-form";
-import { AnotherMethodSeparator } from "~/components/auth/another-method-separator";
-import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
-import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
-import { LoadingButton } from "~/components/common/loading-button";
-import { PasswordInput } from "~/components/common/password-input";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-} from "~/components/ui/form";
-import { Input } from "~/components/ui/input";
-import { authClient } from "~/lib/auth-client";
-import { cn } from "~/lib/utils";
-import { signInSchema, type SignIn } from "~/lib/validation/auth/sign-in";
-import { toast } from "sonner";
+import { zodResolver } from "@hookform/resolvers/zod"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
+import React from "react"
+import { useForm } from "react-hook-form"
+import { AnotherMethodSeparator } from "~/components/auth/another-method-separator"
+import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button"
+import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button"
+import { LoadingButton } from "~/components/common/loading-button"
+import { PasswordInput } from "~/components/common/password-input"
+import { Form, FormControl, FormField, FormItem, FormLabel } from "~/components/ui/form"
+import { Input } from "~/components/ui/input"
+import { authClient } from "~/lib/auth-client"
+import { cn } from "~/lib/utils"
+import { signInSchema, type SignIn } from "~/lib/validation/auth/sign-in"
+import { toast } from "sonner"
 
-export function SignInForm({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const redirectUrl = React.useMemo(
-    () => searchParams.get("redirect_url") ?? "/app",
-    [searchParams],
-  );
+export function SignInForm({ className, ...props }: React.ComponentProps<"div">) {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const redirectUrl = React.useMemo(() => searchParams.get("redirect_url") ?? "/app", [searchParams])
 
-  const [isLoading, setIsLoading] = React.useState(false);
-  const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false)
+  const [isLoadingProvider, setIsLoadingProvider] = React.useState(false)
 
   const form = useForm<SignIn>({
     resolver: zodResolver(signInSchema),
@@ -45,30 +33,31 @@ export function SignInForm({
       rememberMe: true,
     },
     disabled: isLoading || isLoadingProvider,
-  });
+  })
 
   const redirectSearchParams = React.useMemo(() => {
-    const email = form.watch("email");
-    const params = new URLSearchParams(searchParams.toString());
+    const email = form.watch("email")
+    const params = new URLSearchParams(searchParams.toString())
     if (email) {
-      params.set("email", email);
+      params.set("email", email)
     } else {
-      params.delete("email");
+      params.delete("email")
     }
-    return params.toString();
+    params.set("mode", "sign-in")
+    return params.toString()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, form.getValues("email")]);
+  }, [searchParams, form.getValues("email")])
 
   function onSubmit(data: SignIn) {
     // Check for client-side validation errors
-    const errors = form.formState.errors;
+    const errors = form.formState.errors
     if (errors.email) {
-      toast.error(errors.email.message ?? "Invalid email");
-      return;
+      toast.error(errors.email.message ?? "Invalid email")
+      return
     }
     if (errors.password) {
-      toast.error(errors.password.message ?? "Invalid password");
-      return;
+      toast.error(errors.password.message ?? "Invalid password")
+      return
     }
 
     void authClient.signIn.email(
@@ -78,19 +67,19 @@ export function SignInForm({
       },
       {
         onRequest: () => {
-          setIsLoading(true);
+          setIsLoading(true)
         },
         onError: (ctx) => {
           if (ctx.error.code === "EMAIL_NOT_VERIFIED") {
-            router.push(`/auth/verify-email?${redirectSearchParams}`);
-            return;
+            router.push(`/auth/verify-email?${redirectSearchParams}`)
+            return
           }
 
-          setIsLoading(false);
-          toast.error(ctx.error.message);
+          setIsLoading(false)
+          toast.error(ctx.error.message)
         },
       },
-    );
+    )
   }
 
   return (
@@ -104,11 +93,7 @@ export function SignInForm({
               <FormItem>
                 <FormLabel>Email</FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder="Enter your email address"
-                    autoComplete="email webauthn"
-                    {...field}
-                  />
+                  <Input placeholder="Enter your email address" autoComplete="email webauthn" {...field} />
                 </FormControl>
               </FormItem>
             )}
@@ -139,12 +124,7 @@ export function SignInForm({
               </FormItem>
             )}
           />
-          <LoadingButton
-            type="submit"
-            className="w-full"
-            isLoading={isLoading}
-            disabled={form.formState.disabled}
-          >
+          <LoadingButton type="submit" className="w-full" isLoading={isLoading} disabled={form.formState.disabled}>
             Sign In
           </LoadingButton>
         </form>
@@ -164,15 +144,12 @@ export function SignInForm({
           </div>
           <div>
             Don&apos;t have an account?{" "}
-            <Link
-              href={`/auth/sign-up?${redirectSearchParams}`}
-              className="underline underline-offset-4"
-            >
+            <Link href={`/auth?mode=sign-up&${redirectSearchParams}`} className="underline underline-offset-4">
               Sign up
             </Link>
           </div>
         </div>
       </div>
     </Form>
-  );
+  )
 }
