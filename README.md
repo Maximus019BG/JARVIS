@@ -116,5 +116,3 @@ Whether you’re prototyping hardware, writing firmware, or managing project wor
 - Mini projector (HD or higher)  
 - Microphone + speaker  
 - Internet connectivity
-# Run the main program
-python3 main.py
