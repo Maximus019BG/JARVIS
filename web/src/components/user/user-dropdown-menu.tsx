@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { Skeleton } from "~/components/ui/skeleton";
 import { authClient } from "~/lib/auth-client";
+import { toast } from "sonner";
 
 interface Props extends React.ComponentProps<typeof DropdownMenuContent> {
   children?: React.ReactNode;
@@ -41,9 +42,15 @@ export function UserDropdownMenu({
 
   async function logout() {
     setIsLoading(true);
-    await authClient.signOut();
-    router.refresh();
-    setIsLoading(false);
+    try {
+      await authClient.signOut();
+      toast.success("Logged out successfully");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to log out");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (

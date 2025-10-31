@@ -42,8 +42,13 @@ export function WorkstationSelectDropdownMenu({ children, ...props }: Props) {
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
 
   async function switchWorkstation(workstationId: string) {
-    await setActiveMutation.mutateAsync(workstationId);
-    void queryClient.resetQueries();
+    try {
+      await setActiveMutation.mutateAsync(workstationId);
+      void queryClient.resetQueries();
+    } catch (error) {
+      // Error toast is handled by the mutation hook
+      console.error("Failed to switch workstation:", error);
+    }
   }
 
   const isLoading = setActiveMutation.isPending;

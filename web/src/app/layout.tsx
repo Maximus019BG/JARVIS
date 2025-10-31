@@ -6,6 +6,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ApiProvider } from "~/components/providers/api-provider";
 import { ThemeProvider } from "~/components/providers/theme-provider";
 import { TailwindIndicator } from "~/components/ui/tailwind-indicator";
+import { Toaster } from "~/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: "JARVIS",
@@ -34,6 +35,7 @@ export default function RootLayout({
             <NuqsAdapter>
               {children}
               <TailwindIndicator />
+              <Toaster position="top-center" />
             </NuqsAdapter>
           </ApiProvider>
         </ThemeProvider>

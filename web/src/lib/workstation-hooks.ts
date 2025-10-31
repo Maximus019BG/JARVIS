@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { toast } from "sonner";
 
 export interface Workstation {
   id: string;
@@ -64,6 +65,14 @@ export function useSetActiveWorkstation() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workstations"] });
+      toast.success("Workstation activated successfully");
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to activate workstation",
+      );
     },
   });
 }
@@ -90,6 +99,12 @@ export function useCreateWorkstation() {
       void queryClient.setQueryData(["workstations", "active"], {
         id: data.id,
       });
+      toast.success(`Workstation "${data.name}" created successfully`);
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create workstation",
+      );
     },
   });
 }
