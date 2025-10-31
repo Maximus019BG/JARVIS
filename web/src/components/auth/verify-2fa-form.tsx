@@ -38,7 +38,7 @@ export function Verify2FAForm() {
   async function onSubmit(values: Verify2FA) {
     try {
       setIsLoading(true);
-      
+
       // Verify TOTP code via Better Auth client
       const result = await authClient.twoFactor.verifyTotp({
         code: values.code,

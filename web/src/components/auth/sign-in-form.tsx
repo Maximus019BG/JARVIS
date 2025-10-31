@@ -89,7 +89,7 @@ export function SignInForm({
         },
         onError: (ctx) => {
           console.log("Sign-in error details:", ctx.error);
-          
+
           // Check for 2FA requirement
           if (
             ctx.error.code === "TWO_FACTOR_REQUIRED" ||

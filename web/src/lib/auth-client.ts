@@ -15,7 +15,7 @@ export const authClient = createAuthClient({
         // Get current page params to preserve redirect_url
         const params = new URLSearchParams(window.location.search);
         const redirectUrl = params.get("redirect_url") ?? "/app";
-        
+
         // Redirect to 2FA verification page
         window.location.href = `/auth/verify-2fa?redirect_url=${encodeURIComponent(redirectUrl)}`;
       },
