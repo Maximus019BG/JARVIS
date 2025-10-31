@@ -13,14 +13,14 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true,
+    requireEmailVerification: false, // Changed to false - users can sign in immediately
     sendResetPassword: sendResetPasswordEmail,
     resetPasswordTokenExpiresIn: Number(
       env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
     ),
   },
   emailVerification: {
-    sendOnSignUp: true,
+    sendOnSignUp: true, // Still sends verification email, but doesn't block sign-in
     autoSignInAfterVerification: true,
     sendVerificationEmail: sendVerificationEmail,
     expiresIn: Number(env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN),
