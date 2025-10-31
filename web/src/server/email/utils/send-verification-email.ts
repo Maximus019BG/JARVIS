@@ -1,6 +1,5 @@
 import { jwtDecode } from "jwt-decode";
 import EmailVerification from "~/emails/email-verification-email";
-import type { authClient } from "~/lib/auth-client";
 import { formatEmailDates } from "~/lib/email";
 import { getIpLocationString } from "~/lib/ip-location";
 import { sendEmail } from "~/server/email";
@@ -12,7 +11,16 @@ interface TokenJwtPayload {
 }
 
 interface sendVerificationEmailProps {
-  user: typeof authClient.$Infer.Session.user;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    emailVerified: boolean;
+    image?: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    twoFactorEnabled?: boolean | null;
+  };
   url: string;
   token: string;
 }

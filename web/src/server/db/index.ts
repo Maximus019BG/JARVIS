@@ -6,6 +6,7 @@ import * as user from "~/server/db/schemas/user";
 import * as account from "~/server/db/schemas/account";
 import * as workstation from "~/server/db/schemas/workstation";
 import * as verification from "~/server/db/schemas/verification";
+import * as twoFactor from "~/server/db/schemas/two-factor";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -20,6 +21,7 @@ export const schema = {
   ...account,
   ...verification,
   ...workstation,
+  ...twoFactor,
 };
 
 export const db = drizzle(conn, {

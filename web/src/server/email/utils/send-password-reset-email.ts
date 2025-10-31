@@ -1,12 +1,20 @@
 import PasswordResetEmail from "~/emails/password-reset-email";
 import { env } from "~/env";
-import type { authClient } from "~/lib/auth-client";
 import { formatEmailDates } from "~/lib/email";
 import { getIpLocationString } from "~/lib/ip-location";
 import { sendEmail } from "~/server/email";
 
 interface sendResetPasswordEmailProps {
-  user: typeof authClient.$Infer.Session.user;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    emailVerified: boolean;
+    image?: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    twoFactorEnabled?: boolean | null;
+  };
   url: string;
   token: string;
 }

@@ -4,7 +4,7 @@ import { db, schema } from "~/server/db";
 import { env } from "~/env";
 import { sendResetPasswordEmail } from "~/server/email/utils/send-password-reset-email";
 import { sendVerificationEmail } from "~/server/email/utils/send-verification-email";
-import { lastLoginMethod } from "better-auth/plugins";
+import { lastLoginMethod, twoFactor } from "better-auth/plugins";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -35,5 +35,14 @@ export const auth = betterAuth({
       clientSecret: env.GOOGLE_CLIENT_SECRET,
     },
   },
-  plugins: [lastLoginMethod()],
+  plugins: [
+    lastLoginMethod(),
+    // Enable Time-based One-Time Password (TOTP) two-factor authentication
+    // Issuer is used by authenticator apps to label the account
+    twoFactor({
+      issuer: "JARVIS",
+      // digits: 6, // default
+      // period: 30, // default
+    }),
+  ],
 });
