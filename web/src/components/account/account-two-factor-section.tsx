@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import * as QRCode from "qrcode";
+import { toDataURL } from "qrcode";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -84,12 +84,11 @@ export function AccountTwoFactorSection() {
       // Generate QR code
       let dataUrl: string | null = null;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        dataUrl = (await QRCode.toDataURL(totpURI, {
+        dataUrl = await toDataURL(totpURI, {
           margin: 1,
           width: 192,
           errorCorrectionLevel: "M",
-        })) as unknown as string;
+        });
       } catch (err) {
         console.error("Failed to generate QR code", err);
       }

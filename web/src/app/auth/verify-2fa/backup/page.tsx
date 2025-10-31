@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Verify2FABackupForm } from "~/components/auth/verify-2fa-backup-form";
 
 export default function Verify2FABackupPage() {
@@ -12,7 +13,11 @@ export default function Verify2FABackupPage() {
           Enter one of your backup codes to continue.
         </p>
       </div>
-      <Verify2FABackupForm />
+      <Suspense
+        fallback={<div className="bg-muted h-32 animate-pulse rounded-lg" />}
+      >
+        <Verify2FABackupForm />
+      </Suspense>
       <p className="text-muted-foreground text-center text-sm">
         Have access to your authenticator app?{" "}
         <Link href="/auth/verify-2fa" className="underline underline-offset-4">

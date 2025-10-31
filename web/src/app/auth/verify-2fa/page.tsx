@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Verify2FAForm } from "~/components/auth/verify-2fa-form";
 
 export default function Verify2FAPage() {
@@ -12,7 +13,11 @@ export default function Verify2FAPage() {
           Enter the 6‑digit code from your authenticator app to continue.
         </p>
       </div>
-      <Verify2FAForm />
+      <Suspense
+        fallback={<div className="bg-muted h-32 animate-pulse rounded-lg" />}
+      >
+        <Verify2FAForm />
+      </Suspense>
       <p className="text-muted-foreground text-center text-sm">
         Can&apos;t access your app?{" "}
         <Link
