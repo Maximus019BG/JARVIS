@@ -104,3 +104,43 @@ service-account.json
 .cursor
 
 */.cursor
+
+# Build folder (CMake)
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Compiled binaries
+*.exe
+*.out
+*.o
+*.so
+*.a
+*.obj
+
+# Editor/IDE files
+*.swp
+*.swo
+*.vscode/
+.idea/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+
+# Mac OS files
+.DS_Store
+
+# Linux thumbnails
+*.directory
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Data files (optional, if you want to exclude large models)
+data/*.tflite
+data/*.bin
+data/*.h5
+data/*.pt
