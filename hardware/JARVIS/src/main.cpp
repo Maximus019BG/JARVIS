@@ -12,7 +12,14 @@
 #include <xf86drmMode.h>
 #include <gbm.h>
 #include <drm_fourcc.h>
+#include <drm.h>
+#include <drm_mode.h>
+#include <string>
+#include <vector>
+
 #include "lib/draw_ticker.h"
+#include "lib/http_client.h"
+#include "lib/renderer.h"
 
 static void fatal(const char *msg)
 {
@@ -138,69 +145,266 @@ int main()
     uint32_t width = mode.hdisplay;
     uint32_t height = mode.vdisplay;
 
-    // Use GBM to create a buffer object suitable for scanout and mapping
+    // Framebuffer setup: try GBM first; if it fails, fall back to DRM dumb buffer
+    bool use_gbm = true;
     struct gbm_device *gbm = gbm_create_device(fd);
+    struct gbm_bo *bo = nullptr;
+    uint32_t fb_id = 0;
+
+    // Dumb buffer state
+    uint32_t dumb_handle = 0;
+    uint32_t dumb_pitch = 0;
+    uint64_t dumb_size = 0;
+    void *dumb_map = nullptr;
+
     if (!gbm)
     {
-        std::cerr << "gbm_create_device failed\n";
-        return 1;
+        std::cerr << "gbm_create_device failed — attempting dumb buffer fallback\n";
+        use_gbm = false;
     }
 
-    struct gbm_bo *bo = gbm_bo_create(gbm, width, height, GBM_FORMAT_XRGB8888,
-                                      GBM_BO_USE_SCANOUT | GBM_BO_USE_WRITE);
-    if (!bo)
+    if (use_gbm)
     {
-        std::cerr << "gbm_bo_create failed\n";
-        gbm_device_destroy(gbm);
-        return 1;
+        bo = gbm_bo_create(gbm, width, height, GBM_FORMAT_XRGB8888,
+                           GBM_BO_USE_SCANOUT | GBM_BO_USE_WRITE);
+        if (!bo)
+        {
+            std::cerr << "gbm_bo_create failed — attempting dumb buffer fallback\n";
+            use_gbm = false;
+        }
     }
 
-    uint32_t fb_id = 0;
-    uint32_t handle = gbm_bo_get_handle(bo).u32;
-    uint32_t pitch = gbm_bo_get_stride(bo);
-
-    uint32_t handles[4] = {handle, 0, 0, 0};
-    uint32_t pitches[4] = {pitch, 0, 0, 0};
-    uint32_t offsets[4] = {0, 0, 0, 0};
-
-    if (drmModeAddFB2(fd, width, height, DRM_FORMAT_XRGB8888, handles, pitches, offsets, &fb_id, 0))
+    if (use_gbm)
     {
-        std::cerr << "drmModeAddFB2 failed: " << strerror(errno) << "\n";
-        gbm_bo_destroy(bo);
-        gbm_device_destroy(gbm);
-        return 1;
+        uint32_t handle = gbm_bo_get_handle(bo).u32;
+        uint32_t pitch = gbm_bo_get_stride(bo);
+        uint32_t handles[4] = {handle, 0, 0, 0};
+        uint32_t pitches[4] = {pitch, 0, 0, 0};
+        uint32_t offsets[4] = {0, 0, 0, 0};
+        if (drmModeAddFB2(fd, width, height, DRM_FORMAT_XRGB8888, handles, pitches, offsets, &fb_id, 0))
+        {
+            std::cerr << "drmModeAddFB2 failed — attempting dumb buffer fallback: " << strerror(errno) << "\n";
+            gbm_bo_destroy(bo);
+            bo = nullptr;
+            gbm_device_destroy(gbm);
+            gbm = nullptr;
+            use_gbm = false;
+        }
     }
 
-    // Use the draw_ticker library to animate a line from point A to point B.
-    // Configure these values as needed.
-    int start_x = 1358;
-    int start_y = 987;
-    int end_x = 2448;
-    int end_y = 1087;
-    uint32_t color = 0x00FF0000; // red
-    int thickness = 50;
-    int duration_seconds = 1;
-    int fps = 30;
+    if (!use_gbm)
+    {
+        // Create a dumb buffer
+        struct drm_mode_create_dumb creq = {};
+        creq.width = width;
+        creq.height = height;
+        creq.bpp = 32; // XRGB8888
+        if (ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) < 0)
+        {
+            std::cerr << "DRM_IOCTL_MODE_CREATE_DUMB failed: " << strerror(errno) << "\n";
+            // Cleanup resources allocated earlier
+            if (conn)
+                drmModeFreeConnector(conn);
+            if (res)
+                drmModeFreeResources(res);
+            if (old_crtc)
+                drmModeFreeCrtc(old_crtc);
+            close(fd);
+            return 1;
+        }
+        dumb_handle = creq.handle;
+        dumb_pitch = creq.pitch;
+        dumb_size = creq.size;
 
-    draw_ticker::build_line(fd, bo, fb_id, crtc_id, conn_id, mode,
-                            start_x, start_y, end_x, end_y,
-                            color, thickness, duration_seconds, fps,
-                            true /* clear background each frame */);
+        if (drmModeAddFB(fd, width, height, 24, 32, dumb_pitch, dumb_handle, &fb_id))
+        {
+            std::cerr << "drmModeAddFB (dumb) failed: " << strerror(errno) << "\n";
+            struct drm_mode_destroy_dumb dreq = {};
+            dreq.handle = dumb_handle;
+            ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
+            if (conn)
+                drmModeFreeConnector(conn);
+            if (res)
+                drmModeFreeResources(res);
+            if (old_crtc)
+                drmModeFreeCrtc(old_crtc);
+            close(fd);
+            return 1;
+        }
 
-    int start_x_2 = 200;
-    int start_y_2 = 1400;
-    int end_x_2 = 47;
-    int end_y_2 = 23;
-    uint32_t color_2 = 0x0000FF00; // dark green
-    int thickness_2 = 25;
-    int duration_seconds_2 = 2;
-    int fps_2 = 30;
+        struct drm_mode_map_dumb mreq = {};
+        mreq.handle = dumb_handle;
+        if (ioctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &mreq) < 0)
+        {
+            std::cerr << "DRM_IOCTL_MODE_MAP_DUMB failed: " << strerror(errno) << "\n";
+            drmModeRmFB(fd, fb_id);
+            struct drm_mode_destroy_dumb dreq = {};
+            dreq.handle = dumb_handle;
+            ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
+            if (conn)
+                drmModeFreeConnector(conn);
+            if (res)
+                drmModeFreeResources(res);
+            if (old_crtc)
+                drmModeFreeCrtc(old_crtc);
+            close(fd);
+            return 1;
+        }
+        dumb_map = mmap(0, dumb_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mreq.offset);
+        if (dumb_map == MAP_FAILED)
+        {
+            std::cerr << "mmap dumb buffer failed: " << strerror(errno) << "\n";
+            drmModeRmFB(fd, fb_id);
+            struct drm_mode_destroy_dumb dreq = {};
+            dreq.handle = dumb_handle;
+            ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
+            if (conn)
+                drmModeFreeConnector(conn);
+            if (res)
+                drmModeFreeResources(res);
+            if (old_crtc)
+                drmModeFreeCrtc(old_crtc);
+            close(fd);
+            return 1;
+        }
+    }
 
-    // Draw a second line with different parameters
-    draw_ticker::build_line(fd, bo, fb_id, crtc_id, conn_id, mode,
-                            start_x_2, start_y_2, end_x_2, end_y_2,
-                            color_2, thickness_2, duration_seconds_2, fps_2,
-                            false /* preserve previous drawing */);
+    // ---- Realtime dots from server loop ----
+    // Try to load .env if JARVIS_SERVER is not present in the process env.
+    auto trim_ws = [](const std::string &s)
+    {
+        size_t a = s.find_first_not_of(" \t\r\n");
+        if (a == std::string::npos)
+            return std::string();
+        size_t b = s.find_last_not_of(" \t\r\n");
+        return s.substr(a, b - a + 1);
+    };
+
+    if (const char *existing = std::getenv("JARVIS_SERVER"); !(existing && *existing))
+    {
+        // Candidate .env paths: CWD/.env, parent/.env, alongside executable and its parent
+        std::vector<std::string> candidates;
+        candidates.emplace_back(".env");
+        candidates.emplace_back("../.env");
+        // derive from /proc/self/exe
+        char exe_path[4096] = {0};
+        ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (n > 0)
+        {
+            std::string exe(exe_path, static_cast<size_t>(n));
+            auto last_slash = exe.find_last_of('/');
+            std::string exe_dir = last_slash == std::string::npos ? std::string(".") : exe.substr(0, last_slash);
+            candidates.push_back(exe_dir + "/.env");
+            // parent of exe_dir
+            auto last2 = exe_dir.find_last_of('/');
+            std::string exe_parent = last2 == std::string::npos ? std::string(".") : exe_dir.substr(0, last2);
+            candidates.push_back(exe_parent + "/.env");
+        }
+
+        for (const auto &p : candidates)
+        {
+            FILE *f = std::fopen(p.c_str(), "r");
+            if (!f)
+                continue;
+            char line[4096];
+            while (std::fgets(line, sizeof(line), f))
+            {
+                std::string s(line);
+                s = trim_ws(s);
+                if (s.empty() || s[0] == '#')
+                    continue;
+                auto eq = s.find('=');
+                if (eq == std::string::npos)
+                    continue;
+                std::string key = trim_ws(s.substr(0, eq));
+                std::string val = trim_ws(s.substr(eq + 1));
+                if (!key.empty())
+                {
+                    // do not override if already set in process env
+                    if (!std::getenv(key.c_str()))
+                    {
+                        setenv(key.c_str(), val.c_str(), 0);
+                    }
+                }
+            }
+            std::fclose(f);
+            // Stop after first readable .env
+            break;
+        }
+    }
+
+    // Endpoint selection (env or defaults): prefer single JARVIS_SERVER like
+    //   http://127.0.0.1:8080/dots
+    //   127.0.0.1:8080/dots
+    //   127.0.0.1 (defaults to port=8080, path=/dots)
+    std::string host = "127.0.0.1";
+    uint16_t port = 8080;
+    std::string path = "/dots";
+
+    if (const char *env_server = std::getenv("JARVIS_SERVER"); env_server && *env_server)
+    {
+        std::string url = trim_ws(env_server);
+        // strip scheme if present
+        auto pos_scheme = url.find("://");
+        if (pos_scheme != std::string::npos)
+            url = url.substr(pos_scheme + 3);
+        // split host[:port] and path
+        std::string hostport = url;
+        std::string new_path;
+        auto slash = url.find('/');
+        if (slash != std::string::npos)
+        {
+            hostport = url.substr(0, slash);
+            new_path = url.substr(slash);
+        }
+        // parse host and optional port
+        auto colon = hostport.rfind(':');
+        if (colon != std::string::npos)
+        {
+            host = hostport.substr(0, colon);
+            std::string port_str = hostport.substr(colon + 1);
+            int p = std::atoi(port_str.c_str());
+            if (p > 0 && p < 65536)
+                port = static_cast<uint16_t>(p);
+        }
+        else
+        {
+            host = hostport;
+        }
+        if (!new_path.empty())
+            path = new_path;
+        if (path.empty() || path[0] != '/')
+            path = "/" + path;
+    }
+
+    std::cerr << "Polling server http://" << host << ":" << port << path << " for lines.\n";
+    std::cerr << "Press Enter to render a frame, or type 'stop' to exit.\n";
+
+    while (true)
+    {
+        std::string line;
+        std::getline(std::cin, line);
+
+        if (line.empty())
+        {
+            // User pressed Enter; fetch and render
+            bool ok = renderer::render_frame(host, port, path, use_gbm, bo, dumb_map, dumb_pitch, width, height);
+            if (ok)
+            {
+                if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode))
+                {
+                    std::cerr << "drmModeSetCrtc failed during render: " << strerror(errno) << "\n";
+                    break;
+                }
+            }
+        }
+        else if (line == "stop")
+        {
+            // User typed "stop"; exit the loop
+            break;
+        }
+        // Ignore any other input (no message printed)
+    }
 
     // restore old crtc if present
     if (old_crtc)
@@ -211,8 +415,21 @@ int main()
 
     // cleanup
     drmModeRmFB(fd, fb_id);
-    gbm_bo_destroy(bo);
-    gbm_device_destroy(gbm);
+    if (use_gbm)
+    {
+        if (bo)
+            gbm_bo_destroy(bo);
+        if (gbm)
+            gbm_device_destroy(gbm);
+    }
+    else
+    {
+        if (dumb_map && dumb_map != MAP_FAILED)
+            munmap(dumb_map, dumb_size);
+        struct drm_mode_destroy_dumb dreq = {};
+        dreq.handle = dumb_handle;
+        ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
+    }
     drmModeFreeConnector(conn);
     drmModeFreeResources(res);
     close(fd);

@@ -7,7 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_executable(JARVIS src/main.cpp)
 # add lib sources
-target_sources(JARVIS PRIVATE src/lib/draw_ticker.cpp)
+target_sources(JARVIS PRIVATE src/lib/draw_ticker.cpp
+                        src/lib/http_client.cpp 
+                        src/lib/renderer.cpp)
 
 find_package(PkgConfig REQUIRED)
 
