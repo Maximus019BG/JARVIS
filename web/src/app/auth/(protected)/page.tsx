@@ -45,16 +45,16 @@ export default function AuthPage() {
     <>
       <div className="min-h-dvh min-w-dvw overflow-hidden shadow-2xl">
         <div className="grid min-h-dvh lg:grid-cols-2">
-          {/* Sliding overlay */}
+          {/* Sliding overlay - Hidden on mobile */}
           <div
-            className={`bg-primary absolute top-0 left-0 z-10 h-full w-1/2 transition-transform duration-700 ease-in-out ${isSignUp ? "translate-x-full" : "translate-x-0"}`}
+            className={`bg-primary absolute top-0 left-0 z-10 hidden h-full w-1/2 transition-transform duration-700 ease-in-out lg:block ${isSignUp ? "translate-x-full" : "translate-x-0"}`}
           >
-            <div className="text-primary-foreground flex h-full flex-col items-center justify-center p-12 text-center">
-              <div className="max-w-md space-y-8">
-                <div className="space-y-6">
-                  <div className="bg-primary-foreground/10 mx-auto flex h-24 w-24 items-center justify-center rounded-full backdrop-blur-sm">
+            <div className="text-primary-foreground flex h-full flex-col items-center justify-center p-6 text-center lg:p-12">
+              <div className="max-w-md space-y-6 lg:space-y-8">
+                <div className="space-y-4 lg:space-y-6">
+                  <div className="bg-primary-foreground/10 mx-auto flex h-16 w-16 items-center justify-center rounded-full backdrop-blur-sm lg:h-24 lg:w-24">
                     <svg
-                      className="h-12 w-12 animate-pulse"
+                      className="h-8 w-8 animate-pulse lg:h-12 lg:w-12"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -67,18 +67,18 @@ export default function AuthPage() {
                       />
                     </svg>
                   </div>
-                  <h2 className="text-4xl leading-tight font-bold">
+                  <h2 className="text-2xl leading-tight font-bold lg:text-4xl">
                     {isSignUp ? "Welcome!" : "Welcome Back!"}
                   </h2>
-                  <p className="text-lg opacity-90">
+                  <p className="text-base opacity-90 lg:text-lg">
                     {isSignUp
                       ? "Start your journey with us today"
                       : "We're glad to see you again"}
                   </p>
                 </div>
 
-                <div className="border-primary-foreground/20 space-y-6 border-t pt-8">
-                  <blockquote className="text-xl leading-relaxed font-medium italic transition-opacity duration-500">
+                <div className="border-primary-foreground/20 space-y-4 border-t pt-6 lg:space-y-6 lg:pt-8">
+                  <blockquote className="text-lg leading-relaxed font-medium italic transition-opacity duration-500 lg:text-xl">
                     &ldquo;{currentQuote?.text}&rdquo;
                   </blockquote>
                   <p className="text-sm opacity-75">— {currentQuote?.author}</p>
@@ -89,12 +89,12 @@ export default function AuthPage() {
 
           {/* Sign-up form */}
           <div
-            className={`bg-card z-20 flex items-center justify-center p-8 transition-all duration-700 lg:p-12 ${isSignUp ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"} `}
+            className={`bg-card z-20 flex items-center justify-center p-4 transition-all duration-700 sm:p-6 lg:p-12 ${isSignUp ? "translate-x-0 opacity-100" : "lg:-translate-x-full lg:opacity-0"} ${!isSignUp ? "hidden lg:flex" : ""}`}
           >
             <div className="w-full max-w-md">
               <Card className="border-0 shadow-none">
                 <CardHeader className="space-y-2 text-center">
-                  <CardTitle className="text-3xl font-bold">
+                  <CardTitle className="text-2xl font-bold sm:text-3xl">
                     Create your account
                   </CardTitle>
                   <p className="text-muted-foreground text-sm">
@@ -110,12 +110,12 @@ export default function AuthPage() {
 
           {/* Sign-in form */}
           <div
-            className={`bg-card z-20 flex items-center justify-center p-8 transition-all duration-700 lg:p-12 ${isSignUp ? "translate-x-full opacity-0" : "translate-x-0 opacity-100"} `}
+            className={`bg-card z-20 flex items-center justify-center p-4 transition-all duration-700 sm:p-6 lg:p-12 ${isSignUp ? "lg:translate-x-full lg:opacity-0" : "translate-x-0 opacity-100"} ${isSignUp ? "hidden lg:flex" : ""}`}
           >
             <div className="w-full max-w-md">
               <Card className="border-0 shadow-none">
                 <CardHeader className="space-y-2 text-center">
-                  <CardTitle className="text-3xl font-bold">
+                  <CardTitle className="text-2xl font-bold sm:text-3xl">
                     Welcome back
                   </CardTitle>
                   <p className="text-muted-foreground text-sm">

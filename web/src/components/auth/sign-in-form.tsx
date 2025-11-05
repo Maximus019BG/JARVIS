@@ -85,7 +85,9 @@ export function SignInForm({
           // The twoFactorClient plugin will handle 2FA redirect automatically
           // If no 2FA, user will be redirected by Better Auth
           console.log("Sign-in successful, redirecting to:", redirectUrl);
+          setIsLoading(false);
           router.push(redirectUrl);
+          router.refresh();
         },
         onError: (ctx) => {
           console.log("Sign-in error details:", ctx.error);
@@ -106,8 +108,10 @@ export function SignInForm({
             } catch (e) {
               console.error("Failed to store 2FA token:", e);
             }
+            setIsLoading(false);
+            // Navigate to verify-2fa - parallel route will intercept and show as modal
             router.push(
-              `/auth/verify-2fa?redirect_url=${encodeURIComponent(redirectUrl)}&${redirectSearchParams}`,
+              `/auth/verify-2fa?redirect_url=${encodeURIComponent(redirectUrl)}`,
             );
             return;
           }
