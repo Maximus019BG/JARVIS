@@ -1,6 +1,8 @@
 import { Heading, Hr, Link, Section, Text } from "@react-email/components";
 import { EmailLayout } from "~/emails/components/email-layout";
 import { EmailButton } from "./components/email-button";
+import SecurityNotice from "~/emails/components/email-security-notice";
+import RequestInfo from "~/emails/components/email-request-info";
 
 interface Props {
   name: string;
@@ -10,7 +12,6 @@ interface Props {
   requestedAt: string;
 }
 
-// TODO: Extract common components
 export default function PasswordResetEmail({
   name = "John Doe",
   resetUrl = "https://example.com/",
@@ -30,44 +31,29 @@ export default function PasswordResetEmail({
             Hi <span className="font-bold">{name}</span>,
           </Text>
           <Text className="mt-0 text-base">
-            We received a request to reset your password! You can use
-            the following link to reset your password.
+            We received a request to reset your password. You can use the button
+            below to securely create a new one.
           </Text>
         </Section>
 
         <Section className="mb-6 text-center">
           <EmailButton href={resetUrl}>Reset password</EmailButton>
         </Section>
-
-        <Section className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-6">
-          <Text className="mb-2 text-sm font-medium text-amber-800">
-            ⚠️ Important security notice
-          </Text>
-          <Text className="text-sm leading-5 text-amber-700">
-            This verification link will expire in{" "}
-            <span className="font-bold">{expiresIn}</span>. For security
-            reasons, please don&apos;t share this link with anyone.
-          </Text>
-        </Section>
+        
+        <SecurityNotice expiresIn={expiresIn} />
 
         <Text className="text-muted-foreground mb-4 text-base">
-          If you&apos;re having trouble with the above button,{" "}
+          Having trouble with the button?{" "}
           <Link href={resetUrl} className="underline">
-            click here
-          </Link>
+            Click here
+          </Link>{" "}
+          to reset your password.
         </Text>
 
         <Hr className="my-6 border" />
 
-        <Text className="mb-1 text-base font-bold">
-          Didn&apos;t request this?
-        </Text>
-        <Text className="mt-0 text-base">
-          This request was made from{" "}
-          <span className="font-bold">{requestedFrom}</span>
-          at <span className="font-bold">{requestedAt}</span>. If didn&apos;t
-          make this request, you can safely ignore this email.
-        </Text>
+  
+        <RequestInfo requestedFrom={requestedFrom} requestedAt={requestedAt} />
       </Section>
     </EmailLayout>
   );

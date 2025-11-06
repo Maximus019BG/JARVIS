@@ -16,7 +16,6 @@ interface EmailLayoutProps {
   children: React.ReactNode;
 }
 
-//TODO: Use different colors
 export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
   <Html>
     <Tailwind
@@ -43,24 +42,32 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
               xl: "0.875rem",
             },
             colors: {
-              background: "#ffffff",
-              foreground: "#0a0a0a",
-              card: "#ffffff",
-              "card-foreground": "#0a0a0a",
-              popover: "#ffffff",
-              "popover-foreground": "#0a0a0a",
-              primary: "#171717",
-              "primary-foreground": "#fafafa",
-              secondary: "#f5f5f5",
-              "secondary-foreground": "#171717",
-              muted: "#f5f5f5",
-              "muted-foreground": "#737373",
-              accent: "#f5f5f5",
-              "accent-foreground": "#171717",
-              destructive: "#e7000b",
-              border: "#e5e5e5",
-              input: "#e5e5e5",
-              ring: "#a1a1a1",
+              background: "oklch(0.145 0 0)", // dark
+              foreground: "oklch(0.985 0 0)",
+              card: "oklch(0.205 0 0)",
+              "card-foreground": "oklch(0.985 0 0)",
+              popover: "oklch(0.205 0 0)",
+              "popover-foreground": "oklch(0.985 0 0)",
+              primary: "oklch(0.5506 0.1038 174.82)",
+              "primary-foreground": "oklch(0.205 0 0)",
+              secondary: "oklch(0.269 0 0)",
+              "secondary-foreground": "oklch(0.985 0 0)",
+              muted: "oklch(0.269 0 0)",
+              "muted-foreground": "oklch(0.708 0 0)",
+              accent: "oklch(0.269 0 0)",
+              "accent-foreground": "oklch(0.985 0 0)",
+              destructive: "oklch(0.704 0.191 22.216)",
+              border: "oklch(1 0 0 / 10%)",
+              input: "oklch(1 0 0 / 15%)",
+              ring: "oklch(0.556 0 0)",
+              sidebar: "oklch(0.205 0 0)",
+              "sidebar-foreground": "oklch(0.985 0 0)",
+              "sidebar-primary": "oklch(0.488 0.243 264.376)",
+              "sidebar-primary-foreground": "oklch(0.985 0 0)",
+              "sidebar-accent": "oklch(0.269 0 0)",
+              "sidebar-accent-foreground": "oklch(0.985 0 0)",
+              "sidebar-border": "oklch(1 0 0 / 10%)",
+              "sidebar-ring": "oklch(0.556 0 0)",
             },
           },
         },
@@ -69,7 +76,7 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
       <Head />
       <Preview>{preview}</Preview>
       <Body className="bg-muted p-2">
-        <Container className="bg-background mx-auto max-w-xl rounded-xl px-6 py-12">
+        <Container className="bg-background mx-auto max-w-xl rounded-xl px-6 py-12 text-foreground">
           <Section>
             <Img
               src="https://placehold.co/1000x200.jpg"
@@ -77,7 +84,7 @@ export const EmailLayout = ({ preview, children }: EmailLayoutProps) => (
               className="mx-auto h-12"
             />
           </Section>
-          <Hr className="my-6 border" />
+          <Hr className="my-6 border border-border" />
           {children}
         </Container>
       </Body>

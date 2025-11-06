@@ -1,6 +1,8 @@
 import { Heading, Hr, Link, Section, Text } from "@react-email/components";
 import { EmailButton } from "~/emails/components/email-button";
 import { EmailLayout } from "~/emails/components/email-layout";
+import SecurityNotice from "~/emails/components/email-security-notice"
+import RequestInfo from "~/emails/components/email-request-info"
 
 interface EmailVerificationProps {
   userName: string;
@@ -10,7 +12,6 @@ interface EmailVerificationProps {
   requestedAt: string;
 }
 
-//TODO: Extract common components
 export default function EmailVerification({
   userName = "John Doe",
   verificationUrl = "https://example.com/",
@@ -19,10 +20,10 @@ export default function EmailVerification({
   requestedAt = "1 January 1970, 00:00 UTC",
 }: EmailVerificationProps) {
   return (
-    <EmailLayout preview="Use the following link to verify your email address to JARVIS">
+    <EmailLayout preview="Confirm your email address to finish setting up your JARVIS account">
       <Section className="px-2">
         <Heading as="h2" className="text-2xl font-bold">
-          Verify your email address
+          Confirm your email address
         </Heading>
 
         <Section className="mb-6">
@@ -30,49 +31,32 @@ export default function EmailVerification({
             Hi <span className="font-bold">{userName}</span>,
           </Text>
           <Text className="mt-0 text-base">
-            Thank you for signing up for{" "}
-            <span className="font-bold">JARVIS</span>! To complete your
-            account setup and ensure the security of your account, please verify
-            your email address.
+            Welcome to <span className="font-bold">JARVIS</span>! Before we get
+            started, please confirm your email address to activate your account
+            and keep your information secure.
           </Text>
         </Section>
 
         <Section className="mb-6 text-center">
-          <EmailButton href={verificationUrl}>
-            Verify your email address
-          </EmailButton>
+          <EmailButton href={verificationUrl}>Confirm my email</EmailButton>
         </Section>
 
-        <Section className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-6">
-          <Text className="mb-2 text-sm font-medium text-amber-800">
-            ⚠️ Important security notice
-          </Text>
-          <Text className="text-sm leading-5 text-amber-700">
-            This verification link will expire in{" "}
-            <span className="font-bold">{expiresIn}</span>. For security
-            reasons, please don&apos;t share this link with anyone.
-          </Text>
-        </Section>
+        <SecurityNotice expiresIn={expiresIn} />
 
         <Text className="text-muted-foreground mb-4 text-base">
-          If you&apos;re having trouble with the above button,{" "}
+          Having trouble with the button?{" "}
           <Link href={verificationUrl} className="underline">
-            click here
-          </Link>
-          .
+            Click here
+          </Link>{" "}
+          to verify your email.
         </Text>
 
         <Hr className="my-6 border" />
 
-        <Text className="mb-1 text-base font-bold">
-          Didn&apos;t request this?
-        </Text>
-        <Text className="mt-0 text-base">
-          This request was made from{" "}
-          <span className="font-bold">{requestedFrom}</span>
-          at <span className="font-bold">{requestedAt}</span>. If didn&apos;t
-          make this request, you can safely ignore this email.
-        </Text>
+        <RequestInfo
+          requestedFrom={requestedFrom}
+          requestedAt={requestedAt}
+        />
       </Section>
     </EmailLayout>
   );
