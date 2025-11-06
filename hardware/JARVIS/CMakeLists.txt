@@ -9,9 +9,11 @@ add_executable(JARVIS src/main.cpp)
 # add lib sources
 target_sources(JARVIS PRIVATE src/lib/draw_ticker.cpp
                         src/lib/http_client.cpp 
-                        src/lib/renderer.cpp)
+                        src/lib/renderer.cpp
+                        src/lib/crypto.cpp)
 
 find_package(PkgConfig REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # Prefer pkg-config, but fall back to manual find if pkg-config data is missing
 pkg_check_modules(GBM QUIET gbm)
@@ -46,11 +48,13 @@ endif()
 target_include_directories(JARVIS PRIVATE
     ${GBM_INCLUDE_DIRS}
     ${DRM_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
 )
 
 target_link_libraries(JARVIS PRIVATE
     ${GBM_LIBRARIES}
     ${DRM_LIBRARIES}
+    ${OPENSSL_LIBRARIES}
     m
 )
 

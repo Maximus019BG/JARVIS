@@ -12,7 +12,6 @@
 
 namespace renderer
 {
-
     static uint32_t parse_hex_color(const std::string &hex)
     {
         // Expect "#RRGGBB" or "RRGGBB"
@@ -40,6 +39,8 @@ namespace renderer
 
         if (!body.empty())
         {
+            // Test only
+            // std::cout << "Received response body: " << body << "\n";
             // Order-independent simple extraction: find each object and then pick fields inside it.
             try
             {

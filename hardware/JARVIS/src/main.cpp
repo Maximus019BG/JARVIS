@@ -20,6 +20,9 @@
 #include "lib/draw_ticker.h"
 #include "lib/http_client.h"
 #include "lib/renderer.h"
+#include "lib/crypto.h"
+
+#define JARVIS_BLUEPRINT_ID "TestBlueprint456"
 
 static void fatal(const char *msg)
 {
@@ -334,12 +337,23 @@ int main()
     }
 
     // Endpoint selection (env or defaults): prefer single JARVIS_SERVER like
-    //   http://127.0.0.1:8080/dots
-    //   127.0.0.1:8080/dots
-    //   127.0.0.1 (defaults to port=8080, path=/dots)
+    //   http://example.com/api/workstation/blueprint/load
+    // The client will append /[encrypted_workstation_id]/[encrypted_blueprint_id]
     std::string host = "127.0.0.1";
     uint16_t port = 8080;
     std::string path = "/dots";
+
+    // Read device ID from environment
+    std::string device_id = "TestDevice123"; // default fallback
+    if (const char *env_device_id = std::getenv("JARVIS_DEVICE_ID"); env_device_id && *env_device_id) {
+        device_id = trim_ws(env_device_id);
+    }
+
+    // Read secret for encryption
+    std::string secret;
+    if (const char *env_secret = std::getenv("JARVIS_SECRET"); env_secret && *env_secret) {
+        secret = trim_ws(env_secret);
+    }
 
     if (const char *env_server = std::getenv("JARVIS_SERVER"); env_server && *env_server)
     {
@@ -375,6 +389,20 @@ int main()
             path = new_path;
         if (path.empty() || path[0] != '/')
             path = "/" + path;
+
+        // Append encrypted IDs if secret is available
+        if (!secret.empty()) {
+            std::string enc_workstation = crypto::aes256_encrypt(device_id, secret);
+            std::string enc_blueprint = crypto::aes256_encrypt(JARVIS_BLUEPRINT_ID, secret);
+            if (!enc_workstation.empty() && !enc_blueprint.empty()) {
+                if (path.back() != '/') path += "/";
+                path += enc_workstation + "/" + enc_blueprint;
+            } else {
+                std::cerr << "Warning: encryption failed; using base path only.\n";
+            }
+        } else {
+            std::cerr << "Warning: JARVIS_SECRET not set; using base path only.\n";
+        }
     }
 
     std::cerr << "Polling server http://" << host << ":" << port << path << " for lines.\n";
