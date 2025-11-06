@@ -17,10 +17,10 @@
 #include <string>
 #include <vector>
 
-#include "lib/draw_ticker.h"
-#include "lib/http_client.h"
-#include "lib/renderer.h"
-#include "lib/crypto.h"
+#include "draw_ticker.hpp"
+#include "http_client.hpp"
+#include "renderer.hpp"
+#include "crypto.hpp"
 
 #define JARVIS_BLUEPRINT_ID "TestBlueprint456"
 

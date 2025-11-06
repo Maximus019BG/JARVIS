@@ -1,6 +1,6 @@
-#include "renderer.h"
-#include "http_client.h"
-#include "draw_ticker.h"
+#include "renderer.hpp"
+#include "http_client.hpp"
+#include "draw_ticker.hpp"
 
 #include <gbm.h>
 #include <iostream>

@@ -1,4 +1,4 @@
-#include "crypto.h"
+#include "crypto.hpp"
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>

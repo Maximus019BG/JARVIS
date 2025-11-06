@@ -1,4 +1,4 @@
-#include "draw_ticker.h"
+#include "draw_ticker.hpp"
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
