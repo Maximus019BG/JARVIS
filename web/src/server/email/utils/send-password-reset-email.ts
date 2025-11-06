@@ -19,8 +19,6 @@ interface sendResetPasswordEmailProps {
   token: string;
 }
 
-// TODO: Extract common date logic
-
 export async function sendResetPasswordEmail(
   { user, url, token }: sendResetPasswordEmailProps,
   request?: Request,
