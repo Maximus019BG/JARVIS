@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Suspense } from "react";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,9 @@ export default function Verify2FABackupModal() {
             Enter one of your backup codes to continue.
           </DialogDescription>
         </DialogHeader>
-        <Verify2FABackupForm />
+        <Suspense fallback={<div className="p-6 text-center">Loading…</div>}>
+          <Verify2FABackupForm />
+        </Suspense>
         <p className="text-muted-foreground text-center text-sm">
           Have access to your authenticator app?{" "}
           <Link
