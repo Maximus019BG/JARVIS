@@ -1,4 +1,3 @@
-// TODO: implement in JARVIS
 "use server";
 import { type NextRequest, NextResponse } from "next/server";
 import type { NotificationRequest } from "~/lib/validation/mobile/notifications";
