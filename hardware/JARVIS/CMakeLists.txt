@@ -86,6 +86,10 @@ add_library(jarvis_core STATIC
     src/draw_ticker.cpp
     src/http_client.cpp
     src/renderer.cpp
+    src/camera.cpp
+    src/hand_detector.cpp
+    src/hand_detector_config.cpp
+    src/hand_detector_simd.cpp
 )
 
 target_include_directories(jarvis_core
@@ -158,6 +162,7 @@ if(BUILD_TESTING)
     add_executable(jarvis_tests
         tests/test_crypto.cpp
         tests/test_http_client.cpp
+        tests/test_hand_detector.cpp
     )
     
     target_link_libraries(jarvis_tests

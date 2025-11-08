@@ -21,6 +21,8 @@
 #include "http_client.hpp"
 #include "renderer.hpp"
 #include "crypto.hpp"
+#include "camera.hpp"
+#include "hand_detector.hpp"
 
 #define JARVIS_BLUEPRINT_ID "TestBlueprint456"
 
@@ -406,7 +408,7 @@ int main()
     }
 
     std::cerr << "Polling server http://" << host << ":" << port << path << " for lines.\n";
-    std::cerr << "Press Enter to render a frame, or type 'stop' to exit.\n";
+    std::cerr << "Press Enter to render a frame, type 'hand' for hand recognition, or type 'stop' to exit.\n";
 
     while (true)
     {
@@ -425,6 +427,106 @@ int main()
                     break;
                 }
             }
+        }
+        else if (line == "hand")
+        {
+            // Hand recognition mode
+            std::cerr << "\n=== JARVIS Hand Recognition Mode ===\n";
+            std::cerr << "Initializing camera...\n";
+            
+            camera::Camera cam;
+            camera::CameraConfig cam_config;
+            cam_config.width = 640;
+            cam_config.height = 480;
+            cam_config.framerate = 30;
+            cam_config.verbose = true;
+            
+            if (!cam.init(cam_config)) {
+                std::cerr << "Failed to initialize camera: " << cam.get_error() << "\n";
+                std::cerr << "Make sure rpicam is installed and camera is connected.\n";
+                continue;
+            }
+            
+            if (!cam.start()) {
+                std::cerr << "Failed to start camera: " << cam.get_error() << "\n";
+                continue;
+            }
+            
+            std::cerr << "Camera started successfully.\n";
+            std::cerr << "Initializing hand detector...\n";
+            
+            hand_detector::DetectorConfig det_config;
+            det_config.verbose = true;
+            det_config.enable_gesture = true;
+            det_config.min_hand_area = 2000;
+            det_config.downscale_factor = 2; // Process at half resolution for speed
+            
+            hand_detector::HandDetector detector(det_config);
+            
+            std::cerr << "Hand detector initialized.\n";
+            std::cerr << "\nCommands (non-blocking):\n";
+            std::cerr << "  'c' - Calibrate (place hand in center)\n";
+            std::cerr << "  's' - Show stats\n";
+            std::cerr << "  'l' - Clear logs\n";
+            std::cerr << "  'q' - Quit hand mode\n";
+            std::cerr << "Logging detections live (no video output)...\n\n";
+            
+            // Set stdin to non-blocking
+            int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+            fcntl(STDIN_FILENO, F_SETFL, stdin_flags | O_NONBLOCK);
+
+            bool quit = false;
+            uint64_t frame_counter = 0;
+            while (!quit) {
+                camera::Frame* frame = cam.capture_frame();
+                if (!frame) {
+                    std::cerr << "Camera capture error: " << cam.get_error() << "\n";
+                    break;
+                }
+                auto detections = detector.detect(*frame);
+                frame_counter++;
+                std::cout << "[frame " << frame_counter << "] " << detections.size() << " hand(s)\n";
+                for (size_t i = 0; i < detections.size(); ++i) {
+                    const auto& hand = detections[i];
+                    std::string label = hand_detector::HandDetector::gesture_to_string(hand.gesture);
+                    if (hand.gesture == hand_detector::Gesture::OPEN_PALM) label = "Open Palm";
+                    else if (hand.gesture == hand_detector::Gesture::FIST) label = "Fist";
+                    else if (hand.gesture == hand_detector::Gesture::POINTING) label = "Pointing";
+                    else if (hand.gesture == hand_detector::Gesture::PEACE) label = "Two Fingers";
+                    else if (hand.gesture == hand_detector::Gesture::OK_SIGN) label = "OK";
+                    std::cout << "  - hand #" << (i+1)
+                              << ": gesture='" << label << "' fingers=" << hand.num_fingers
+                              << " center=(" << hand.center.x << "," << hand.center.y << ")"
+                              << " bbox=(x=" << hand.bbox.x << ",y=" << hand.bbox.y
+                              << ",w=" << hand.bbox.width << ",h=" << hand.bbox.height << ")"
+                              << " conf=" << (int)(hand.bbox.confidence * 100) << "%\n";
+                }
+                char buf[16];
+                ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+                if (n > 0) {
+                    for (ssize_t i = 0; i < n; ++i) {
+                        char c = buf[i];
+                        if (c == 'q' || c == 'Q') { quit = true; break; }
+                        if (c == 's' || c == 'S') {
+                            auto stats = detector.get_stats();
+                            std::cerr << "[stats] frames=" << stats.frames_processed
+                                      << " hands=" << stats.hands_detected
+                                      << " avgMs=" << stats.avg_process_time_ms << "\n";
+                        }
+                        if (c == 'c' || c == 'C') {
+                            int roi_x = (frame->width - 100)/2; int roi_y = (frame->height - 100)/2;
+                            if (detector.calibrate_skin(*frame, roi_x, roi_y, 100, 100))
+                                std::cerr << "[calibrate] ok\n"; else std::cerr << "[calibrate] failed\n";
+                        }
+                        if (c == 'l' || c == 'L') {
+                            std::cout << "\033[2J\033[H" << std::flush;
+                        }
+                    }
+                }
+            }
+            fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
+            cam.stop();
+            std::cerr << "Exited hand recognition mode.\n\n";
         }
         else if (line == "stop")
         {
