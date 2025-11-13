@@ -23,6 +23,7 @@ import {
   useListWorkstations,
   useActiveWorkstation,
   useSetActiveWorkstation,
+  useWorkstationAuthStatus,
 } from "~/lib/workstation-hooks";
 
 interface Props extends React.ComponentProps<typeof DropdownMenuContent> {
@@ -38,6 +39,7 @@ export function WorkstationSelectDropdownMenu({ children, ...props }: Props) {
     useListWorkstations();
   const { data: activeWorkstation } = useActiveWorkstation();
   const setActiveMutation = useSetActiveWorkstation();
+  const { isUnauthorized } = useWorkstationAuthStatus();
 
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
 
@@ -61,70 +63,86 @@ export function WorkstationSelectDropdownMenu({ children, ...props }: Props) {
           className="max-w-(--radix-dropdown-menu-trigger-width) min-w-64"
           {...props}
         >
-          {activeWorkstation && (
+          {/* If unauthorized, only show create workstation option */}
+          {isUnauthorized ? (
+            <AnimateIcon animateOnHover>
+              <DropdownMenuItem
+                className="text-accent-foreground cursor-pointer"
+                onClick={() => setCreateDialogOpen(true)}
+                disabled={isLoading || isWorkstationsPending}
+              >
+                <Plus />
+                Create workstation
+              </DropdownMenuItem>
+            </AnimateIcon>
+          ) : (
             <>
-              <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-                <WorkstationInfo
-                  image={activeWorkstation.logo}
-                  name={activeWorkstation.name}
-                />
-                <AnimateIcon animateOnHover>
-                  <DropdownMenuItem asChild disabled={isLoading}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-auto cursor-pointer gap-1 py-1 text-xs"
-                    >
-                      <Settings />
-                      Manage
-                    </Button>
-                  </DropdownMenuItem>
-                </AnimateIcon>
-              </div>
-              <DropdownMenuSeparator />
+              {activeWorkstation && (
+                <>
+                  <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+                    <WorkstationInfo
+                      image={activeWorkstation.logo}
+                      name={activeWorkstation.name}
+                    />
+                    <AnimateIcon animateOnHover>
+                      <DropdownMenuItem asChild disabled={isLoading}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-auto cursor-pointer gap-1 py-1 text-xs"
+                        >
+                          <Settings />
+                          Manage
+                        </Button>
+                      </DropdownMenuItem>
+                    </AnimateIcon>
+                  </div>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {isWorkstationsPending &&
+                Array.from({ length: 3 }).map((_, i) => (
+                  <React.Fragment key={i}>
+                    <DropdownMenuItem disabled={true}>
+                      <WorkstationInfoSkeleton
+                        hasRole={i === 0 && !activeWorkstation}
+                      />
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </React.Fragment>
+                ))}
+              {workstations?.map(
+                (workstation) =>
+                  workstation.id !== activeWorkstation?.id && (
+                    <div key={workstation.id}>
+                      <DropdownMenuItem
+                        className="group cursor-pointer justify-between"
+                        onClick={() => switchWorkstation(workstation.id)}
+                        disabled={isLoading}
+                      >
+                        <WorkstationInfo
+                          image={workstation.logo}
+                          name={workstation.name}
+                          className="text-accent-foreground"
+                        />
+                        <ArrowRight className="not-group-focus-visible:hidden" />
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </div>
+                  ),
+              )}
+              <AnimateIcon animateOnHover>
+                <DropdownMenuItem
+                  className="text-accent-foreground cursor-pointer"
+                  onClick={() => setCreateDialogOpen(true)}
+                  disabled={isLoading || isWorkstationsPending}
+                >
+                  <Plus />
+                  Create workstation
+                </DropdownMenuItem>
+              </AnimateIcon>
             </>
           )}
-          {isWorkstationsPending &&
-            Array.from({ length: 3 }).map((_, i) => (
-              <React.Fragment key={i}>
-                <DropdownMenuItem disabled={true}>
-                  <WorkstationInfoSkeleton
-                    hasRole={i === 0 && !activeWorkstation}
-                  />
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </React.Fragment>
-            ))}
-          {workstations?.map(
-            (workstation) =>
-              workstation.id !== activeWorkstation?.id && (
-                <div key={workstation.id}>
-                  <DropdownMenuItem
-                    className="group cursor-pointer justify-between"
-                    onClick={() => switchWorkstation(workstation.id)}
-                    disabled={isLoading}
-                  >
-                    <WorkstationInfo
-                      image={workstation.logo}
-                      name={workstation.name}
-                      className="text-accent-foreground"
-                    />
-                    <ArrowRight className="not-group-focus-visible:hidden" />
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </div>
-              ),
-          )}
-          <AnimateIcon animateOnHover>
-            <DropdownMenuItem
-              className="text-accent-foreground cursor-pointer"
-              onClick={() => setCreateDialogOpen(true)}
-              disabled={isLoading || isWorkstationsPending}
-            >
-              <Plus />
-              Create workstation
-            </DropdownMenuItem>
-          </AnimateIcon>
         </DropdownMenuContent>
       </DropdownMenu>
       <CreateWorkstationDialog

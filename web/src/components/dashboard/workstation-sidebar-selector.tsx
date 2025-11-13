@@ -9,7 +9,7 @@ import {
   SidebarMenuItem,
 } from "~/components/ui/sidebar";
 import { Skeleton } from "~/components/ui/skeleton";
-import { useActiveWorkstation } from "~/lib/workstation-hooks";
+import { useActiveWorkstation, useWorkstationAuthStatus } from "~/lib/workstation-hooks";
 
 export function WorkstationSidebarSelector() {
   const {
@@ -17,6 +17,10 @@ export function WorkstationSidebarSelector() {
     isPending,
     isRefetching,
   } = useActiveWorkstation();
+  const { isUnauthorized } = useWorkstationAuthStatus();
+
+  // Don't treat unauthorized as pending - it's a valid state where user can create
+  const isActuallyPending = isPending && !isUnauthorized;
 
   let body = activeWorkstation ? (
     <>
@@ -27,6 +31,15 @@ export function WorkstationSidebarSelector() {
       />
       <span className="truncate font-medium">{activeWorkstation.name}</span>
     </>
+  ) : isUnauthorized ? (
+    <>
+      <div className="size-6 rounded-sm bg-muted flex items-center justify-center">
+        <span className="text-xs font-medium text-muted-foreground">+</span>
+      </div>
+      <span className="text-muted-foreground text-xs">
+        Create a workstation
+      </span>
+    </>
   ) : (
     <>
       <Skeleton className="size-6 rounded-sm" />
@@ -36,7 +49,7 @@ export function WorkstationSidebarSelector() {
     </>
   );
 
-  if (isPending) {
+  if (isActuallyPending) {
     body = (
       <>
         <Skeleton className="size-6 rounded-sm" />
@@ -50,7 +63,7 @@ export function WorkstationSidebarSelector() {
       <SidebarMenuItem>
         <WorkstationSelectDropdownMenu align="start">
           <SidebarMenuButton
-            disabled={isPending || isRefetching}
+            disabled={isActuallyPending || (isRefetching && !isUnauthorized)}
             size="lg"
             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             variant="outline"
