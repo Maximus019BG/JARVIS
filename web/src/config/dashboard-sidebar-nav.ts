@@ -11,11 +11,11 @@ export const dashboardSidebarNav = [
     },
   },
   {
-    title: "Settings",
+    title: "Blueprints",
     icon: Settings,
-    href: "/app/settings",
+    href: "/app/blueprints",
     isActive: (href: string) => {
-      return href.startsWith("/app/settings");
+      return href.startsWith("/app/blueprints");
     },
   },
 ];
