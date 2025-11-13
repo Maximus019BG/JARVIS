@@ -22,7 +22,19 @@ export function useListWorkstations() {
       const { data } = await axios.get<Workstation[]>("/api/workstation/list");
       return data;
     },
+    retry: false, // Don't retry on 401 errors
   });
+}
+
+// Check if user is unauthorized to access workstations
+export function useWorkstationAuthStatus() {
+  const { error } = useListWorkstations();
+  
+  const isUnauthorized = error && 
+    axios.isAxiosError(error) && 
+    error.response?.status === 401;
+    
+  return { isUnauthorized };
 }
 
 // Get the active workstation
