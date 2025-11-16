@@ -19,17 +19,18 @@ namespace constants {
 // Configuration for hand detection
 struct DetectorConfig {
     // Skin detection parameters (HSV color space)
+    // Improved defaults for better hand detection across lighting conditions
     int hue_min{0};        // Minimum hue (0-179)
-    int hue_max{25};       // Maximum hue (0-179)
-    int sat_min{20};       // Minimum saturation (0-255)
-    int sat_max{200};      // Maximum saturation (0-255)
-    int val_min{40};       // Minimum value (0-255)
+    int hue_max{30};       // Maximum hue (0-179) - expanded from 25 for better coverage
+    int sat_min{15};       // Minimum saturation (0-255) - lowered from 20 for varied lighting
+    int sat_max{220};      // Maximum saturation (0-255) - increased from 200 for better range
+    int val_min{30};       // Minimum value (0-255) - lowered from 40 for darker conditions
     int val_max{255};      // Maximum value (0-255)
     
     // Detection parameters
     int min_hand_area{3000};    // Minimum contour area for hand
     int max_hand_area{150000};  // Maximum contour area for hand
-    float min_confidence{0.35f}; // Minimum detection confidence (lowered for better recall)
+    float min_confidence{0.32f}; // Minimum detection confidence (lowered from 0.35 for better recall)
     
     // Processing parameters
     bool enable_morphology{true}; // Apply morphological operations
