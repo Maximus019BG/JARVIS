@@ -23,6 +23,8 @@
 #include "crypto.hpp"
 #include "camera.hpp"
 #include "hand_detector.hpp"
+#include "hand_detector_production.hpp"
+#include "hand_detector_mediapipe.hpp"
 
 #define JARVIS_BLUEPRINT_ID "TestBlueprint456"
 
@@ -408,7 +410,8 @@ int main()
     }
 
     std::cerr << "Polling server http://" << host << ":" << port << path << " for lines.\n";
-    std::cerr << "Press Enter to render a frame, type 'hand' for hand recognition, or type 'stop' to exit.\n";
+    std::cerr << "Press Enter to render a frame, type 'hand' for classical CV hand detection,\n";
+    std::cerr << "'hand-prod' for production detector, or 'stop' to exit.\n";
 
     while (true)
     {
@@ -527,6 +530,174 @@ int main()
             fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
             cam.stop();
             std::cerr << "Exited hand recognition mode.\n\n";
+        }
+        else if (line == "hand-prod")
+        {
+            // Production hand recognition mode
+            std::cerr << "\n=== JARVIS Production Hand Recognition Mode ===\n";
+            std::cerr << "Initializing camera...\n";
+            
+            camera::Camera cam;
+            camera::CameraConfig cam_config;
+            cam_config.width = 640;
+            cam_config.height = 480;
+            cam_config.framerate = 30;
+            cam_config.verbose = true;
+            
+            if (!cam.init(cam_config)) {
+                std::cerr << "Failed to initialize camera: " << cam.get_error() << "\n";
+                std::cerr << "Make sure rpicam is installed and camera is connected.\n";
+                continue;
+            }
+            
+            if (!cam.start()) {
+                std::cerr << "Failed to start camera: " << cam.get_error() << "\n";
+                continue;
+            }
+            
+            std::cerr << "Camera started successfully.\n";
+            std::cerr << "Initializing production hand detector...\n";
+            
+            // Configure base detector
+            hand_detector::DetectorConfig det_config;
+            det_config.verbose = false; // Less verbose for production
+            det_config.enable_gesture = true;
+            det_config.min_hand_area = 2000;
+            det_config.downscale_factor = 2;
+            
+            // Configure production features
+            hand_detector::ProductionConfig prod_config;
+            prod_config.enable_tracking = true;
+            prod_config.adaptive_lighting = true;
+            prod_config.gesture_stabilization_frames = 10;
+            prod_config.tracking_history_frames = 5;
+            prod_config.filter_low_confidence = true;
+            prod_config.min_detection_quality = 0.5f;
+            prod_config.verbose = true;
+            
+            hand_detector::ProductionHandDetector detector(det_config, prod_config);
+            
+            std::cerr << "Production hand detector initialized.\n";
+            std::cerr << "Features enabled:\n";
+            std::cerr << "  - Multi-frame tracking\n";
+            std::cerr << "  - Adaptive lighting compensation\n";
+            std::cerr << "  - Gesture stabilization (10 frames)\n";
+            std::cerr << "  - Quality filtering\n";
+            std::cerr << "\nCommands (non-blocking):\n";
+            std::cerr << "  'c' - Manual calibrate (place hand in center)\n";
+            std::cerr << "  'a' - Auto-calibrate from current detection\n";
+            std::cerr << "  's' - Show stats\n";
+            std::cerr << "  'r' - Reset tracking\n";
+            std::cerr << "  'l' - Clear logs\n";
+            std::cerr << "  'q' - Quit production mode\n";
+            std::cerr << "Logging detections live (auto-calibration on first detection)...\n\n";
+            
+            // Set stdin to non-blocking
+            int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+            fcntl(STDIN_FILENO, F_SETFL, stdin_flags | O_NONBLOCK);
+
+            bool quit = false;
+            bool calibrated = false;
+            uint64_t frame_counter = 0;
+            
+            while (!quit) {
+                camera::Frame* frame = cam.capture_frame();
+                if (!frame) {
+                    std::cerr << "Camera capture error: " << cam.get_error() << "\n";
+                    break;
+                }
+                
+                auto detections = detector.detect(*frame);
+                frame_counter++;
+                
+                // Auto-calibrate on first good detection
+                if (!calibrated && !detections.empty() && 
+                    detections[0].bbox.confidence > 0.7f) {
+                    if (detector.auto_calibrate(*frame)) {
+                        std::cerr << "[AUTO-CALIBRATE] Successfully calibrated skin detection from hand\n";
+                        calibrated = true;
+                    }
+                }
+                
+                // Only log when detections occur or every 30 frames
+                if (!detections.empty() || frame_counter % 30 == 0) {
+                    std::cout << "[frame " << frame_counter << "] " << detections.size() << " hand(s)";
+                    if (detections.empty()) {
+                        std::cout << "\n";
+                    }
+                }
+                
+                for (size_t i = 0; i < detections.size(); ++i) {
+                    const auto& hand = detections[i];
+                    std::string label = hand_detector::HandDetector::gesture_to_string(hand.gesture);
+                    
+                    // Highlight main gestures
+                    if (hand.gesture == hand_detector::Gesture::OPEN_PALM) label = "OPEN PALM ✋";
+                    else if (hand.gesture == hand_detector::Gesture::FIST) label = "FIST ✊";
+                    else if (hand.gesture == hand_detector::Gesture::POINTING) label = "POINTING ☝";
+                    else if (hand.gesture == hand_detector::Gesture::PEACE) label = "PEACE ✌";
+                    else if (hand.gesture == hand_detector::Gesture::OK_SIGN) label = "OK 👌";
+                    
+                    std::cout << "\n  ➜ Hand #" << (i+1)
+                              << ": " << label
+                              << " | fingers=" << hand.num_fingers
+                              << " | conf=" << (int)(hand.bbox.confidence * 100) << "%"
+                              << " | pos=(" << hand.center.x << "," << hand.center.y << ")";
+                }
+                if (!detections.empty()) {
+                    std::cout << "\n";
+                }
+                
+                // Check for commands
+                char buf[16];
+                ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+                if (n > 0) {
+                    for (ssize_t i = 0; i < n; ++i) {
+                        char c = buf[i];
+                        if (c == 'q' || c == 'Q') { 
+                            quit = true; 
+                            break; 
+                        }
+                        if (c == 's' || c == 'S') {
+                            auto stats = detector.get_stats();
+                            std::cerr << "\n[STATS]\n";
+                            std::cerr << "  Frames processed: " << stats.frames_processed << "\n";
+                            std::cerr << "  Hands detected: " << stats.hands_detected << "\n";
+                            std::cerr << "  Avg time: " << stats.avg_process_time_ms << " ms\n";
+                            std::cerr << "  FPS: " << (1000.0 / stats.avg_process_time_ms) << "\n\n";
+                        }
+                        if (c == 'c' || c == 'C') {
+                            int roi_x = (frame->width - 100)/2; 
+                            int roi_y = (frame->height - 100)/2;
+                            if (detector.calibrate_skin(*frame, roi_x, roi_y, 100, 100)) {
+                                std::cerr << "[CALIBRATE] Manual calibration successful\n";
+                                calibrated = true;
+                            } else {
+                                std::cerr << "[CALIBRATE] Manual calibration failed\n";
+                            }
+                        }
+                        if (c == 'a' || c == 'A') {
+                            if (detector.auto_calibrate(*frame)) {
+                                std::cerr << "[AUTO-CALIBRATE] Calibration successful\n";
+                                calibrated = true;
+                            } else {
+                                std::cerr << "[AUTO-CALIBRATE] No hand detected for calibration\n";
+                            }
+                        }
+                        if (c == 'r' || c == 'R') {
+                            detector.reset_tracking();
+                            std::cerr << "[RESET] Tracking reset\n";
+                        }
+                        if (c == 'l' || c == 'L') {
+                            std::cout << "\033[2J\033[H" << std::flush;
+                        }
+                    }
+                }
+            }
+            
+            fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
+            cam.stop();
+            std::cerr << "Exited production hand recognition mode.\n\n";
         }
         else if (line == "stop")
         {
