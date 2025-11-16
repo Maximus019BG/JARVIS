@@ -144,3 +144,11 @@ data/*.tflite
 data/*.bin
 data/*.h5
 data/*.pt
+
+# C++ build artifacts
+**/build/
+**/_codeql_build_dir/
+_codeql_detected_source_root
+*.o
+*.a
+*.so
