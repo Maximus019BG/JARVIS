@@ -1,5 +1,0 @@
-if(EXISTS "/home/runner/work/JARVIS/JARVIS/hardware/JARVIS/_codeql_build_dir/jarvis_tests[1]_tests.cmake")
-  include("/home/runner/work/JARVIS/JARVIS/hardware/JARVIS/_codeql_build_dir/jarvis_tests[1]_tests.cmake")
-else()
-  add_test(jarvis_tests_NOT_BUILT jarvis_tests_NOT_BUILT)
-endif()
