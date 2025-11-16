@@ -25,6 +25,7 @@
 #include "hand_detector.hpp"
 #include "hand_detector_production.hpp"
 #include "hand_detector_mediapipe.hpp"
+#include "sketch_pad.hpp"
 
 #define JARVIS_BLUEPRINT_ID "TestBlueprint456"
 
@@ -410,8 +411,12 @@ int main()
     }
 
     std::cerr << "Polling server http://" << host << ":" << port << path << " for lines.\n";
-    std::cerr << "Press Enter to render a frame, type 'hand' for classical CV hand detection,\n";
-    std::cerr << "'hand-prod' for production detector, or 'stop' to exit.\n";
+    std::cerr << "Commands:\n";
+    std::cerr << "  <Enter>      - Render a frame\n";
+    std::cerr << "  hand         - Drawing mode (follow index finger)\n";
+    std::cerr << "  hand-prod    - Production hand detector (testing)\n";
+    std::cerr << "  load <name>  - Load a .jarvis sketch\n";
+    std::cerr << "  stop         - Exit\n";
 
     while (true)
     {
@@ -433,8 +438,19 @@ int main()
         }
         else if (line == "hand")
         {
-            // Hand recognition mode
-            std::cerr << "\n=== JARVIS Hand Recognition Mode ===\n";
+            // Drawing mode - follow index finger to draw
+            std::cerr << "\n=== JARVIS Drawing Mode ===\n";
+            
+            // Ask for sketch name
+            std::cout << "Enter sketch name: ";
+            std::cout.flush();
+            std::string sketch_name;
+            std::getline(std::cin, sketch_name);
+            
+            if (sketch_name.empty()) {
+                sketch_name = "untitled";
+            }
+            
             std::cerr << "Initializing camera...\n";
             
             camera::Camera cam;
@@ -442,7 +458,7 @@ int main()
             cam_config.width = 640;
             cam_config.height = 480;
             cam_config.framerate = 30;
-            cam_config.verbose = true;
+            cam_config.verbose = false;
             
             if (!cam.init(cam_config)) {
                 std::cerr << "Failed to initialize camera: " << cam.get_error() << "\n";
@@ -458,78 +474,140 @@ int main()
             std::cerr << "Camera started successfully.\n";
             std::cerr << "Initializing hand detector...\n";
             
+            // Use production detector for better accuracy
             hand_detector::DetectorConfig det_config;
-            det_config.verbose = true;
+            det_config.verbose = false;
             det_config.enable_gesture = true;
             det_config.min_hand_area = 2000;
-            det_config.downscale_factor = 2; // Process at half resolution for speed
+            det_config.downscale_factor = 2;
             
-            hand_detector::HandDetector detector(det_config);
+            hand_detector::ProductionConfig prod_config;
+            prod_config.enable_tracking = true;
+            prod_config.adaptive_lighting = true;
+            prod_config.gesture_stabilization_frames = 5; // Faster response for drawing
+            prod_config.verbose = false;
             
-            std::cerr << "Hand detector initialized.\n";
-            std::cerr << "\nCommands (non-blocking):\n";
-            std::cerr << "  'c' - Calibrate (place hand in center)\n";
-            std::cerr << "  's' - Show stats\n";
-            std::cerr << "  'l' - Clear logs\n";
-            std::cerr << "  'q' - Quit hand mode\n";
-            std::cerr << "Logging detections live (no video output)...\n\n";
+            hand_detector::ProductionHandDetector detector(det_config, prod_config);
+            
+            // Initialize sketch pad
+            sketch::SketchPad sketchpad(width, height);
+            sketchpad.init(sketch_name, width, height);
+            sketchpad.set_color(0x00FFFFFF); // White
+            sketchpad.set_thickness(5);
+            
+            std::cerr << "\n✏️  Drawing Mode Active\n";
+            std::cerr << "Sketch: '" << sketch_name << "'\n";
+            std::cerr << "\nInstructions:\n";
+            std::cerr << "  👉 Point with index finger to draw\n";
+            std::cerr << "  ✊ Make a fist to stop drawing\n";
+            std::cerr << "\nCommands:\n";
+            std::cerr << "  's' - Save sketch\n";
+            std::cerr << "  'c' - Clear sketch\n";
+            std::cerr << "  'i' - Show info\n";
+            std::cerr << "  'q' - Quit and save\n\n";
             
             // Set stdin to non-blocking
             int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
             fcntl(STDIN_FILENO, F_SETFL, stdin_flags | O_NONBLOCK);
 
             bool quit = false;
+            bool calibrated = false;
             uint64_t frame_counter = 0;
+            int render_every = 3; // Render every N frames for performance
+            
             while (!quit) {
                 camera::Frame* frame = cam.capture_frame();
                 if (!frame) {
                     std::cerr << "Camera capture error: " << cam.get_error() << "\n";
                     break;
                 }
+                
+                // Detect hands
                 auto detections = detector.detect(*frame);
                 frame_counter++;
-                std::cout << "[frame " << frame_counter << "] " << detections.size() << " hand(s)\n";
-                for (size_t i = 0; i < detections.size(); ++i) {
-                    const auto& hand = detections[i];
-                    std::string label = hand_detector::HandDetector::gesture_to_string(hand.gesture);
-                    if (hand.gesture == hand_detector::Gesture::OPEN_PALM) label = "Open Palm";
-                    else if (hand.gesture == hand_detector::Gesture::FIST) label = "Fist";
-                    else if (hand.gesture == hand_detector::Gesture::POINTING) label = "Pointing";
-                    else if (hand.gesture == hand_detector::Gesture::PEACE) label = "Two Fingers";
-                    else if (hand.gesture == hand_detector::Gesture::OK_SIGN) label = "OK";
-                    std::cout << "  - hand #" << (i+1)
-                              << ": gesture='" << label << "' fingers=" << hand.num_fingers
-                              << " center=(" << hand.center.x << "," << hand.center.y << ")"
-                              << " bbox=(x=" << hand.bbox.x << ",y=" << hand.bbox.y
-                              << ",w=" << hand.bbox.width << ",h=" << hand.bbox.height << ")"
-                              << " conf=" << (int)(hand.bbox.confidence * 100) << "%\n";
+                
+                // Auto-calibrate on first good detection
+                if (!calibrated && !detections.empty() && 
+                    detections[0].bbox.confidence > 0.7f) {
+                    if (detector.auto_calibrate(*frame)) {
+                        std::cerr << "✓ Auto-calibrated\n";
+                        calibrated = true;
+                    }
                 }
+                
+                // Update sketch with hand detections
+                bool is_drawing = sketchpad.update(detections);
+                
+                // Render to screen every N frames
+                if (frame_counter % render_every == 0) {
+                    void *map_data = nullptr;
+                    uint32_t map_stride = 0;
+                    
+                    if (use_gbm) {
+                        map_data = gbm_bo_map(bo, 0, 0, width, height, 
+                                             GBM_BO_TRANSFER_WRITE, &map_stride, &map_data);
+                    } else {
+                        map_stride = dumb_pitch;
+                        map_data = dumb_map;
+                    }
+                    
+                    if (map_data) {
+                        // Clear background
+                        draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
+                        
+                        // Render sketch
+                        sketchpad.render(map_data, map_stride, width, height);
+                        
+                        if (use_gbm) {
+                            gbm_bo_unmap(bo, map_data);
+                        }
+                        
+                        // Update display
+                        if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode)) {
+                            std::cerr << "drmModeSetCrtc failed\n";
+                        }
+                    }
+                }
+                
+                // Check for commands
                 char buf[16];
                 ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
                 if (n > 0) {
                     for (ssize_t i = 0; i < n; ++i) {
                         char c = buf[i];
-                        if (c == 'q' || c == 'Q') { quit = true; break; }
+                        if (c == 'q' || c == 'Q') {
+                            // Save and quit
+                            if (sketchpad.save(sketch_name)) {
+                                std::cerr << "\n✓ Sketch saved as '" << sketch_name << ".jarvis'\n";
+                            }
+                            quit = true;
+                            break;
+                        }
                         if (c == 's' || c == 'S') {
-                            auto stats = detector.get_stats();
-                            std::cerr << "[stats] frames=" << stats.frames_processed
-                                      << " hands=" << stats.hands_detected
-                                      << " avgMs=" << stats.avg_process_time_ms << "\n";
+                            if (sketchpad.save(sketch_name)) {
+                                std::cerr << "\n✓ Saved '" << sketch_name << ".jarvis'\n";
+                            } else {
+                                std::cerr << "\n✗ Failed to save\n";
+                            }
                         }
                         if (c == 'c' || c == 'C') {
-                            int roi_x = (frame->width - 100)/2; int roi_y = (frame->height - 100)/2;
-                            if (detector.calibrate_skin(*frame, roi_x, roi_y, 100, 100))
-                                std::cerr << "[calibrate] ok\n"; else std::cerr << "[calibrate] failed\n";
+                            sketchpad.clear();
+                            std::cerr << "\n✓ Sketch cleared\n";
                         }
-                        if (c == 'l' || c == 'L') {
-                            std::cout << "\033[2J\033[H" << std::flush;
+                        if (c == 'i' || c == 'I') {
+                            std::cerr << "\n📊 Sketch Info:\n";
+                            std::cerr << "  Name: " << sketch_name << "\n";
+                            std::cerr << "  Strokes: " << sketchpad.get_stroke_count() << "\n";
+                            std::cerr << "  Points: " << sketchpad.get_total_points() << "\n";
+                            std::cerr << "  Drawing: " << (is_drawing ? "Yes ✏️" : "No") << "\n\n";
                         }
                     }
                 }
             }
+            
             fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
             cam.stop();
-            std::cerr << "Exited hand recognition mode.\n\n";
+            std::cerr << "Exited drawing mode.\n\n";
         }
         else if (line == "hand-prod")
         {
@@ -698,6 +776,73 @@ int main()
             fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
             cam.stop();
             std::cerr << "Exited production hand recognition mode.\n\n";
+        }
+        else if (line.substr(0, 5) == "load ")
+        {
+            // Load sketch command
+            std::string sketch_name = line.substr(5);
+            
+            // Trim whitespace
+            sketch_name.erase(0, sketch_name.find_first_not_of(" \t"));
+            sketch_name.erase(sketch_name.find_last_not_of(" \t") + 1);
+            
+            if (sketch_name.empty()) {
+                std::cerr << "Usage: load <sketch_name>\n";
+                std::cerr << "Example: load my_drawing\n";
+                continue;
+            }
+            
+            std::cerr << "\n=== JARVIS Load Sketch Mode ===\n";
+            std::cerr << "Loading sketch: '" << sketch_name << "'\n";
+            
+            // Load sketch
+            sketch::SketchPad sketchpad(width, height);
+            if (!sketchpad.load(sketch_name)) {
+                std::cerr << "Failed to load sketch '" << sketch_name << ".jarvis'\n";
+                std::cerr << "Make sure the file exists in the current directory.\n";
+                continue;
+            }
+            
+            std::cerr << "✓ Sketch loaded successfully\n";
+            std::cerr << "  Strokes: " << sketchpad.get_stroke_count() << "\n";
+            std::cerr << "  Points: " << sketchpad.get_total_points() << "\n";
+            std::cerr << "\nRendering sketch...\n";
+            
+            // Render sketch to display
+            void *map_data = nullptr;
+            uint32_t map_stride = 0;
+            
+            if (use_gbm) {
+                map_data = gbm_bo_map(bo, 0, 0, width, height, 
+                                     GBM_BO_TRANSFER_WRITE, &map_stride, &map_data);
+            } else {
+                map_stride = dumb_pitch;
+                map_data = dumb_map;
+            }
+            
+            if (map_data) {
+                // Clear background
+                draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
+                
+                // Render sketch
+                sketchpad.render(map_data, map_stride, width, height);
+                
+                if (use_gbm) {
+                    gbm_bo_unmap(bo, map_data);
+                }
+                
+                // Update display
+                if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode)) {
+                    std::cerr << "drmModeSetCrtc failed\n";
+                } else {
+                    std::cerr << "✓ Sketch displayed on screen\n";
+                }
+            } else {
+                std::cerr << "Failed to map display buffer\n";
+            }
+            
+            std::cerr << "Press Enter to continue...\n";
+            std::getline(std::cin, line);
         }
         else if (line == "stop")
         {

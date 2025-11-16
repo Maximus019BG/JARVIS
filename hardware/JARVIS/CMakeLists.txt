@@ -92,6 +92,7 @@ add_library(jarvis_core STATIC
     src/hand_detector_simd.cpp
     src/hand_detector_production.cpp
     src/hand_detector_mediapipe.cpp
+    src/sketch_pad.cpp
 )
 
 target_include_directories(jarvis_core
@@ -166,6 +167,7 @@ if(BUILD_TESTING)
         tests/test_http_client.cpp
         tests/test_hand_detector.cpp
         tests/test_hand_detector_production.cpp
+        tests/test_sketch_pad.cpp
     )
     
     target_link_libraries(jarvis_tests
