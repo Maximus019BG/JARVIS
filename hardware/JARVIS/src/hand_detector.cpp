@@ -198,8 +198,8 @@ namespace hand_detector
         // Step 5: Analyze each contour
         stage_start = std::chrono::steady_clock::now();
 
-        // Only process top 3 largest contours to avoid wasting time on noise
-        const size_t max_contours_to_check = std::min(size_t(3), contours.size());
+        // Process up to 10 largest contours to detect multiple hands
+        const size_t max_contours_to_check = std::min(size_t(10), contours.size());
 
         for (size_t c = 0; c < max_contours_to_check; ++c)
         {
@@ -228,23 +228,23 @@ namespace hand_detector
             const float bbox_area = static_cast<float>(hand.bbox.area());
             const float solidity = bbox_area > 0 ? static_cast<float>(polygon_area) / bbox_area : 0.0f;
 
-            // Hand solidity typically 0.45-0.85 (stricter range to reduce false positives)
-            if (solidity < 0.45f || solidity > 0.85f)
+            // Hand solidity typically 0.35-0.90 (relaxed range to catch more hand poses and gestures)
+            if (solidity < 0.35f || solidity > 0.90f)
             {
                 if (config_.verbose)
                 {
-                    std::cerr << "[HandDetector] Rejected: solidity=" << solidity << " (expected 0.45-0.85)\n";
+                    std::cerr << "[HandDetector] Rejected: solidity=" << solidity << " (expected 0.35-0.90)\n";
                 }
                 continue;
             }
 
-            // Check aspect ratio is reasonable for a hand (not too elongated or square)
+            // Check aspect ratio is reasonable for a hand (relaxed to support more gestures)
             const float aspect_ratio = static_cast<float>(hand.bbox.width) / std::max(1, hand.bbox.height);
-            if (aspect_ratio < 0.3f || aspect_ratio > 3.0f)
+            if (aspect_ratio < 0.2f || aspect_ratio > 5.0f)
             {
                 if (config_.verbose)
                 {
-                    std::cerr << "[HandDetector] Rejected: aspect_ratio=" << aspect_ratio << " (expected 0.3-3.0)\n";
+                    std::cerr << "[HandDetector] Rejected: aspect_ratio=" << aspect_ratio << " (expected 0.2-5.0)\n";
                 }
                 continue;
             }
@@ -329,8 +329,8 @@ namespace hand_detector
                     new_track.avg_confidence = hand.bbox.confidence;
                     tracked_hands_.push_back(new_track);
 
-                    // Only output immediately if confidence is very high
-                    if (hand.bbox.confidence >= 0.85f)
+                    // Only output immediately if confidence is reasonable (lowered threshold)
+                    if (hand.bbox.confidence >= 0.60f)
                     {
                         detections.push_back(hand);
                     }
@@ -448,13 +448,13 @@ namespace hand_detector
         if (sample_count == 0)
             return false;
 
-        // Add some tolerance
-        config_.hue_min = std::max(0, h_min - 10);
-        config_.hue_max = std::min(179, h_max + 10);
-        config_.sat_min = std::max(0, s_min - 30);
-        config_.sat_max = std::min(255, s_max + 30);
-        config_.val_min = std::max(0, v_min - 30);
-        config_.val_max = std::min(255, v_max + 30);
+        // Add generous tolerance for varied lighting and skin tones
+        config_.hue_min = std::max(0, h_min - 15);      // Expanded from -10
+        config_.hue_max = std::min(179, h_max + 15);    // Expanded from +10
+        config_.sat_min = std::max(0, s_min - 40);      // Expanded from -30
+        config_.sat_max = std::min(255, s_max + 40);    // Expanded from +30
+        config_.val_min = std::max(0, v_min - 40);      // Expanded from -30
+        config_.val_max = std::min(255, v_max + 40);    // Expanded from +30
 
         if (config_.verbose)
         {

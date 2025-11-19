@@ -13,23 +13,23 @@ struct ProductionConfig {
     // Multi-frame tracking for stability
     bool enable_tracking{true};
     int tracking_history_frames{5};
-    float tracking_iou_threshold{0.3f};
+    float tracking_iou_threshold{0.25f}; // Lowered for better tracking across frames
     
     // Adaptive lighting compensation
     bool adaptive_lighting{true};
     float lighting_adaptation_rate{0.1f};
     
     // Gesture stabilization
-    int gesture_stabilization_frames{10};
-    float gesture_confidence_threshold{0.7f};
+    int gesture_stabilization_frames{7}; // Reduced for faster gesture response
+    float gesture_confidence_threshold{0.6f}; // Lowered to accept more gestures
     
     // Performance optimization
-    bool enable_roi_tracking{true}; // Only process region around last detection
-    int roi_expansion_pixels{50};
+    bool enable_roi_tracking{false}; // Disabled to scan full frame for all hands
+    int roi_expansion_pixels{80}; // Increased when ROI tracking is enabled
     
     // Quality filtering
     bool filter_low_confidence{true};
-    float min_detection_quality{0.5f};
+    float min_detection_quality{0.40f}; // Lowered to catch more valid detections
     
     bool verbose{false};
 };

@@ -11,12 +11,12 @@ ProductionHandDetector::ProductionHandDetector()
     reset_tracking();
     last_detection_roi_.valid = false;
     
-    // Initialize adaptive state with defaults
+    // Initialize adaptive state with expanded defaults for better skin tone coverage
     adaptive_state_.hue_min = 0;
-    adaptive_state_.hue_max = 30;
-    adaptive_state_.sat_min = 15;
-    adaptive_state_.sat_max = 220;
-    adaptive_state_.val_min = 30;
+    adaptive_state_.hue_max = 35;
+    adaptive_state_.sat_min = 10;
+    adaptive_state_.sat_max = 230;
+    adaptive_state_.val_min = 20;
     adaptive_state_.val_max = 255;
     adaptive_state_.brightness_avg = 128.0f;
     adaptive_state_.frames_processed = 0;

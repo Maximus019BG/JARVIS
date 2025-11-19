@@ -19,18 +19,18 @@ namespace constants {
 // Configuration for hand detection
 struct DetectorConfig {
     // Skin detection parameters (HSV color space)
-    // Improved defaults for better hand detection across lighting conditions
+    // Expanded defaults for better hand detection across diverse skin tones and lighting
     int hue_min{0};        // Minimum hue (0-179)
-    int hue_max{20};       // Maximum hue (0-179) - narrower range to reduce false positives
-    int sat_min{25};       // Minimum saturation (0-255) - raised to avoid pale backgrounds
-    int sat_max{200};      // Maximum saturation (0-255) - lowered to avoid orange objects
-    int val_min{40};       // Minimum value (0-255) - raised to avoid shadows
+    int hue_max{35};       // Maximum hue (0-179) - expanded to cover more skin tones
+    int sat_min{15};       // Minimum saturation (0-255) - lowered for pale skin and low light
+    int sat_max{230};      // Maximum saturation (0-255) - expanded for diverse skin tones
+    int val_min{20};       // Minimum value (0-255) - lowered to detect in darker conditions
     int val_max{255};      // Maximum value (0-255)
     
     // Detection parameters
-    int min_hand_area{3500};    // Minimum contour area for hand (raised to reduce noise)
-    int max_hand_area{120000};  // Maximum contour area for hand (lowered to avoid large false positives)
-    float min_confidence{0.50f}; // Minimum detection confidence (raised from 0.32 for better precision)
+    int min_hand_area{2000};    // Minimum contour area for hand (lowered to detect smaller/distant hands)
+    int max_hand_area{200000};  // Maximum contour area for hand (expanded to detect closer hands)
+    float min_confidence{0.35f}; // Minimum detection confidence (lowered for better recall)
     
     // Processing parameters
     bool enable_morphology{true}; // Apply morphological operations
@@ -52,9 +52,9 @@ struct DetectorConfig {
     
     // Temporal stability
     bool enable_tracking{true}; // Track hands frame-to-frame (ENABLED by default)
-    float tracking_iou_threshold{0.3f}; // IOU threshold for tracking
-    int temporal_filter_frames{3};  // Number of frames to confirm detection
-    float detection_persistence{0.7f}; // Persistence threshold for stable detection
+    float tracking_iou_threshold{0.25f}; // IOU threshold for tracking (lowered for better tracking)
+    int temporal_filter_frames{2};  // Number of frames to confirm detection (reduced for faster response)
+    float detection_persistence{0.6f}; // Persistence threshold for stable detection (lowered)
     
     // Load from JSON/file
     [[nodiscard]] bool load_from_file(const std::string& path);
