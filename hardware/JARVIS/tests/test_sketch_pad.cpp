@@ -31,14 +31,14 @@ TEST_F(SketchPadTest, SketchSaveAndLoad) {
     sketch.width = 640;
     sketch.height = 480;
     
-    // Add a stroke
-    Stroke stroke;
-    stroke.color = 0x00FFFFFF;
-    stroke.thickness = 5;
-    stroke.points.push_back(Point(10, 10));
-    stroke.points.push_back(Point(20, 20));
-    stroke.points.push_back(Point(30, 30));
-    sketch.strokes.push_back(stroke);
+    // Add a line (enterprise point-to-point drawing)
+    Line line;
+    line.start = Point(10, 10);
+    line.end = Point(30, 30);
+    line.color = 0x00FFFFFF;
+    line.thickness = 5;
+    line.timestamp = 123456;
+    sketch.lines.push_back(line);
     
     // Save
     ASSERT_TRUE(sketch.save("test_sketch"));
@@ -56,10 +56,13 @@ TEST_F(SketchPadTest, SketchSaveAndLoad) {
     EXPECT_EQ(loaded.name, "test_sketch");
     EXPECT_EQ(loaded.width, 640);
     EXPECT_EQ(loaded.height, 480);
-    EXPECT_EQ(loaded.strokes.size(), 1);
-    EXPECT_EQ(loaded.strokes[0].points.size(), 3);
-    EXPECT_EQ(loaded.strokes[0].color, 0x00FFFFFF);
-    EXPECT_EQ(loaded.strokes[0].thickness, 5);
+    EXPECT_EQ(loaded.lines.size(), 1);
+    EXPECT_EQ(loaded.lines[0].start.x, 10);
+    EXPECT_EQ(loaded.lines[0].start.y, 10);
+    EXPECT_EQ(loaded.lines[0].end.x, 30);
+    EXPECT_EQ(loaded.lines[0].end.y, 30);
+    EXPECT_EQ(loaded.lines[0].color, 0x00FFFFFF);
+    EXPECT_EQ(loaded.lines[0].thickness, 5);
 }
 
 TEST_F(SketchPadTest, JSONSerialization) {
@@ -68,12 +71,13 @@ TEST_F(SketchPadTest, JSONSerialization) {
     sketch.width = 100;
     sketch.height = 200;
     
-    Stroke stroke;
-    stroke.color = 0x00FF0000;
-    stroke.thickness = 3;
-    stroke.points.push_back(Point(1, 2));
-    stroke.points.push_back(Point(3, 4));
-    sketch.strokes.push_back(stroke);
+    Line line;
+    line.start = Point(1, 2);
+    line.end = Point(3, 4);
+    line.color = 0x00FF0000;
+    line.thickness = 3;
+    line.timestamp = 789;
+    sketch.lines.push_back(line);
     
     std::string json = sketch.to_json();
     
@@ -83,6 +87,7 @@ TEST_F(SketchPadTest, JSONSerialization) {
     EXPECT_NE(json.find("\"height\": 200"), std::string::npos);
     EXPECT_NE(json.find("\"color\": 16711680"), std::string::npos); // 0x00FF0000
     EXPECT_NE(json.find("\"thickness\": 3"), std::string::npos);
+    EXPECT_NE(json.find("\"lines\":"), std::string::npos);
 }
 
 TEST_F(SketchPadTest, ClearSketch) {

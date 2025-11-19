@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cerrno>
+#include <iomanip>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
@@ -25,6 +26,7 @@
 #include "hand_detector.hpp"
 #include "hand_detector_production.hpp"
 #include "hand_detector_mediapipe.hpp"
+#include "hand_detector_hybrid.hpp"
 #include "sketch_pad.hpp"
 
 #define JARVIS_BLUEPRINT_ID "TestBlueprint456"
@@ -439,19 +441,21 @@ int main()
         else if (line == "hand")
         {
             // Drawing mode - follow index finger to draw
-            std::cerr << "\n=== JARVIS Drawing Mode ===\n";
+            std::cerr << "\n╔════════════════════════════════════════════════════════════╗\n";
+            std::cerr << "║   JARVIS ENTERPRISE DRAWING SYSTEM FOR ARCHITECTS          ║\n";
+            std::cerr << "╚════════════════════════════════════════════════════════════╝\n";
             
             // Ask for sketch name
-            std::cout << "Enter sketch name: ";
+            std::cout << "Enter project name: ";
             std::cout.flush();
             std::string sketch_name;
             std::getline(std::cin, sketch_name);
             
             if (sketch_name.empty()) {
-                sketch_name = "untitled";
+                sketch_name = "untitled_project";
             }
             
-            std::cerr << "Initializing camera...\n";
+            std::cerr << "\n[SYSTEM] Initializing camera subsystem...\n";
             
             camera::Camera cam;
             camera::CameraConfig cam_config;
@@ -461,50 +465,77 @@ int main()
             cam_config.verbose = false;
             
             if (!cam.init(cam_config)) {
-                std::cerr << "Failed to initialize camera: " << cam.get_error() << "\n";
-                std::cerr << "Make sure rpicam is installed and camera is connected.\n";
+                std::cerr << "[ERROR] Camera initialization failed: " << cam.get_error() << "\n";
+                std::cerr << "[INFO] Ensure IMX500 camera is connected and drivers are loaded.\n";
                 continue;
             }
             
             if (!cam.start()) {
-                std::cerr << "Failed to start camera: " << cam.get_error() << "\n";
+                std::cerr << "[ERROR] Camera start failed: " << cam.get_error() << "\n";
                 continue;
             }
             
-            std::cerr << "Camera started successfully.\n";
-            std::cerr << "Initializing hand detector...\n";
+            std::cerr << "[SYSTEM] Camera initialized: 640x480 @ 30fps\n";
+            std::cerr << "[SYSTEM] Initializing enterprise hand detection AI...\n";
             
-            // Use production detector for better accuracy
-            hand_detector::DetectorConfig det_config;
-            det_config.verbose = false;
-            det_config.enable_gesture = true;
-            det_config.min_hand_area = 2000;
-            det_config.downscale_factor = 2;
+            // Use hybrid detector for best performance
+            // Automatically uses IMX500 neural network if available,
+            // falls back to optimized computer vision
+            hand_detector::HybridDetectorConfig hybrid_config;
+            hybrid_config.prefer_neural_network = true;
+            hybrid_config.fallback_to_cv = true;
+            hybrid_config.verbose = true;
             
-            hand_detector::ProductionConfig prod_config;
-            prod_config.enable_tracking = true;
-            prod_config.adaptive_lighting = true;
-            prod_config.gesture_stabilization_frames = 5; // Faster response for drawing
-            prod_config.verbose = false;
+            // Configure neural network backend
+            hybrid_config.nn_config.detection_confidence = 0.70f;
+            hybrid_config.nn_config.landmark_confidence = 0.65f;
+            hybrid_config.nn_config.gesture_confidence = 0.75f;
+            hybrid_config.nn_config.use_npu = true;  // Use IMX500 NPU
+            hybrid_config.nn_config.use_xnnpack = true;
+            hybrid_config.nn_config.num_threads = 4;
+            hybrid_config.nn_config.temporal_smoothing_frames = 5;
+            hybrid_config.nn_config.enable_tracking = true;
             
-            hand_detector::ProductionHandDetector detector(det_config, prod_config);
+            // Configure classical CV fallback
+            hybrid_config.cv_config.verbose = false;
+            hybrid_config.cv_config.enable_gesture = true;
+            hybrid_config.cv_config.min_hand_area = 2000;
+            hybrid_config.cv_config.downscale_factor = 2;
             
-            // Initialize sketch pad
+            hand_detector::HybridHandDetector detector(hybrid_config);
+            
+            std::cerr << "[SYSTEM] Hand detection initialized\n";
+            std::cerr << "[SYSTEM] Backend: " << detector.get_active_backend() << "\n";
+            
+            // Initialize enterprise sketch pad
             sketch::SketchPad sketchpad(width, height);
             sketchpad.init(sketch_name, width, height);
-            sketchpad.set_color(0x00FFFFFF); // White
-            sketchpad.set_thickness(5);
+            sketchpad.set_color(0x00FFFFFF);  // White for projection
+            sketchpad.set_thickness(4);  // Clear lines for architects
+            sketchpad.set_confirmation_frames(5);  // 5 frame confirmation as requested
+            sketchpad.enable_anti_aliasing(true);
+            sketchpad.enable_subpixel_rendering(true);
             
-            std::cerr << "\n✏️  Drawing Mode Active\n";
-            std::cerr << "Sketch: '" << sketch_name << "'\n";
-            std::cerr << "\nInstructions:\n";
-            std::cerr << "  👉 Point with index finger to draw\n";
-            std::cerr << "  ✊ Make a fist to stop drawing\n";
-            std::cerr << "\nCommands:\n";
-            std::cerr << "  's' - Save sketch\n";
-            std::cerr << "  'c' - Clear sketch\n";
-            std::cerr << "  'i' - Show info\n";
-            std::cerr << "  'q' - Quit and save\n\n";
+            std::cerr << "[SYSTEM] Enterprise drawing system ready\n\n";
+            std::cerr << "╔════════════════════════════════════════════════════════════╗\n";
+            std::cerr << "║                   DRAWING INSTRUCTIONS                     ║\n";
+            std::cerr << "╠════════════════════════════════════════════════════════════╣\n";
+            std::cerr << "║  1. Point with index finger for 5 frames → START locked   ║\n";
+            std::cerr << "║  2. Change gesture (open palm, fist, etc.)                 ║\n";
+            std::cerr << "║  3. Point again for 5 frames → END locked                  ║\n";
+            std::cerr << "║  4. Line drawn automatically from START to END             ║\n";
+            std::cerr << "║                                                            ║\n";
+            std::cerr << "║  Visual Indicators:                                        ║\n";
+            std::cerr << "║    • Green circle  = START point locked                    ║\n";
+            std::cerr << "║    • Yellow pulse  = Confirming END point                  ║\n";
+            std::cerr << "║    • Preview line  = Current line being drawn              ║\n";
+            std::cerr << "╠════════════════════════════════════════════════════════════╣\n";
+            std::cerr << "║  Commands:                                                 ║\n";
+            std::cerr << "║    's' - Save project                                      ║\n";
+            std::cerr << "║    'c' - Clear all lines                                   ║\n";
+            std::cerr << "║    'i' - Show project info                                 ║\n";
+            std::cerr << "║    'q' - Quit and save                                     ║\n";
+            std::cerr << "╚════════════════════════════════════════════════════════════╝\n\n";
             
             // Set stdin to non-blocking
             int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
@@ -513,12 +544,12 @@ int main()
             bool quit = false;
             bool calibrated = false;
             uint64_t frame_counter = 0;
-            int render_every = 3; // Render every N frames for performance
+            int render_every = 2;  // Render every 2 frames for smooth architects experience
             
             while (!quit) {
                 camera::Frame* frame = cam.capture_frame();
                 if (!frame) {
-                    std::cerr << "Camera capture error: " << cam.get_error() << "\n";
+                    std::cerr << "[ERROR] Camera capture error: " << cam.get_error() << "\n";
                     break;
                 }
                 
@@ -530,13 +561,13 @@ int main()
                 if (!calibrated && !detections.empty() && 
                     detections[0].bbox.confidence > 0.7f) {
                     if (detector.auto_calibrate(*frame)) {
-                        std::cerr << "✓ Auto-calibrated\n";
+                        std::cerr << "[SYSTEM] ✓ Auto-calibrated hand detection\n";
                         calibrated = true;
                     }
                 }
                 
                 // Update sketch with hand detections
-                bool is_drawing = sketchpad.update(detections);
+                sketchpad.update(detections);
                 
                 // Render to screen every N frames
                 if (frame_counter % render_every == 0) {
@@ -552,10 +583,10 @@ int main()
                     }
                     
                     if (map_data) {
-                        // Clear background
+                        // Clear background (black for projector)
                         draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
                         
-                        // Render sketch
+                        // Render sketch with anti-aliasing
                         sketchpad.render(map_data, map_stride, width, height);
                         
                         if (use_gbm) {
@@ -564,7 +595,7 @@ int main()
                         
                         // Update display
                         if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode)) {
-                            std::cerr << "drmModeSetCrtc failed\n";
+                            std::cerr << "[ERROR] Display update failed\n";
                         }
                     }
                 }
@@ -578,28 +609,48 @@ int main()
                         if (c == 'q' || c == 'Q') {
                             // Save and quit
                             if (sketchpad.save(sketch_name)) {
-                                std::cerr << "\n✓ Sketch saved as '" << sketch_name << ".jarvis'\n";
+                                std::cerr << "\n[SYSTEM] ✓ Project saved: '" << sketch_name << ".jarvis'\n";
                             }
                             quit = true;
                             break;
                         }
                         if (c == 's' || c == 'S') {
                             if (sketchpad.save(sketch_name)) {
-                                std::cerr << "\n✓ Saved '" << sketch_name << ".jarvis'\n";
+                                std::cerr << "\n[SYSTEM] ✓ Project saved: '" << sketch_name << ".jarvis'\n";
                             } else {
-                                std::cerr << "\n✗ Failed to save\n";
+                                std::cerr << "\n[ERROR] Save failed\n";
                             }
                         }
                         if (c == 'c' || c == 'C') {
                             sketchpad.clear();
-                            std::cerr << "\n✓ Sketch cleared\n";
+                            std::cerr << "\n[SYSTEM] ✓ Project cleared\n";
                         }
                         if (c == 'i' || c == 'I') {
-                            std::cerr << "\n📊 Sketch Info:\n";
-                            std::cerr << "  Name: " << sketch_name << "\n";
-                            std::cerr << "  Strokes: " << sketchpad.get_stroke_count() << "\n";
-                            std::cerr << "  Points: " << sketchpad.get_total_points() << "\n";
-                            std::cerr << "  Drawing: " << (is_drawing ? "Yes ✏️" : "No") << "\n\n";
+                            std::cerr << "\n╔════════════════════════════════════════════════════════════╗\n";
+                            std::cerr << "║                    PROJECT INFORMATION                     ║\n";
+                            std::cerr << "╠════════════════════════════════════════════════════════════╣\n";
+                            std::cerr << "║  Project: " << std::left << std::setw(48) << sketch_name << "║\n";
+                            std::cerr << "║  Lines drawn: " << std::left << std::setw(44) << sketchpad.get_stroke_count() << "║\n";
+                            std::cerr << "║  Resolution: " << width << "x" << height << std::setw(36) << " " << "║\n";
+                            
+                            // Show current state
+                            std::string state_str;
+                            switch (sketchpad.get_state()) {
+                                case sketch::DrawingState::WAITING_FOR_START:
+                                    state_str = "Waiting for START point (point 5 frames)";
+                                    break;
+                                case sketch::DrawingState::START_CONFIRMED:
+                                    state_str = "START locked - change gesture";
+                                    break;
+                                case sketch::DrawingState::WAITING_FOR_END:
+                                    state_str = "Waiting for END point (point 5 frames)";
+                                    break;
+                                case sketch::DrawingState::END_CONFIRMED:
+                                    state_str = "Line completed!";
+                                    break;
+                            }
+                            std::cerr << "║  State: " << std::left << std::setw(48) << state_str << "║\n";
+                            std::cerr << "╚════════════════════════════════════════════════════════════╝\n\n";
                         }
                     }
                 }
@@ -607,7 +658,7 @@ int main()
             
             fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
             cam.stop();
-            std::cerr << "Exited drawing mode.\n\n";
+            std::cerr << "\n[SYSTEM] Enterprise drawing session ended.\n\n";
         }
         else if (line == "hand-prod")
         {

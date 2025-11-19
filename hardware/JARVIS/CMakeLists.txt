@@ -40,6 +40,34 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
 
+# Optional: TensorFlow Lite for neural network support
+find_path(TFLITE_INCLUDE_DIR tensorflow/lite/interpreter.h
+    PATHS 
+        /usr/include 
+        /usr/local/include
+        $ENV{HOME}/.local/include
+        /opt/tensorflow/include
+)
+find_library(TFLITE_LIBRARY NAMES tensorflowlite tensorflow-lite libtensorflow-lite.a
+    PATHS 
+        /usr/lib 
+        /usr/local/lib 
+        /usr/lib/aarch64-linux-gnu
+        $ENV{HOME}/.local/lib
+        /opt/tensorflow/lib
+)
+
+if(TFLITE_INCLUDE_DIR AND TFLITE_LIBRARY)
+    set(HAVE_TFLITE TRUE)
+    message(STATUS "TensorFlow Lite found: ${TFLITE_LIBRARY}")
+else()
+    set(HAVE_TFLITE FALSE)
+    message(STATUS "TensorFlow Lite not found - neural network support disabled")
+    message(STATUS "  For Raspberry Pi, build from source:")
+    message(STATUS "  https://github.com/tensorflow/tensorflow/tree/master/tensorflow/lite")
+    message(STATUS "  Or run the installation script provided in the documentation")
+endif()
+
 # GBM and DRM with fallback
 pkg_check_modules(GBM QUIET gbm)
 pkg_check_modules(DRM QUIET libdrm)
@@ -92,6 +120,9 @@ add_library(jarvis_core STATIC
     src/hand_detector_simd.cpp
     src/hand_detector_production.cpp
     src/hand_detector_mediapipe.cpp
+    src/hand_detector_imx500.cpp
+    src/hand_detector_hybrid.cpp
+    src/hand_detector_tflite.cpp
     src/sketch_pad.cpp
 )
 
@@ -104,6 +135,16 @@ target_include_directories(jarvis_core
         ${DRM_INCLUDE_DIRS}
         ${OPENSSL_INCLUDE_DIR}
 )
+
+# Add TFLite support if available
+if(HAVE_TFLITE)
+    target_compile_definitions(jarvis_core PRIVATE HAVE_TFLITE)
+    target_include_directories(jarvis_core PRIVATE ${TFLITE_INCLUDE_DIR})
+    target_link_libraries(jarvis_core PRIVATE ${TFLITE_LIBRARY})
+    message(STATUS "  Neural network support: ENABLED")
+else()
+    message(STATUS "  Neural network support: DISABLED")
+endif()
 
 target_link_libraries(jarvis_core
     PUBLIC
@@ -136,6 +177,11 @@ target_include_directories(JARVIS
         ${GBM_INCLUDE_DIRS}
         ${DRM_INCLUDE_DIRS}
 )
+
+# Add TFLite support to main executable if available
+if(HAVE_TFLITE)
+    target_compile_definitions(JARVIS PRIVATE HAVE_TFLITE)
+endif()
 
 # ============================================================================
 # Testing

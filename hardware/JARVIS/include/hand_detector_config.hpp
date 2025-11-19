@@ -21,16 +21,16 @@ struct DetectorConfig {
     // Skin detection parameters (HSV color space)
     // Improved defaults for better hand detection across lighting conditions
     int hue_min{0};        // Minimum hue (0-179)
-    int hue_max{30};       // Maximum hue (0-179) - expanded from 25 for better coverage
-    int sat_min{15};       // Minimum saturation (0-255) - lowered from 20 for varied lighting
-    int sat_max{220};      // Maximum saturation (0-255) - increased from 200 for better range
-    int val_min{30};       // Minimum value (0-255) - lowered from 40 for darker conditions
+    int hue_max{20};       // Maximum hue (0-179) - narrower range to reduce false positives
+    int sat_min{25};       // Minimum saturation (0-255) - raised to avoid pale backgrounds
+    int sat_max{200};      // Maximum saturation (0-255) - lowered to avoid orange objects
+    int val_min{40};       // Minimum value (0-255) - raised to avoid shadows
     int val_max{255};      // Maximum value (0-255)
     
     // Detection parameters
-    int min_hand_area{3000};    // Minimum contour area for hand
-    int max_hand_area{150000};  // Maximum contour area for hand
-    float min_confidence{0.32f}; // Minimum detection confidence (lowered from 0.35 for better recall)
+    int min_hand_area{3500};    // Minimum contour area for hand (raised to reduce noise)
+    int max_hand_area{120000};  // Maximum contour area for hand (lowered to avoid large false positives)
+    float min_confidence{0.50f}; // Minimum detection confidence (raised from 0.32 for better precision)
     
     // Processing parameters
     bool enable_morphology{true}; // Apply morphological operations
@@ -51,8 +51,10 @@ struct DetectorConfig {
     float hsv_smoothing{0.1f};  // Exponential smoothing factor for adaptive HSV
     
     // Temporal stability
-    bool enable_tracking{false}; // Track hands frame-to-frame
+    bool enable_tracking{true}; // Track hands frame-to-frame (ENABLED by default)
     float tracking_iou_threshold{0.3f}; // IOU threshold for tracking
+    int temporal_filter_frames{3};  // Number of frames to confirm detection
+    float detection_persistence{0.7f}; // Persistence threshold for stable detection
     
     // Load from JSON/file
     [[nodiscard]] bool load_from_file(const std::string& path);

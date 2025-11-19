@@ -115,6 +115,16 @@ private:
     // Gesture history for stabilization
     std::vector<Gesture> gesture_history_;
     
+    // Temporal tracking for false positive/negative reduction
+    struct TrackedHand {
+        BoundingBox last_bbox;
+        int consecutive_frames;
+        uint64_t last_seen_frame;
+        float avg_confidence;
+    };
+    std::vector<TrackedHand> tracked_hands_;
+    uint64_t current_frame_{0};
+    
     // Internal processing functions
     void rgb_to_hsv(const uint8_t* rgb, uint8_t* hsv, 
                    uint32_t width, uint32_t height);
@@ -146,6 +156,9 @@ private:
 
     // Convex hull (monotonic chain) for robust fingertip detection
     std::vector<Point> compute_convex_hull(const std::vector<Point>& points);
+    
+    // IoU (Intersection over Union) for tracking
+    float compute_iou(const BoundingBox& a, const BoundingBox& b);
     
     // Disable copy
     HandDetector(const HandDetector&) = delete;
