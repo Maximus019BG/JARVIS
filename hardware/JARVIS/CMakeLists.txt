@@ -214,6 +214,7 @@ if(BUILD_TESTING)
         tests/test_hand_detector.cpp
         tests/test_hand_detector_production.cpp
         tests/test_sketch_pad.cpp
+        tests/test_improvements.cpp
     )
     
     target_link_libraries(jarvis_tests
