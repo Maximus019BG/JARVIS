@@ -127,9 +127,9 @@ std::vector<HandDetection> HandDetector::detect(const camera::Frame& frame) {
         if (mask_buffer_[i] > 0) skin_pixel_count++;
     }
     
-    // If less than min_hand_area/2 pixels are skin-colored, likely no hand present
-    // Use half threshold for early check since morphology will reduce area
-    if (skin_pixel_count < static_cast<uint32_t>(config_.min_hand_area / 2)) {
+    // If less than min_hand_area/3 pixels are skin-colored, likely no hand present
+    // Use 1/3 threshold (more permissive) since morphology will reduce area further
+    if (skin_pixel_count < static_cast<uint32_t>(config_.min_hand_area / 3)) {
         return detections; // Early exit - no hand possible
     }
     
@@ -177,8 +177,8 @@ std::vector<HandDetection> HandDetector::detect(const camera::Frame& frame) {
         const float bbox_area = static_cast<float>(hand.bbox.area());
         const float solidity = bbox_area > 0 ? static_cast<float>(polygon_area) / bbox_area : 0.0f;
         
-        // Hand solidity typically 0.4-0.9 (relaxed range to catch more hand poses)
-        if (solidity < 0.35f || solidity > 0.95f) {
+        // Hand solidity typically 0.3-0.95 (more relaxed range to catch all hand poses and angles)
+        if (solidity < 0.30f || solidity > 0.98f) {
             continue;
         }
         
@@ -477,34 +477,36 @@ HandDetection HandDetector::analyze_contour(const std::vector<Point>& contour,
     const float aspect_ratio = static_cast<float>(hand.bbox.width) / std::max(1, hand.bbox.height);
     
     // Start with moderate base confidence
-    hand.bbox.confidence = 0.6f;
+    hand.bbox.confidence = 0.55f; // slightly lower to be more permissive
     
-    // Hand-like properties (balanced validation)
-    // 1. Area should be reasonable (1-50% of frame) - more lenient
-    if (area_ratio >= 0.01f && area_ratio <= 0.5f) {
-        hand.bbox.confidence += 0.15f;
-    } else if (area_ratio < 0.005f || area_ratio > 0.7f) {
-        hand.bbox.confidence *= 0.4f; // Penalize extreme sizes
+    // Hand-like properties (more lenient validation to catch all hands)
+    // 1. Area should be reasonable (0.5-60% of frame) - very lenient range
+    if (area_ratio >= 0.005f && area_ratio <= 0.6f) {
+        hand.bbox.confidence += 0.20f; // larger boost for valid area
+    } else if (area_ratio < 0.003f || area_ratio > 0.8f) {
+        hand.bbox.confidence *= 0.35f; // Penalize extreme sizes
     } else {
-        hand.bbox.confidence *= 0.7f; // Moderate penalty
+        hand.bbox.confidence *= 0.65f; // Moderate penalty
     }
     
-    // 2. Aspect ratio should be reasonable (hands vary from 0.5 to 2.0)
-    if (aspect_ratio >= 0.5f && aspect_ratio <= 2.0f) {
+    // 2. Aspect ratio should be reasonable (hands vary from 0.4 to 2.5)
+    if (aspect_ratio >= 0.4f && aspect_ratio <= 2.5f) {
         hand.bbox.confidence += 0.15f;
+    } else if (aspect_ratio < 0.3f || aspect_ratio > 3.0f) {
+        hand.bbox.confidence *= 0.5f;
     } else {
-        hand.bbox.confidence *= 0.6f;
+        hand.bbox.confidence *= 0.7f;
     }
     
-    // 3. Finger count validation is less strict (algorithm isn't perfect)
-    if (hand.num_fingers >= 0 && hand.num_fingers <= 5) {
-        hand.bbox.confidence += 0.05f;
-    } else if (hand.num_fingers > 7) {
-        hand.bbox.confidence *= 0.5f; // Only penalize very wrong counts
+    // 3. Finger count validation is lenient (algorithm isn't perfect)
+    if (hand.num_fingers >= 0 && hand.num_fingers <= 6) {
+        hand.bbox.confidence += 0.05f; // slight boost for reasonable count
+    } else if (hand.num_fingers > 8) {
+        hand.bbox.confidence *= 0.6f; // Only penalize very wrong counts
     }
     
     // 4. Having fingertips is a good sign but not required
-    if (hand.fingertips.size() > 0 && hand.fingertips.size() <= 6) {
+    if (hand.fingertips.size() > 0 && hand.fingertips.size() <= 7) {
         hand.bbox.confidence += 0.05f;
     }
     
@@ -612,8 +614,8 @@ int HandDetector::count_fingers(const std::vector<Point>& contour, const Point& 
     }
     avg /= hull.size();
 
-    // Improved threshold for candidate fingertips: more sensitive to catch open palm
-    const double dist_threshold = avg + (maxd - avg) * 0.40; // lowered from 0.45 for better sensitivity
+    // Improved threshold for candidate fingertips: more sensitive to catch all fingers in open palm
+    const double dist_threshold = avg + (maxd - avg) * 0.35; // further lowered to 0.35 for maximum sensitivity
 
     // Helper lambda to compute angle at hull vertex i
     auto angle_at = [&](size_t i) {
@@ -635,8 +637,8 @@ int HandDetector::count_fingers(const std::vector<Point>& contour, const Point& 
     for (size_t i = 0; i < hull.size(); ++i) {
         if (dists[i] < dist_threshold) continue; // not protruding enough
         double angle = angle_at(i);
-        // Relaxed angle threshold to catch more fingertips (increased from 75 to 80)
-        if (angle > 80.0) continue;
+        // Further relaxed angle threshold to catch more fingertips in various poses (increased to 85)
+        if (angle > 85.0) continue;
         fingertip_candidates.push_back(hull[i]);
     }
 
@@ -647,7 +649,7 @@ int HandDetector::count_fingers(const std::vector<Point>& contour, const Point& 
 
     // Non-maximum suppression based on spatial separation
     std::vector<Point> final_tips;
-    const double min_sep = std::max(12.0, maxd * 0.16); // reduced separation threshold for closer fingers
+    const double min_sep = std::max(10.0, maxd * 0.14); // further reduced separation for detecting all fingers
     for (const auto& p : fingertip_candidates) {
         bool close = false;
         for (const auto& q : final_tips) {
@@ -659,17 +661,23 @@ int HandDetector::count_fingers(const std::vector<Point>& contour, const Point& 
 
     int count = static_cast<int>(final_tips.size());
 
-    // Improved heuristic refinement for better open palm detection
+    // Enhanced heuristic refinement for detecting all fingers in every gesture
     double spread_ratio = maxd / std::max(1.0, avg);
-    if (count <= 2 && spread_ratio > 1.50) {
-        // Likely open palm miscount - lowered threshold from 1.55 to 1.50
+    if (count <= 2 && spread_ratio > 1.45) {
+        // Likely open palm with missed fingers - further lowered threshold
         count = std::min(5, count + 2);
-    } else if (count == 3 && spread_ratio > 1.60) {
-        // Might be missing some fingers in open palm
+    } else if (count == 3 && spread_ratio > 1.55) {
+        // Probably missing 1-2 fingers in open palm
         count = std::min(5, count + 1);
+    } else if (count == 4 && spread_ratio > 1.65) {
+        // Likely all 5 fingers but one was missed
+        count = 5;
     } else if (count == 0 && spread_ratio < 1.2) {
         // Very compact, likely fist
         count = 0;
+    } else if (count == 1 && spread_ratio > 1.4) {
+        // Single detected finger but wide spread suggests more fingers
+        count = std::min(5, count + 1);
     }
 
     return std::min(5, std::max(0, count));
@@ -692,7 +700,7 @@ std::vector<Point> HandDetector::find_fingertips(const std::vector<Point>& conto
         maxd = std::max(maxd, dists[i]);
     }
     avg /= hull.size();
-    const double dist_threshold = avg + (maxd - avg) * 0.40; // match count_fingers improvement
+    const double dist_threshold = avg + (maxd - avg) * 0.35; // match count_fingers improvement
 
     auto angle_at = [&](size_t i) {
         size_t prev = (i + hull.size() - 1) % hull.size();
@@ -713,7 +721,7 @@ std::vector<Point> HandDetector::find_fingertips(const std::vector<Point>& conto
     for (size_t i = 0; i < hull.size(); ++i) {
         if (dists[i] < dist_threshold) continue;
         double angle = angle_at(i);
-        if (angle > 80.0) continue; // match count_fingers improvement
+        if (angle > 85.0) continue; // match count_fingers improvement
         candidates.push_back(hull[i]);
     }
 
@@ -721,7 +729,7 @@ std::vector<Point> HandDetector::find_fingertips(const std::vector<Point>& conto
         return a.distance(center) > b.distance(center);
     });
 
-    const double min_sep = std::max(12.0, maxd * 0.16); // match count_fingers improvement
+    const double min_sep = std::max(10.0, maxd * 0.14); // match count_fingers improvement
     for (const auto& p : candidates) {
         bool close = false;
         for (const auto& q : tips) {
@@ -734,80 +742,93 @@ std::vector<Point> HandDetector::find_fingertips(const std::vector<Point>& conto
 }
 
 Gesture HandDetector::classify_gesture(const HandDetection& hand) {
-    // Practical gesture classification for classical CV
-    // Focuses on reliable distinctions rather than precise finger counts
+    // Enhanced gesture classification for classical CV to detect every gesture
+    // Focuses on reliable distinctions while being more permissive to catch all poses
     
     const int fingers = hand.num_fingers;
     const float aspect = static_cast<float>(hand.bbox.width) / std::max(1, hand.bbox.height);
     const float area_ratio = static_cast<float>(hand.contour_area) / std::max(1.0f, static_cast<float>(hand.bbox.area()));
 
-    // Calculate hand compactness (how "tight" the hand is)
-    const bool is_compact = (area_ratio > 0.75f);
-    const bool is_square = (aspect >= 0.8f && aspect <= 1.3f);
-    const bool is_elongated = (aspect < 0.65f || aspect > 1.55f); // slightly tighter range for better pointing detection
+    // Calculate hand compactness and shape characteristics
+    const bool is_compact = (area_ratio > 0.72f); // slightly lower for more permissive fist detection
+    const bool is_square = (aspect >= 0.75f && aspect <= 1.35f); // wider range for varied orientations
+    const bool is_elongated = (aspect < 0.6f || aspect > 1.6f); // adjusted for better pointing detection
 
-    // FIST: Low finger count + compact shape
+    // FIST: Low finger count + compact shape (prioritize to avoid misclassification)
     if (fingers == 0 || (fingers == 1 && is_compact && is_square)) {
         return Gesture::FIST;
     }
 
-    // OPEN_PALM: High finger count first (prioritize to avoid misclassification)
-    // Improved detection: also check for wide spread even with moderate finger count
+    // OPEN_PALM: High finger count or spread hand (detect all open palm variations)
+    // Enhanced to catch more open palm gestures with different finger counts
     if (fingers >= 4) {
         return Gesture::OPEN_PALM;
     }
-    if (fingers == 3 && !is_compact && !is_elongated) {
-        // 3 fingers with medium solidity, likely open palm with some fingers hidden
+    if (fingers == 3 && !is_compact) {
+        // 3 fingers with non-compact shape, likely open palm with some occlusion
+        return Gesture::OPEN_PALM;
+    }
+    if (fingers >= 2 && area_ratio < 0.65f && !is_elongated) {
+        // 2-3 fingers with low solidity (spread out), likely open palm
         return Gesture::OPEN_PALM;
     }
 
-    // POINTING: One or two fingers with elongated shape
-    // Enhanced logic: check both finger count AND shape
-    if (fingers == 1 && is_elongated) {
-        return Gesture::POINTING;
-    }
-    if (fingers == 1 && !is_square) {
-        // Single finger, not square-shaped, likely pointing
+    // POINTING: One or two fingers with elongated shape (improved detection)
+    if (fingers == 1 && (is_elongated || aspect < 0.7f || aspect > 1.5f)) {
         return Gesture::POINTING;
     }
     if (fingers == 2 && hand.fingertips.size() >= 2 && is_elongated) {
-        // Two fingertips detected with elongated shape
-        // Check if one is significantly more prominent (pointing with thumb visible)
+        // Two fingertips with elongated shape - check prominence
         double d0 = hand.fingertips[0].distance(hand.center);
         double d1 = hand.fingertips[1].distance(hand.center);
         double hand_size = std::sqrt(hand.bbox.width * hand.bbox.width + hand.bbox.height * hand.bbox.height);
         double dist_ratio = std::max(d0, d1) / std::max(1.0, std::min(d0, d1));
         
-        // Improved threshold: if one finger is much more prominent, it's pointing
-        if (dist_ratio > 1.5 || std::abs(d0 - d1) > hand_size * 0.35) {
+        // If one finger is significantly more prominent, classify as pointing
+        if (dist_ratio > 1.4 || std::abs(d0 - d1) > hand_size * 0.3) {
             return Gesture::POINTING;
         }
     }
 
-    // PEACE: 2-3 fingers, not too compact, not too elongated, fingertips close together
+    // PEACE: 2-3 fingers close together, not elongated
     if ((fingers == 2 || fingers == 3) && hand.fingertips.size() >= 2) {
         const double tip_dist = hand.fingertips[0].distance(hand.fingertips[1]);
         const double hand_size = std::sqrt(hand.bbox.width * hand.bbox.width + hand.bbox.height * hand.bbox.height);
-        // OK sign: two prominent points very close together
-        if (tip_dist < hand_size * 0.25 && is_compact) {
+        
+        // OK sign: two points very close together with compact shape
+        if (tip_dist < hand_size * 0.28 && is_compact) {
             return Gesture::OK_SIGN;
         }
-        // If fingertips are close together and not elongated, PEACE
-        if (tip_dist < hand_size * 0.6 && !is_elongated) {
+        // PEACE: fingertips moderately close, not too elongated
+        if (tip_dist < hand_size * 0.65 && !is_elongated && aspect >= 0.6f && aspect <= 1.6f) {
             return Gesture::PEACE;
         }
     }
 
-    // Improved fallback logic based on shape and finger count
-    if (fingers <= 1 && is_compact && is_square) {
-        return Gesture::FIST;
-    } else if ((fingers == 1 || fingers == 2) && is_elongated) {
-        return Gesture::POINTING;
+    // Enhanced fallback logic to classify every hand pose
+    if (fingers <= 1) {
+        if (is_compact && is_square) {
+            return Gesture::FIST;
+        } else if (is_elongated || aspect < 0.7f) {
+            return Gesture::POINTING;
+        } else {
+            // Uncertain single finger - default to pointing
+            return Gesture::POINTING;
+        }
+    } else if (fingers == 2) {
+        if (is_elongated) {
+            return Gesture::POINTING;
+        } else if (is_square || (!is_compact && aspect >= 0.7f && aspect <= 1.4f)) {
+            return Gesture::PEACE;
+        } else {
+            // Default 2 fingers to peace
+            return Gesture::PEACE;
+        }
     } else if (fingers >= 3 || !is_compact) {
-        // Default to open palm for 3+ fingers or spread hand
+        // 3+ fingers or spread hand - open palm
         return Gesture::OPEN_PALM;
     } else {
-        // When uncertain, check compactness
+        // Final fallback based on compactness
         return is_compact ? Gesture::FIST : Gesture::OPEN_PALM;
     }
 }
