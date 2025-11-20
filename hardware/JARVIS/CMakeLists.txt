@@ -133,6 +133,7 @@ target_include_directories(jarvis_core
     PRIVATE
         ${GBM_INCLUDE_DIRS}
         ${DRM_INCLUDE_DIRS}
+        /usr/include/libdrm
         ${OPENSSL_INCLUDE_DIR}
 )
 
@@ -176,6 +177,7 @@ target_include_directories(JARVIS
     PRIVATE
         ${GBM_INCLUDE_DIRS}
         ${DRM_INCLUDE_DIRS}
+        /usr/include/libdrm
 )
 
 # Add TFLite support to main executable if available

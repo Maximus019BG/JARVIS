@@ -590,6 +590,38 @@ namespace hand_detector
             return Gesture::UNKNOWN;
         }
 
+        // Consistency override: Align gesture with current finger count if clearly inconsistent.
+        // Prevent OPEN_PALM label when only one finger is extended (should be POINTING), etc.
+        int fingers = track.detection.num_fingers;
+        Gesture expected = Gesture::UNKNOWN;
+        switch (fingers)
+        {
+        case 0:
+            expected = Gesture::FIST;
+            break;
+        case 1:
+            expected = Gesture::POINTING;
+            break;
+        case 2:
+            expected = Gesture::PEACE;
+            break;
+        case 5:
+            expected = Gesture::OPEN_PALM;
+            break;
+        default:
+            break; // Leave complex / partial gestures to history voting
+        }
+
+        // Override if mismatch and we have reasonable confidence.
+        if (expected != Gesture::UNKNOWN && best_gesture != expected)
+        {
+            // Hysteresis: require slightly lower threshold for correction.
+            if (confidence > threshold * 0.75f)
+            {
+                best_gesture = expected;
+            }
+        }
+
         return best_gesture;
     }
 
