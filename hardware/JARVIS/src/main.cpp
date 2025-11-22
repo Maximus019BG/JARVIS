@@ -67,8 +67,8 @@ int main(int argc, char **argv)
         }
     }
 
-    // If no arguments provided, enable IMX500 by default
-    if (argc == 0)
+    // If no arguments provided (argc == 1 means only program name), enable IMX500 by default
+    if (argc == 1)
     {
         setenv("JARVIS_USE_IMX500_POSTPROCESS", "1", 1);
     }
@@ -468,8 +468,8 @@ int main(int argc, char **argv)
     std::cerr << "Polling server http://" << host << ":" << port << path << " for lines.\n";
     std::cerr << "Commands:\n";
     std::cerr << "  <Enter>      - Render a frame\n";
-    std::cerr << "  hand         - Drawing mode (follow index finger)\n";
-    std::cerr << "  hand-prod    - Production hand detector (testing)\n";
+    std::cerr << "  blueprint    - Drawing mode (follow index finger)\n";
+    std::cerr << "  test         - Production hand detector (testing)\n";
     std::cerr << "  load <name>  - Load a .jarvis sketch\n";
     std::cerr << "  stop         - Exit\n";
 
@@ -491,7 +491,7 @@ int main(int argc, char **argv)
                 }
             }
         }
-        else if (line == "hand")
+        else if (line == "blueprint")
         {
             // Drawing mode - follow index finger to draw
             std::cerr << "\n╔════════════════════════════════════════════════════════════╗\n";
@@ -509,12 +509,32 @@ int main(int argc, char **argv)
                 sketch_name = "untitled_project";
             }
 
+            // Ask for grid spacing
+            std::cout << "Enter grid spacing in cm (default: 5): ";
+            std::cout.flush();
+            std::string spacing_input;
+            std::getline(std::cin, spacing_input);
+            float grid_spacing_cm = 5.0f;
+            if (!spacing_input.empty())
+            {
+                try
+                {
+                    grid_spacing_cm = std::stof(spacing_input);
+                    if (grid_spacing_cm <= 0.0f)
+                        grid_spacing_cm = 5.0f;
+                }
+                catch (...)
+                {
+                    grid_spacing_cm = 5.0f;
+                }
+            }
+
             std::cerr << "\n[SYSTEM] Initializing camera subsystem...\n";
 
             camera::Camera cam;
             camera::CameraConfig cam_config;
-            cam_config.width = 640;
-            cam_config.height = 480;
+            cam_config.width = 1920;
+            cam_config.height = 1080;
             cam_config.framerate = 30;
             cam_config.verbose = false;
 
@@ -532,61 +552,64 @@ int main(int argc, char **argv)
             }
 
             std::cerr << "[SYSTEM] Camera initialized: 640x480 @ 30fps\n";
-            std::cerr << "[SYSTEM] Initializing enterprise hand detection AI...\n";
+            std::cerr << "[SYSTEM] Initializing production hand detector...\n";
 
-            // Use hybrid detector for best performance
-            // Automatically uses IMX500 neural network if available,
-            // falls back to optimized computer vision
-            hand_detector::HybridDetectorConfig hybrid_config;
-            hybrid_config.prefer_neural_network = true;
-            hybrid_config.fallback_to_cv = true;
-            hybrid_config.verbose = true;
+            // Configure base detector
+            hand_detector::DetectorConfig det_config;
+            det_config.verbose = false;
+            det_config.enable_gesture = true;
+            det_config.min_hand_area = 2000;
+            det_config.downscale_factor = 2;
 
-            // Configure neural network backend (IMX500 NPU)
-            hybrid_config.nn_config.model_path = "models/hand_landmark_full.tflite";
-            hybrid_config.nn_config.detection_confidence = 0.65f; // Slightly lower for better detection
-            hybrid_config.nn_config.landmark_confidence = 0.60f;
-            hybrid_config.nn_config.gesture_confidence = 0.70f;
-            hybrid_config.nn_config.use_npu = true;                // CRITICAL: Use IMX500 NPU
-            hybrid_config.nn_config.use_xnnpack = false;           // NPU handles acceleration
-            hybrid_config.nn_config.num_threads = 2;               // Fewer threads since NPU does work
-            hybrid_config.nn_config.temporal_smoothing_frames = 7; // More smoothing
-            hybrid_config.nn_config.enable_tracking = true;
-            hybrid_config.nn_config.enable_multi_hand = true;
+            // Configure production features
+            hand_detector::ProductionConfig prod_config;
+            prod_config.enable_tracking = true;
+            prod_config.adaptive_lighting = true;
+            prod_config.gesture_stabilization_frames = 10;
+            prod_config.tracking_history_frames = 5;
+            prod_config.filter_low_confidence = true;
+            prod_config.min_detection_quality = 0.5f;
+            prod_config.verbose = false;
 
-            // Configure classical CV fallback
-            hybrid_config.cv_config.verbose = false;
-            hybrid_config.cv_config.enable_gesture = true;
-            hybrid_config.cv_config.min_hand_area = 2000;
-            hybrid_config.cv_config.downscale_factor = 2;
-
-            hand_detector::HybridHandDetector detector(hybrid_config);
+            hand_detector::ProductionHandDetector detector(det_config, prod_config);
 
             std::cerr << "[SYSTEM] Hand detection initialized\n";
-            std::cerr << "[SYSTEM] Backend: " << detector.get_active_backend() << "\n";
+            std::cerr << "[SYSTEM] Features: Multi-frame tracking, Adaptive lighting, Gesture stabilization\n";
 
             // Initialize enterprise sketch pad
             sketch::SketchPad sketchpad(width, height);
             sketchpad.init(sketch_name, width, height);
             sketchpad.set_color(0x00FFFFFF);      // White for projection
             sketchpad.set_thickness(4);           // Clear lines for architects
-            sketchpad.set_confirmation_frames(5); // 5 frame confirmation as requested
+            sketchpad.set_confirmation_frames(2); // 2 frame confirmation with tolerance
             sketchpad.enable_anti_aliasing(true);
             sketchpad.enable_subpixel_rendering(true);
+
+            // Configure grid system
+            sketchpad.set_grid_enabled(true);
+            sketchpad.set_real_world_spacing(grid_spacing_cm);
+            sketchpad.set_snap_to_grid(true);
+            sketchpad.set_show_measurements(true);
 
             std::cerr << "[SYSTEM] Enterprise drawing system ready\n\n";
             std::cerr << "╔════════════════════════════════════════════════════════════╗\n";
             std::cerr << "║                   DRAWING INSTRUCTIONS                     ║\n";
             std::cerr << "╠════════════════════════════════════════════════════════════╣\n";
-            std::cerr << "║  1. Point with index finger for 5 frames → START locked   ║\n";
-            std::cerr << "║  2. Change gesture (open palm, fist, etc.)                 ║\n";
-            std::cerr << "║  3. Point again for 5 frames → END locked                  ║\n";
-            std::cerr << "║  4. Line drawn automatically from START to END             ║\n";
+            std::cerr << "║  1. Point/Peace gesture for 2 frames → START locked       ║\n";
+            std::cerr << "║  2. Move hand and change gesture (open palm, fist, etc.)   ║\n";
+            std::cerr << "║  3. Point/Peace gesture for 2 frames → END locked          ║\n";
+            std::cerr << "║  4. Line drawn with real-world measurement                 ║\n";
+            std::cerr << "║                                                            ║\n";
+            std::cerr << "║  Grid System:                                              ║\n";
+            std::cerr << "║    • Points snap to grid intersections                     ║\n";
+            std::cerr << "║    • Each grid square = " << grid_spacing_cm << " cm                            ║\n";
+            std::cerr << "║    • Yellow markers show measurement points                ║\n";
             std::cerr << "║                                                            ║\n";
             std::cerr << "║  Visual Indicators:                                        ║\n";
             std::cerr << "║    • Green circle  = START point locked                    ║\n";
             std::cerr << "║    • Yellow pulse  = Confirming END point                  ║\n";
             std::cerr << "║    • Preview line  = Current line being drawn              ║\n";
+            std::cerr << "║    • Gray grid     = Reference grid with snapping          ║\n";
             std::cerr << "╠════════════════════════════════════════════════════════════╣\n";
             std::cerr << "║  Commands:                                                 ║\n";
             std::cerr << "║    's' - Save project                                      ║\n";
@@ -626,6 +649,50 @@ int main(int argc, char **argv)
                         std::cerr << "[SYSTEM] ✓ Auto-calibrated hand detection\n";
                         calibrated = true;
                     }
+                }
+
+                // Display detection info (similar to test mode)
+                if (!detections.empty() || frame_counter % 30 == 0)
+                {
+                    std::cout << "[frame " << frame_counter << "] " << detections.size() << " hand(s)";
+                    if (detections.empty())
+                    {
+                        std::cout << "\n";
+                    }
+                }
+
+                for (size_t i = 0; i < detections.size(); ++i)
+                {
+                    const auto &hand = detections[i];
+                    std::string label = hand_detector::HandDetector::gesture_to_string(hand.gesture);
+
+                    // Highlight drawing gestures
+                    if (hand.gesture == hand_detector::Gesture::OPEN_PALM)
+                        label = "OPEN PALM ✋";
+                    else if (hand.gesture == hand_detector::Gesture::FIST)
+                        label = "FIST ✊";
+                    else if (hand.gesture == hand_detector::Gesture::POINTING)
+                        label = "POINTING ☝ [DRAWING]";
+                    else if (hand.gesture == hand_detector::Gesture::PEACE)
+                        label = "PEACE ✌ [DRAWING]";
+                    else if (hand.gesture == hand_detector::Gesture::OK_SIGN)
+                        label = "OK 👌";
+
+                    std::cout << "\n  ➜ Hand #" << (i + 1)
+                              << ": " << label
+                              << " | fingers=" << hand.num_fingers
+                              << " | conf=" << (int)(hand.bbox.confidence * 100) << "%"
+                              << " | pos=(" << (int)hand.center.x << "," << (int)hand.center.y << ")";
+
+                    // Show fingertip position if available
+                    if (!hand.fingertips.empty())
+                    {
+                        std::cout << " | tip=(" << (int)hand.fingertips[0].x << "," << (int)hand.fingertips[0].y << ")";
+                    }
+                }
+                if (!detections.empty())
+                {
+                    std::cout << "\n";
                 }
 
                 // Update sketch with hand detections
@@ -740,7 +807,7 @@ int main(int argc, char **argv)
             cam.stop();
             std::cerr << "\n[SYSTEM] Enterprise drawing session ended.\n\n";
         }
-        else if (line == "hand-prod")
+        else if (line == "test")
         {
             // Production hand recognition mode
             std::cerr << "\n=== JARVIS Production Hand Recognition Mode ===\n";
@@ -748,8 +815,8 @@ int main(int argc, char **argv)
 
             camera::Camera cam;
             camera::CameraConfig cam_config;
-            cam_config.width = 640;
-            cam_config.height = 480;
+            cam_config.width = 1920;
+            cam_config.height = 1080;
             cam_config.framerate = 30;
             cam_config.verbose = true;
 

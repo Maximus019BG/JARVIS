@@ -9,20 +9,55 @@
 namespace sketch
 {
 
-    // High-precision point for enterprise drawing
+    // High-precision point for enterprise drawing (stored as percentages 0-100)
     struct Point
     {
-        float x, y; // Sub-pixel precision for architects
+        float x, y; // Percentage coordinates (0.0 - 100.0) for resolution independence
         Point() : x(0.0f), y(0.0f) {}
         Point(float x_, float y_) : x(x_), y(y_) {}
         Point(int x_, int y_) : x(static_cast<float>(x_)), y(static_cast<float>(y_)) {}
 
-        // Distance to another point
+        // Distance to another point (in percentage units)
         float distance(const Point &other) const
         {
             float dx = x - other.x;
             float dy = y - other.y;
             return std::sqrt(dx * dx + dy * dy);
+        }
+
+        // Create point from pixel coordinates
+        static Point from_pixels(float px, float py, uint32_t width, uint32_t height)
+        {
+            return Point((px / width) * 100.0f, (py / height) * 100.0f);
+        }
+
+        // Convert to pixel coordinates
+        void to_pixels(float &px, float &py, uint32_t width, uint32_t height) const
+        {
+            px = (x / 100.0f) * width;
+            py = (y / 100.0f) * height;
+        }
+    };
+
+    // Grid configuration for architect mode
+    struct GridConfig
+    {
+        bool enabled;
+        float grid_spacing_percent;  // Grid spacing as percentage of screen
+        float real_world_spacing_cm; // Real-world size each grid square represents (in cm)
+        uint32_t grid_color;
+        int grid_thickness;
+        bool snap_to_grid;
+        bool show_measurements;
+
+        GridConfig() : enabled(true),
+                       grid_spacing_percent(5.0f),  // 5% of screen per grid square
+                       real_world_spacing_cm(5.0f), // Default: 5cm per grid square
+                       grid_color(0x00505050),      // Light grey
+                       grid_thickness(1),
+                       snap_to_grid(true),
+                       show_measurements(true)
+        {
         }
     };
 
@@ -36,6 +71,14 @@ namespace sketch
         uint64_t timestamp; // When line was created
 
         Line() : color(0x00000000), thickness(3), timestamp(0) {}
+
+        // Calculate real-world length in cm based on grid config
+        float get_real_length(const GridConfig &grid) const
+        {
+            float percent_distance = start.distance(end);
+            float grid_squares = percent_distance / grid.grid_spacing_percent;
+            return grid_squares * grid.real_world_spacing_cm;
+        }
     };
 
     // A complete sketch with metadata
@@ -157,6 +200,14 @@ namespace sketch
         void set_confirmation_frames(int frames) { required_confirmation_frames_ = frames; }
         void set_jitter_threshold(float threshold) { jitter_threshold_ = threshold; }
 
+        // Grid configuration
+        void set_grid_enabled(bool enabled) { grid_config_.enabled = enabled; }
+        void set_grid_spacing(float spacing_percent) { grid_config_.grid_spacing_percent = spacing_percent; }
+        void set_real_world_spacing(float spacing_cm) { grid_config_.real_world_spacing_cm = spacing_cm; }
+        void set_snap_to_grid(bool snap) { grid_config_.snap_to_grid = snap; }
+        void set_show_measurements(bool show) { grid_config_.show_measurements = show; }
+        const GridConfig &get_grid_config() const { return grid_config_; }
+
         // Enterprise features
         void enable_anti_aliasing(bool enable) { anti_aliasing_enabled_ = enable; }
         void enable_subpixel_rendering(bool enable) { subpixel_rendering_ = enable; }
@@ -189,8 +240,9 @@ namespace sketch
 
         // Gesture confirmation tracking
         GestureConfirmation current_confirmation_;
-        int required_confirmation_frames_; // Default 5
+        int required_confirmation_frames_; // Default 2
         bool gesture_changed_since_start_;
+        float position_tolerance_percent_; // Position tolerance for confirmation (in percentage units)
 
         // High-precision smoothing for jitter reduction
         std::deque<Point> position_buffer_;
@@ -209,6 +261,9 @@ namespace sketch
         // Statistics
         uint64_t last_line_timestamp_;
 
+        // Grid system
+        GridConfig grid_config_;
+
         // Helper functions
         Point get_smoothed_position();
         Point get_predictive_smoothed_position();
@@ -226,6 +281,12 @@ namespace sketch
 
         void update_state_machine(const std::vector<hand_detector::HandDetection> &hands);
         void finalize_line();
+
+        // Grid system helpers
+        Point snap_to_grid(const Point &p) const;
+        void render_grid(void *map, uint32_t stride, uint32_t width, uint32_t height);
+        void render_measurement_label(void *map, uint32_t stride, uint32_t width, uint32_t height,
+                                      const Point &start, const Point &end, float length_cm);
 
         // Anti-aliased line drawing (Xiaolin Wu algorithm)
         void draw_aa_line(void *map, uint32_t stride, uint32_t width, uint32_t height,

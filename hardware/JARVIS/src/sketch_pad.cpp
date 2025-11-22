@@ -382,8 +382,9 @@ namespace sketch
         : state_(DrawingState::WAITING_FOR_START),
           current_color_(0x00000000),
           current_thickness_(3),
-          required_confirmation_frames_(3),
+          required_confirmation_frames_(2),
           gesture_changed_since_start_(false),
+          position_tolerance_percent_(3.0f),
           smoothing_window_(9),
           jitter_threshold_(1.5f),
           anti_aliasing_enabled_(true),
@@ -423,12 +424,21 @@ namespace sketch
         std::cerr << "[SketchPad] └─────────────────────────────────────────────────┘\n";
         std::cerr << "[SketchPad] Initialized: '" << name << "'\n";
         std::cerr << "  • Resolution: " << width << "x" << height << "\n";
+        std::cerr << "  • Coordinate system: Percentage-based (resolution independent)\n";
+        std::cerr << "  • Grid: " << (grid_config_.enabled ? "ENABLED" : "DISABLED") << "\n";
+        if (grid_config_.enabled)
+        {
+            std::cerr << "    - Grid spacing: " << grid_config_.grid_spacing_percent << "% ("
+                      << grid_config_.real_world_spacing_cm << " cm)\n";
+            std::cerr << "    - Snap to grid: " << (grid_config_.snap_to_grid ? "YES" : "NO") << "\n";
+            std::cerr << "    - Show measurements: " << (grid_config_.show_measurements ? "YES" : "NO") << "\n";
+        }
         std::cerr << "  • Confirmation frames: " << required_confirmation_frames_ << "\n";
+        std::cerr << "  • Position tolerance: " << position_tolerance_percent_ << "% (for stable locking)\n";
         std::cerr << "  • Anti-aliasing: " << (anti_aliasing_enabled_ ? "ENABLED" : "DISABLED") << "\n";
         std::cerr << "  • Sub-pixel rendering: " << (subpixel_rendering_ ? "ENABLED" : "DISABLED") << "\n";
         std::cerr << "  • Predictive smoothing: " << (predictive_smoothing_ ? "ENABLED" : "DISABLED") << "\n";
         std::cerr << "  • Projector calibration: " << (use_projector_calibration_ ? "ENABLED" : "DISABLED") << "\n";
-        std::cerr << "  • Jitter threshold: " << jitter_threshold_ << "px (sub-pixel precision)\n";
     }
 
     bool SketchPad::update(const std::vector<hand_detector::HandDetection> &hands)
@@ -454,6 +464,14 @@ namespace sketch
             }
         }
 
+        // Track if we EVER had 2+ consecutive frames (for persistent line drawing)
+        static int first_gesture_frames = 0;
+        static Point first_gesture_pos;
+        static int second_gesture_frames = 0;
+        static Point second_gesture_pos;
+        static bool first_locked = false;
+        static bool second_locked = false;
+
         // Get current position with enterprise-grade smoothing
         Point current_pos;
         bool has_pointing = false;
@@ -463,14 +481,20 @@ namespace sketch
             has_pointing = true;
 
             // Use fingertip if available (most accurate), otherwise center
+            float pixel_x, pixel_y;
             if (!pointing_hand->fingertips.empty())
             {
-                current_pos = Point(pointing_hand->fingertips[0].x, pointing_hand->fingertips[0].y);
+                pixel_x = pointing_hand->fingertips[0].x;
+                pixel_y = pointing_hand->fingertips[0].y;
             }
             else
             {
-                current_pos = Point(pointing_hand->center.x, pointing_hand->center.y);
+                pixel_x = pointing_hand->center.x;
+                pixel_y = pointing_hand->center.y;
             }
+
+            // Convert to percentage coordinates
+            current_pos = Point::from_pixels(pixel_x, pixel_y, sketch_.width, sketch_.height);
 
             // Add to smoothing buffer
             position_buffer_.push_back(current_pos);
@@ -516,15 +540,27 @@ namespace sketch
             if (has_pointing)
             {
                 // Accept any drawing gesture (pointing or peace) for confirmation
-                // Mixed gestures are allowed (e.g., 1 pointing + 2 peace = locked)
-                if (is_pointing_gesture(current_confirmation_.gesture))
+                if (current_confirmation_.consecutive_frames > 0)
                 {
-                    // Continue confirmation with any drawing gesture
-                    current_confirmation_.consecutive_frames++;
-                    current_confirmation_.position = current_pos;
-                    current_confirmation_.confidence_sum += best_confidence;
-                    // Update to latest gesture for logging
-                    current_confirmation_.gesture = active_gesture;
+                    // Check if position is within tolerance (must be same grid location)
+                    float pos_distance = current_pos.distance(current_confirmation_.position);
+                    if (pos_distance <= position_tolerance_percent_)
+                    {
+                        // Continue confirmation - position is stable, same location
+                        current_confirmation_.consecutive_frames++;
+                        current_confirmation_.confidence_sum += best_confidence;
+                        // ALWAYS update to LATEST position (use last frame at this location)
+                        current_confirmation_.position = current_pos;
+                        current_confirmation_.gesture = active_gesture;
+                    }
+                    else
+                    {
+                        // Position moved to different location, restart confirmation
+                        current_confirmation_.gesture = active_gesture;
+                        current_confirmation_.consecutive_frames = 1;
+                        current_confirmation_.position = current_pos;
+                        current_confirmation_.confidence_sum = best_confidence;
+                    }
                 }
                 else
                 {
@@ -535,10 +571,18 @@ namespace sketch
                     current_confirmation_.confidence_sum = best_confidence;
                 }
 
-                // Check if confirmed
+                // Track first gesture persistently
+                if (current_confirmation_.consecutive_frames >= required_confirmation_frames_ && !first_locked)
+                {
+                    first_gesture_frames = current_confirmation_.consecutive_frames;
+                    first_gesture_pos = current_confirmation_.position; // Use LAST position
+                    first_locked = true;
+                }
+
+                // Check if confirmed (use LAST position at this location)
                 if (current_confirmation_.consecutive_frames >= required_confirmation_frames_)
                 {
-                    start_point_ = current_confirmation_.position;
+                    start_point_ = snap_to_grid(current_confirmation_.position);
                     preview_end_point_ = start_point_;
                     state_ = DrawingState::START_CONFIRMED;
                     gesture_changed_since_start_ = false;
@@ -546,14 +590,15 @@ namespace sketch
                     std::cerr << "[SketchPad] ✓ START confirmed at ("
                               << start_point_.x << ", " << start_point_.y
                               << ") after " << current_confirmation_.consecutive_frames
-                              << " frames (conf: " << (int)(current_confirmation_.avg_confidence() * 100) << "%)\n";
+                              << " detections (conf: " << (int)(current_confirmation_.avg_confidence() * 100) << "%)"
+                              << " gesture: " << (active_gesture == hand_detector::Gesture::POINTING ? "POINTING" : "PEACE") << "\n";
 
                     current_confirmation_.reset();
                 }
             }
             else
             {
-                // Reset confirmation if no pointing
+                // Don't reset first locked position
                 if (current_confirmation_.consecutive_frames > 0)
                 {
                     current_confirmation_.reset();
@@ -562,36 +607,40 @@ namespace sketch
             break;
 
         case DrawingState::START_CONFIRMED:
-            // Wait for gesture change OR direct pointing (for continuous workflow)
+            // Wait for ANY gesture change (including no hand detection)
             if (has_other_gesture)
             {
                 gesture_changed_since_start_ = true;
                 state_ = DrawingState::WAITING_FOR_END;
                 current_confirmation_.reset();
 
-                std::cerr << "[SketchPad] → Gesture changed, waiting for END point...\n";
+                std::cerr << "[SketchPad] → Gesture changed (non-drawing), waiting for END point...\n";
             }
             else if (has_pointing)
             {
                 // Update preview end point in real-time
                 preview_end_point_ = current_pos;
 
-                // If user moved far enough without gesture change, still allow confirmation
-                // This enables: pointing -> move hand -> pointing (without intermediate gesture)
+                // If user moved far enough, consider gesture as changed
+                // This allows: pointing -> move hand -> pointing (same gesture, different position)
                 float dist_from_start = start_point_.distance(current_pos);
-                if (dist_from_start > 20.0f)
+                if (dist_from_start > 5.0f) // 5% of screen size
                 {
-                    // Consider this as implicitly changed (moved significantly)
+                    // Moved significantly - allow END confirmation
                     gesture_changed_since_start_ = true;
+                    state_ = DrawingState::WAITING_FOR_END;
+                    std::cerr << "[SketchPad] → Hand moved " << (int)dist_from_start << "%, waiting for END point...\n";
                 }
             }
             else
             {
-                // No hand detected - implicit gesture change
-                if (current_confirmation_.consecutive_frames > 0)
+                // No hand detected - counts as gesture change (not drawing)
+                if (!gesture_changed_since_start_)
                 {
                     gesture_changed_since_start_ = true;
+                    state_ = DrawingState::WAITING_FOR_END;
                     current_confirmation_.reset();
+                    std::cerr << "[SketchPad] → Hand removed (0 hands), waiting for END point...\n";
                 }
             }
             break;
@@ -603,15 +652,27 @@ namespace sketch
                 preview_end_point_ = current_pos;
 
                 // Accept any drawing gesture (pointing or peace) for confirmation
-                // Mixed gestures are allowed (e.g., 1 pointing + 2 peace = locked)
-                if (is_pointing_gesture(current_confirmation_.gesture))
+                if (current_confirmation_.consecutive_frames > 0)
                 {
-                    // Continue confirmation with any drawing gesture
-                    current_confirmation_.consecutive_frames++;
-                    current_confirmation_.position = current_pos;
-                    current_confirmation_.confidence_sum += best_confidence;
-                    // Update to latest gesture for logging
-                    current_confirmation_.gesture = active_gesture;
+                    // Check if position is within tolerance (must be same grid location)
+                    float pos_distance = current_pos.distance(current_confirmation_.position);
+                    if (pos_distance <= position_tolerance_percent_)
+                    {
+                        // Continue confirmation - position is stable, same location
+                        current_confirmation_.consecutive_frames++;
+                        current_confirmation_.confidence_sum += best_confidence;
+                        // ALWAYS update to LATEST position (use last frame at this location)
+                        current_confirmation_.position = current_pos;
+                        current_confirmation_.gesture = active_gesture;
+                    }
+                    else
+                    {
+                        // Position moved to different location, restart confirmation
+                        current_confirmation_.gesture = active_gesture;
+                        current_confirmation_.consecutive_frames = 1;
+                        current_confirmation_.position = current_pos;
+                        current_confirmation_.confidence_sum = best_confidence;
+                    }
                 }
                 else
                 {
@@ -622,23 +683,38 @@ namespace sketch
                     current_confirmation_.confidence_sum = best_confidence;
                 }
 
-                // Check if confirmed
+                // Track second gesture persistently
+                if (current_confirmation_.consecutive_frames >= required_confirmation_frames_ && !second_locked)
+                {
+                    second_gesture_frames = current_confirmation_.consecutive_frames;
+                    second_gesture_pos = current_confirmation_.position; // Use LAST position
+                    second_locked = true;
+                }
+
+                // Check if confirmed (use LAST position at this location)
                 if (current_confirmation_.consecutive_frames >= required_confirmation_frames_)
                 {
-                    // Finalize line
-                    preview_end_point_ = current_confirmation_.position;
+                    // Finalize line with grid snapping - use LATEST confirmed position
+                    preview_end_point_ = snap_to_grid(current_confirmation_.position);
                     state_ = DrawingState::END_CONFIRMED;
 
                     std::cerr << "[SketchPad] ✓ END confirmed at ("
                               << preview_end_point_.x << ", " << preview_end_point_.y
                               << ") after " << current_confirmation_.consecutive_frames
-                              << " frames (conf: " << (int)(current_confirmation_.avg_confidence() * 100) << "%)\n";
+                              << " detections (conf: " << (int)(current_confirmation_.avg_confidence() * 100) << "%)"
+                              << " gesture: " << (active_gesture == hand_detector::Gesture::POINTING ? "POINTING" : "PEACE") << "\n";
                 }
             }
             else
             {
-                // Reset confirmation if no pointing
-                if (current_confirmation_.consecutive_frames > 0)
+                // If we have both locked positions, draw line even without current confirmation
+                if (first_locked && second_locked && !has_pointing)
+                {
+                    preview_end_point_ = snap_to_grid(second_gesture_pos);
+                    state_ = DrawingState::END_CONFIRMED;
+                    std::cerr << "[SketchPad] ✓ END confirmed from history (no hand)\n";
+                }
+                else if (current_confirmation_.consecutive_frames > 0)
                 {
                     current_confirmation_.reset();
                 }
@@ -652,6 +728,11 @@ namespace sketch
             current_confirmation_.reset();
             gesture_changed_since_start_ = false;
             position_buffer_.clear();
+            // Reset persistent tracking
+            first_gesture_frames = 0;
+            first_locked = false;
+            second_gesture_frames = 0;
+            second_locked = false;
             break;
         }
     }
@@ -756,15 +837,34 @@ namespace sketch
         std::cerr << "[SketchPad] ✓ Projector calibration activated\n";
     }
 
+    Point SketchPad::snap_to_grid(const Point &p) const
+    {
+        if (!grid_config_.snap_to_grid || !grid_config_.enabled)
+        {
+            return p;
+        }
+
+        // Snap to nearest grid intersection
+        float spacing = grid_config_.grid_spacing_percent;
+        float snapped_x = std::round(p.x / spacing) * spacing;
+        float snapped_y = std::round(p.y / spacing) * spacing;
+
+        // Clamp to valid range
+        snapped_x = std::max(0.0f, std::min(100.0f, snapped_x));
+        snapped_y = std::max(0.0f, std::min(100.0f, snapped_y));
+
+        return Point(snapped_x, snapped_y);
+    }
+
     void SketchPad::finalize_line()
     {
         // Only create line if start and end are different
         float dist = start_point_.distance(preview_end_point_);
 
-        if (dist < 2.5f)
-        { // Slightly lower threshold for precision work
+        if (dist < 1.0f)
+        { // Minimum 1% of screen distance
             std::cerr << "[SketchPad] ✗ Line too short (" << std::fixed << std::setprecision(1)
-                      << dist << "px), discarded\n";
+                      << dist << "%), discarded\n";
             return;
         }
 
@@ -780,12 +880,15 @@ namespace sketch
         sketch_.lines.push_back(line);
         last_line_timestamp_ = line.timestamp;
 
+        float real_length = line.get_real_length(grid_config_);
+
         std::cerr << "[SketchPad] ✓ Line #" << std::setw(4) << sketch_.lines.size() << " created: "
-                  << "(" << std::setw(7) << std::fixed << std::setprecision(1) << line.start.x
-                  << "," << std::setw(7) << line.start.y << ") → "
-                  << "(" << std::setw(7) << line.end.x
-                  << "," << std::setw(7) << line.end.y << ") "
-                  << "length: " << std::setw(6) << std::setprecision(1) << dist << "px\n";
+                  << "(" << std::setw(6) << std::fixed << std::setprecision(1) << line.start.x
+                  << "%," << std::setw(6) << line.start.y << "%) → "
+                  << "(" << std::setw(6) << line.end.x
+                  << "%," << std::setw(6) << line.end.y << "%) "
+                  << "length: " << std::setw(5) << std::setprecision(1) << dist << "% "
+                  << "(" << std::setw(6) << std::setprecision(2) << real_length << " cm)\n";
     }
 
     void SketchPad::clear()
@@ -936,48 +1039,156 @@ namespace sketch
         }
     }
 
+    void SketchPad::render_grid(void *map, uint32_t stride, uint32_t width, uint32_t height)
+    {
+        float spacing = grid_config_.grid_spacing_percent;
+
+        // Draw vertical lines
+        for (float x_percent = 0.0f; x_percent <= 100.0f; x_percent += spacing)
+        {
+            float px = (x_percent / 100.0f) * width;
+            int x_pixel = static_cast<int>(px);
+
+            for (uint32_t y = 0; y < height; ++y)
+            {
+                set_pixel(map, stride, width, height, x_pixel, y, grid_config_.grid_color);
+            }
+        }
+
+        // Draw horizontal lines
+        for (float y_percent = 0.0f; y_percent <= 100.0f; y_percent += spacing)
+        {
+            float py = (y_percent / 100.0f) * height;
+            int y_pixel = static_cast<int>(py);
+
+            for (uint32_t x = 0; x < width; ++x)
+            {
+                set_pixel(map, stride, width, height, x, y_pixel, grid_config_.grid_color);
+            }
+        }
+    }
+
+    void SketchPad::render_measurement_label(void *map, uint32_t stride, uint32_t width, uint32_t height,
+                                             const Point &start, const Point &end, float length_cm)
+    {
+        // Calculate midpoint for label placement
+        float mid_x = (start.x + end.x) / 2.0f;
+        float mid_y = (start.y + end.y) / 2.0f;
+
+        float px, py;
+        Point(mid_x, mid_y).to_pixels(px, py, width, height);
+
+        // Draw a small marker at the midpoint to indicate measurement location
+        const int marker_size = 3;
+        for (int dy = -marker_size; dy <= marker_size; ++dy)
+        {
+            for (int dx = -marker_size; dx <= marker_size; ++dx)
+            {
+                set_pixel(map, stride, width, height,
+                          static_cast<int>(px) + dx,
+                          static_cast<int>(py) + dy,
+                          0xFFFFFF00); // Yellow marker
+            }
+        }
+
+        // TODO: Add text rendering for measurement labels
+        // For now, measurements are shown in console logs
+    }
+
     void SketchPad::render(void *map, uint32_t stride, uint32_t width, uint32_t height)
     {
+        // Render grid first (background)
+        if (grid_config_.enabled)
+        {
+            render_grid(map, stride, width, height);
+        }
+
         // Render all completed lines
         for (const auto &line : sketch_.lines)
         {
+            // Convert percentage coordinates to pixels
+            float start_px, start_py, end_px, end_py;
+            line.start.to_pixels(start_px, start_py, width, height);
+            line.end.to_pixels(end_px, end_py, width, height);
+
+            Point pixel_start(start_px, start_py);
+            Point pixel_end(end_px, end_py);
+
+            // Draw dots at start and end grid points
+            const int dot_radius = 4;
+            for (int dy = -dot_radius; dy <= dot_radius; ++dy)
+            {
+                for (int dx = -dot_radius; dx <= dot_radius; ++dx)
+                {
+                    if (dx * dx + dy * dy <= dot_radius * dot_radius)
+                    {
+                        // Start dot
+                        set_pixel(map, stride, width, height,
+                                  static_cast<int>(start_px) + dx,
+                                  static_cast<int>(start_py) + dy,
+                                  0x00FFFFFF); // White
+                        // End dot
+                        set_pixel(map, stride, width, height,
+                                  static_cast<int>(end_px) + dx,
+                                  static_cast<int>(end_py) + dy,
+                                  0x00FFFFFF); // White
+                    }
+                }
+            }
+
             if (anti_aliasing_enabled_ && subpixel_rendering_)
             {
                 // Enterprise anti-aliased rendering
                 draw_aa_line(map, stride, width, height,
-                             line.start, line.end, line.color, line.thickness);
+                             pixel_start, pixel_end, line.color, line.thickness);
             }
             else
             {
                 // Fallback to standard line drawing
                 draw_ticker::draw_line(map, stride, width, height,
-                                       static_cast<int>(line.start.x),
-                                       static_cast<int>(line.start.y),
-                                       static_cast<int>(line.end.x),
-                                       static_cast<int>(line.end.y),
+                                       static_cast<int>(start_px),
+                                       static_cast<int>(start_py),
+                                       static_cast<int>(end_px),
+                                       static_cast<int>(end_py),
                                        line.color, line.thickness);
+            }
+
+            // Render measurement label if enabled
+            if (grid_config_.show_measurements)
+            {
+                float real_length = line.get_real_length(grid_config_);
+                render_measurement_label(map, stride, width, height,
+                                         line.start, line.end, real_length);
             }
         }
 
         // Render preview line if in drawing mode
         if (has_preview())
         {
+            // Convert percentage coordinates to pixels
+            float start_px, start_py, end_px, end_py;
+            start_point_.to_pixels(start_px, start_py, width, height);
+            preview_end_point_.to_pixels(end_px, end_py, width, height);
+
+            Point pixel_start(start_px, start_py);
+            Point pixel_end(end_px, end_py);
+
             // Use semi-transparent preview color
             uint32_t preview_color = (current_color_ & 0x00FFFFFF) | 0x80000000;
 
             if (anti_aliasing_enabled_ && subpixel_rendering_)
             {
                 draw_aa_line(map, stride, width, height,
-                             start_point_, preview_end_point_,
+                             pixel_start, pixel_end,
                              preview_color, current_thickness_);
             }
             else
             {
                 draw_ticker::draw_line(map, stride, width, height,
-                                       static_cast<int>(start_point_.x),
-                                       static_cast<int>(start_point_.y),
-                                       static_cast<int>(preview_end_point_.x),
-                                       static_cast<int>(preview_end_point_.y),
+                                       static_cast<int>(start_px),
+                                       static_cast<int>(start_py),
+                                       static_cast<int>(end_px),
+                                       static_cast<int>(end_py),
                                        preview_color, current_thickness_);
             }
 
@@ -989,8 +1200,8 @@ namespace sketch
                 {
                     if (dx * dx + dy * dy <= indicator_radius * indicator_radius)
                     {
-                        int px = static_cast<int>(start_point_.x) + dx;
-                        int py = static_cast<int>(start_point_.y) + dy;
+                        int px = static_cast<int>(start_px) + dx;
+                        int py = static_cast<int>(start_py) + dy;
                         set_pixel(map, stride, width, height, px, py, 0x0000FF00); // Green
                     }
                 }
@@ -1005,8 +1216,8 @@ namespace sketch
                     {
                         if (dx * dx + dy * dy <= indicator_radius * indicator_radius)
                         {
-                            int px = static_cast<int>(preview_end_point_.x) + dx;
-                            int py = static_cast<int>(preview_end_point_.y) + dy;
+                            int px = static_cast<int>(end_px) + dx;
+                            int py = static_cast<int>(end_py) + dy;
 
                             // Pulsing effect based on confirmation progress
                             float pulse = static_cast<float>(current_confirmation_.consecutive_frames) /
