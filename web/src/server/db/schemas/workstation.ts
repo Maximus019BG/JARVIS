@@ -5,7 +5,6 @@ import { user } from "~/server/db/schemas/user";
 export const workstation = pgTable("workstation", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  slug: text("slug").unique(),
   logo: text("logo"),
   createdAt: timestamp("created_at").notNull(),
   metadata: text("metadata"),

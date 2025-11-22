@@ -95,8 +95,8 @@ export function useCreateWorkstation() {
 
   return useMutation({
     mutationFn: async (input: {
+      id: string;
       name: string;
-      slug: string;
       logo?: string;
     }) => {
       const { data } = await axios.post<Workstation>(

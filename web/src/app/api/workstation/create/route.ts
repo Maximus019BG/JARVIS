@@ -6,7 +6,7 @@ import { workstation } from "~/server/db/schemas/workstation";
 
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({
-    headers: await Promise.resolve(new Headers()),
+    headers: request.headers,
   });
 
   if (!session?.user) {
@@ -14,17 +14,16 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json()) as {
+    id: string;
     name: string;
-    slug: string;
     logo?: string;
   };
 
   const [createdWorkstation] = await db
     .insert(workstation)
     .values({
-      id: crypto.randomUUID(),
+      id: body.id,
       name: body.name,
-      slug: body.slug,
       logo: body.logo,
       userId: session.user.id,
       createdAt: new Date(),
@@ -32,6 +31,5 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
-  // Set as active workstation in session/cookie
   return NextResponse.json(createdWorkstation);
 }

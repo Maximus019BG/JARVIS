@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
 import { workstation } from "~/server/db/schemas/workstation";
 import { eq } from "drizzle-orm";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({
-    headers: await Promise.resolve(new Headers()),
+    headers: request.headers,
   });
 
   if (!session?.user) {

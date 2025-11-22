@@ -66,8 +66,8 @@ export function CreateWorkstationDialog({
 
     try {
       await createMutation.mutateAsync({
+        id: formData.id,
         name: formData.name,
-        slug: generateRandomSlug(),
         logo: formData.logo ? await convertToBase64(formData.logo) : undefined,
       });
 
