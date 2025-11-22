@@ -43,7 +43,7 @@ export function CreateWorkstationDialog({
   const form = useForm<WorkstationCreate>({
     resolver: zodResolver(workstationCreateSchema),
     defaultValues: {
-      id: "",
+      id: generateRandomSlug(),
       name: "",
       logo: undefined,
     },

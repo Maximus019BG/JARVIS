@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from "axios";
 
 export interface Blueprint {
   id: string;
@@ -24,8 +24,8 @@ export interface BlueprintFilters {
   workstationId?: string;
   tags?: string[];
   author?: string;
-  sortBy?: 'name' | 'createdAt' | 'lastModified';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: "name" | "createdAt" | "lastModified";
+  sortOrder?: "asc" | "desc";
 }
 
 export interface BlueprintsResponse {
@@ -37,14 +37,14 @@ export interface BlueprintsResponse {
 }
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: "/api",
   timeout: 10000,
 });
 
 // Add request interceptor for auth
 api.interceptors.request.use((config) => {
   // Add auth token if available
-  const token = localStorage.getItem('authToken');
+  const token = localStorage.getItem("authToken");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -54,27 +54,44 @@ api.interceptors.request.use((config) => {
 export const blueprintsApi = {
   // Get all blueprints with pagination and filters
   getBlueprints: async (
+    workstationId: string,
     page = 1,
     limit = 12,
-    filters: BlueprintFilters = {}
+    filters: BlueprintFilters = {},
+    recentOnly = false,
   ): Promise<BlueprintsResponse> => {
     const params = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
     });
 
+    if (recentOnly) params.append("recentOnly", "true");
+
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         if (Array.isArray(value)) {
-          value.forEach(v => params.append(key, v));
+          value.forEach((v) => params.append(key, v));
         } else {
           params.append(key, value.toString());
         }
       }
     });
 
-    const response = await api.get(`/blueprints?${params}`);
-    return response.data;
+    const response = await api.get(
+      `/workstation/blueprint/list/${workstationId}?${params}`,
+    );
+    const data = response.data;
+    if (Array.isArray(data)) {
+      const blueprints = data as Blueprint[];
+      return {
+        blueprints,
+        total: blueprints.length,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(blueprints.length / limit)),
+      } as BlueprintsResponse;
+    }
+    return data as BlueprintsResponse;
   },
 
   // Get a single blueprint by ID
@@ -84,13 +101,18 @@ export const blueprintsApi = {
   },
 
   // Create a new blueprint
-  createBlueprint: async (blueprint: Partial<Blueprint>): Promise<Blueprint> => {
-    const response = await api.post('/blueprints', blueprint);
+  createBlueprint: async (
+    blueprint: Partial<Blueprint>,
+  ): Promise<Blueprint> => {
+    const response = await api.post("/blueprints", blueprint);
     return response.data;
   },
 
   // Update an existing blueprint
-  updateBlueprint: async (id: string, blueprint: Partial<Blueprint>): Promise<Blueprint> => {
+  updateBlueprint: async (
+    id: string,
+    blueprint: Partial<Blueprint>,
+  ): Promise<Blueprint> => {
     const response = await api.put(`/blueprints/${id}`, blueprint);
     return response.data;
   },
@@ -113,7 +135,7 @@ export const blueprintsApi = {
     byWorkstation: Record<string, number>;
     recentActivity: Array<{ date: string; count: number }>;
   }> => {
-    const response = await api.get('/blueprints/stats');
+    const response = await api.get("/blueprints/stats");
     return response.data;
   },
 };

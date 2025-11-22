@@ -1,10 +1,19 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { ArrowLeft, Save, Play, Trash2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import React from "react";
+import { ArrowLeft, Save, Play, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
+import { useActiveWorkstation } from "~/lib/workstation-hooks";
+import { useEffect } from "react";
+import { blueprintsApi } from "~/lib/api/blueprints";
 
 interface EditBlueprintPageProps {
   params: {
@@ -14,38 +23,80 @@ interface EditBlueprintPageProps {
 
 export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
   const router = useRouter();
+  const { data: activeWorkstation } = useActiveWorkstation();
+  const [content, setContent] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  if (!activeWorkstation) return null;
+
+  useEffect(() => {
+    const load = async () => {
+      if (!activeWorkstation?.id) return;
+      try {
+        const res = await fetch(
+          `/api/workstation/blueprint/load/${activeWorkstation.id}/${params.id}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        setContent(JSON.stringify(data, null, 2));
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    void load();
+  }, [activeWorkstation?.id, params.id]);
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
+          <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Edit Blueprint</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Edit Blueprint
+            </h1>
             <p className="text-muted-foreground">
               Modify blueprint {params.id}
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-2">
           <Button variant="outline" size="sm">
-            <Trash2 className="h-4 w-4 mr-2" />
+            <Trash2 className="mr-2 h-4 w-4" />
             Delete
           </Button>
           <Button variant="outline">
-            <Play className="h-4 w-4 mr-2" />
+            <Play className="mr-2 h-4 w-4" />
             Test
           </Button>
-          <Button>
-            <Save className="h-4 w-4 mr-2" />
+          <Button
+            onClick={async () => {
+              if (!activeWorkstation?.id) return;
+              setLoading(true);
+              try {
+                await fetch(
+                  `/api/workstation/blueprint/save/${activeWorkstation.id}/${params.id}`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: name || `Blueprint ${params.id}`,
+                      data: JSON.parse(content || "{}"),
+                    }),
+                  },
+                );
+              } catch (e) {
+                console.error(e);
+              }
+              setLoading(false);
+            }}
+          >
+            <Save className="mr-2 h-4 w-4" />
             Save Changes
           </Button>
         </div>
@@ -59,13 +110,12 @@ export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-96 border-2 border-dashed border-muted rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-muted-foreground">Blueprint Editor</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Blueprint editing interface will be loaded here
-              </p>
-            </div>
+          <div className="border-muted flex h-96 flex-col rounded-lg border-2 border-dashed">
+            <textarea
+              className="h-full w-full bg-transparent p-4 font-mono text-sm"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+            />
           </div>
         </CardContent>
       </Card>

@@ -3,6 +3,9 @@ import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { eq, and } from "drizzle-orm";
 import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
+import { auth } from "~/lib/auth";
+import { workstation } from "~/server/db/schemas/workstation";
+import { eq } from "drizzle-orm";
 
 export async function GET(
   _request: Request,
@@ -31,9 +34,26 @@ export async function GET(
     );
   }
 
+  const session = await auth.api.getSession({ headers: _request.headers });
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   // Decode (or pass-through if not encrypted)
   const decodedWorkstationId = decodeId(workstationId, secret);
   const decodedBlueprintId = decodeId(blueprintId, secret);
+
+  // Ensure workstation belongs to user
+  const ws = (
+    await db
+      .select()
+      .from(workstation)
+      .where(eq(workstation.id, decodedWorkstationId))
+      .limit(1)
+  )[0];
+  if (!ws || ws.userId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   // Query - select one record
   const data = await db

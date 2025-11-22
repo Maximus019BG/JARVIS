@@ -6,6 +6,7 @@ import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { workstation } from "~/server/db/schemas/workstation";
 import { z } from "zod";
 import { blueprintSaveSchema } from "~/lib/validation/blueprints";
+import { auth } from "~/lib/auth";
 
 export async function POST(
   _request: Request,
@@ -41,6 +42,14 @@ export async function POST(
   const decodedWorkstationId = decodeId(workstationId, secret);
   const decodedBlueprintId = decodeId(blueprintId, secret);
 
+  const session = await auth.api.getSession({
+    headers: _request.headers,
+  });
+
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const workstationExists = await db
     .select()
     .from(workstation)
@@ -57,14 +66,46 @@ export async function POST(
     );
   }
 
-  // Save blueprint
-  await db.insert(blueprint).values({
+  // Ensure session matches workstation owner
+  if (session.user.id !== workstationRecord.userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Save or update blueprint
+  const existing = await db
+    .select()
+    .from(blueprint)
+    .where(
+      and(
+        eq(blueprint.id, decodedBlueprintId),
+        eq(blueprint.workstationId, decodedWorkstationId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(blueprint)
+      .set({
+        name: data.name ?? (existing[0] as any).name,
+        metadata: data.data ? JSON.stringify(data.data) : (existing[0] as any).metadata,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(blueprint.id, decodedBlueprintId),
+          eq(blueprint.workstationId, decodedWorkstationId),
+        ),
+      );
+  } else {
+    await db.insert(blueprint).values({
     id: decodedBlueprintId,
     name: data.name ?? "Untitled Blueprint",
     createdAt: new Date(),
     createdBy: workstationRecord.userId,
     metadata: data.data ? JSON.stringify(data.data) : null,
     workstationId: decodedWorkstationId,
+    updatedAt: new Date(),
 
   });
 
