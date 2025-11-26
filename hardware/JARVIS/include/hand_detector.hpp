@@ -21,6 +21,14 @@ struct Point {
     double distance(const Point& other) const;
 };
 
+// Arithmetic for averaging (needed for RingBuffer)
+inline Point operator+(const Point& a, const Point& b) {
+    return Point(a.x + b.x, a.y + b.y);
+}
+inline Point operator/(const Point& a, float val) {
+    return Point(static_cast<int>(a.x / val), static_cast<int>(a.y / val));
+}
+
 // Represents a bounding box
 struct BoundingBox {
     int x, y;          // Top-left corner

@@ -36,6 +36,10 @@ endif()
 
 # ============================================================================
 # Dependencies
+# Use local flatbuffers build (v24.3.25) for this project only
+set(FLATBUFFERS_ROOT "${CMAKE_SOURCE_DIR}/../../flatbuffers")
+include_directories(BEFORE SYSTEM ${FLATBUFFERS_ROOT}/include)
+link_directories(${FLATBUFFERS_ROOT})
 # ============================================================================
 find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -135,6 +139,7 @@ target_include_directories(jarvis_core
         ${DRM_INCLUDE_DIRS}
         /usr/include/libdrm
         ${OPENSSL_INCLUDE_DIR}
+        ${FLATBUFFERS_ROOT}/include
 )
 
 # Add TFLite support if available
@@ -154,6 +159,7 @@ target_link_libraries(jarvis_core
         ${GBM_LIBRARIES}
         ${DRM_LIBRARIES}
         m
+        ${FLATBUFFERS_ROOT}/libflatbuffers.a
 )
 
 # Pass pkg-config cflags if available

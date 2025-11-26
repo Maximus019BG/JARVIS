@@ -114,37 +114,13 @@ namespace camera
             if (running_)
                 return true;
 
-            std::string cmd;
-            if (const char *override_cmd = std::getenv("JARVIS_CAMERA_CMD"))
-            {
-                cmd = override_cmd;
-            }
-            else
-            {
-                // Build rpicam-vid command with IMX500 postprocessing if available
-                cmd = "rpicam-vid -t 0 -n --codec yuv420 --width " + std::to_string(config_.width) +
-                      " --height " + std::to_string(config_.height) + " --framerate " + std::to_string(config_.framerate);
-
-                // Check if IMX500 is available and enable postprocessing
-                if (const char *use_imx500 = std::getenv("JARVIS_USE_IMX500_POSTPROCESS"))
-                {
-                    if (std::string(use_imx500) == "1" || std::string(use_imx500) == "true")
-                    {
-                        cmd += " --post-process-file /usr/share/rpi-camera-assets/imx500_hand_landmarks.json";
-                        cmd += " --metadata - --metadata-format json"; // Output JSON metadata to stderr
-                        imx500_enabled_ = true;
-                        if (config_.verbose)
-                            std::cerr << "[Camera] IMX500 NPU Hand Landmarks enabled (21 keypoints for accurate finger detection)" << std::endl;
-                    }
-                }
-
-                cmd += " -o - 2>&1"; // Redirect stderr to stdout to capture metadata
-            }
-
+            std::string cmd = "rpicam-vid -t 0 -n --codec yuv420 --width 640 --height 480 --framerate 30 -o -";
+            std::cerr << "[Camera][INFO] Using forced command: " << cmd << std::endl;
             pipe_ = popen(cmd.c_str(), "r");
             if (!pipe_)
             {
                 last_error_ = "Failed to start rpicam-vid pipe";
+                std::cerr << "[Camera][ERROR] popen() failed for: " << cmd << std::endl;
                 return false;
             }
             running_ = true;
@@ -173,11 +149,13 @@ namespace camera
             if (!running_)
             {
                 last_error_ = "Camera not running";
+                std::cerr << "[Camera][ERROR] Not running.\n";
                 return nullptr;
             }
             if (!pipe_)
             {
                 last_error_ = "Pipe closed";
+                std::cerr << "[Camera][ERROR] Pipe closed before read.\n";
                 running_ = false;
                 return nullptr;
             }
@@ -191,33 +169,72 @@ namespace camera
                 size_t n = fread(yuv_temp_.data() + read_total, 1, expected_yuv_size_ - read_total, pipe_);
                 if (n == 0)
                 {
+                    int err = errno;
                     if (feof(pipe_))
                     {
                         last_error_ = "End of stream";
+                        std::cerr << "[Camera][ERROR] End of stream after " << read_total << " bytes.\n";
                         stop();
                         return nullptr;
                     }
                     if (ferror(pipe_))
                     {
-                        last_error_ = "Read error";
+                        last_error_ = std::string("Read error: ") + std::strerror(err);
+                        std::cerr << "[Camera][ERROR] Read error after " << read_total << " bytes: " << std::strerror(err) << " (errno=" << err << ")\n";
                         stop();
                         return nullptr;
                     }
                     if (++retries > max_retries)
                     {
-                        last_error_ = "Short read retries exceeded";
+                        last_error_ = "Short read retries exceeded (" + std::to_string(read_total) + "/" + std::to_string(expected_yuv_size_) + " bytes)";
+                        std::cerr << "[Camera][ERROR] Short read retries exceeded: " << read_total << "/" << expected_yuv_size_ << " bytes read.\n";
                         stop();
                         return nullptr;
                     }
+                    std::cerr << "[Camera][WARN] Short read: " << read_total << "/" << expected_yuv_size_ << " bytes, retry " << retries << ".\n";
                     std::this_thread::sleep_for(std::chrono::milliseconds(2));
                     continue;
                 }
                 read_total += n;
             }
+            if (read_total != expected_yuv_size_)
+            {
+                last_error_ = "Frame read incomplete (" + std::to_string(read_total) + "/" + std::to_string(expected_yuv_size_) + " bytes)";
+                std::cerr << "[Camera][ERROR] Frame read incomplete: " << read_total << "/" << expected_yuv_size_ << " bytes.\n";
+                stop();
+                return nullptr;
+            }
 
-            // Convert to RGB
-            buffer.resize(config_.width * config_.height * 3);
+            // --- Robust YUV420 → RGB validation and debug logging ---
+            size_t expected_rgb_size = config_.width * config_.height * 3;
+            buffer.resize(expected_rgb_size);
+            if (!yuv_temp_.data() || !buffer.data())
+            {
+                last_error_ = "[Camera][ERROR] Null buffer pointer for YUV or RGB";
+                std::cerr << last_error_ << std::endl;
+                stop();
+                return nullptr;
+            }
+
             utils::yuv420_to_rgb888(yuv_temp_.data(), buffer.data(), config_.width, config_.height);
+
+            // Simple post-conversion check: ensure RGB buffer is not all zero
+            bool rgb_valid = false;
+            for (size_t i = 0; i < expected_rgb_size; ++i)
+            {
+                if (buffer[i] != 0)
+                {
+                    rgb_valid = true;
+                    break;
+                }
+            }
+            if (!rgb_valid)
+            {
+                last_error_ = "[Camera][ERROR] RGB conversion failed: output buffer is all zero.";
+                std::cerr << last_error_ << std::endl;
+                stop();
+                return nullptr;
+            }
 
             auto now = std::chrono::steady_clock::now();
             frame.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();

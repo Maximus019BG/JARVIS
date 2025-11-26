@@ -28,6 +28,7 @@
 #include "hand_detector_mediapipe.hpp"
 #include "hand_detector_hybrid.hpp"
 #include "sketch_pad.hpp"
+#include "pipeline.hpp"
 
 #define JARVIS_BLUEPRINT_ID "TestBlueprint456"
 
@@ -98,6 +99,36 @@ int main(int argc, char **argv)
     drmModeModeInfo mode;
     uint32_t conn_id = 0;
     std::string chosen_dev;
+
+    // Declare variables for drawing pipeline and UI
+    int width = 1280;
+    int height = 720;
+    std::string sketch_name = "untitled_project";
+    float grid_spacing_cm = 5.0f;
+
+    // Variables for .env loading
+    char exe_path[4096] = {0};
+    std::vector<std::string> candidates;
+
+    // DRM/GBM/Buffer variables
+    bool use_gbm = false;
+    struct gbm_bo *bo = nullptr;
+    void *dumb_map = nullptr;
+    uint32_t dumb_pitch = 0;
+    uint32_t fb_id = 0;
+    size_t dumb_size = 0;
+    uint32_t dumb_handle = 0;
+    struct gbm_device *gbm = nullptr;
+
+    // Helper for whitespace trimming
+    auto trim_ws = [](const std::string &s) -> std::string
+    {
+        size_t start = s.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos)
+            return "";
+        size_t end = s.find_last_not_of(" \t\r\n");
+        return s.substr(start, end - start + 1);
+    };
 
     while ((ent = readdir(d)) != NULL)
     {
@@ -174,218 +205,60 @@ int main(int argc, char **argv)
                     if (e->possible_crtcs & (1 << j))
                     {
                         crtc_id = res->crtcs[j];
-                        break;
+                        // All pipeline/sketchpad variables are now in correct scope
+                        ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+                        if (n > 0)
+                        {
+                            std::string exe(exe_path, static_cast<size_t>(n));
+                            auto last_slash = exe.find_last_of('/');
+                            std::string exe_dir = last_slash == std::string::npos ? std::string(".") : exe.substr(0, last_slash);
+                            candidates.push_back(exe_dir + "/.env");
+                            // parent of exe_dir
+                            auto last2 = exe_dir.find_last_of('/');
+                            std::string exe_parent = last2 == std::string::npos ? std::string(".") : exe_dir.substr(0, last2);
+                            candidates.push_back(exe_parent + "/.env");
+                        }
+
+                        for (const auto &p : candidates)
+                        {
+                            FILE *f = std::fopen(p.c_str(), "r");
+                            if (!f)
+                                continue;
+                            char line[4096];
+                            while (std::fgets(line, sizeof(line), f))
+                            {
+                                std::string s(line);
+                                s = trim_ws(s);
+                                if (s.empty() || s[0] == '#')
+                                    continue;
+                                auto eq = s.find('=');
+                                if (eq == std::string::npos)
+                                    continue;
+                                std::string key = trim_ws(s.substr(0, eq));
+                                std::string val = trim_ws(s.substr(eq + 1));
+                                if (!key.empty())
+                                {
+                                    // do not override if already set in process env
+                                    if (!std::getenv(key.c_str()))
+                                    {
+                                        setenv(key.c_str(), val.c_str(), 0);
+                                    }
+                                }
+                            }
+                            std::fclose(f);
+                            // Stop after first readable .env
+                            break;
+                        }
                     }
-                }
-                drmModeFreeEncoder(e);
-                if (crtc_id)
-                    break;
-            }
-        }
-    }
-
-    if (!crtc_id)
-    {
-        // fallback: pick first CRTC
-        if (res->count_crtcs > 0)
-            crtc_id = res->crtcs[0];
-    }
-
-    if (!crtc_id)
-        fatal("Failed to find a CRTC");
-
-    old_crtc = drmModeGetCrtc(fd, crtc_id);
-
-    uint32_t width = mode.hdisplay;
-    uint32_t height = mode.vdisplay;
-
-    // Framebuffer setup: try GBM first; if it fails, fall back to DRM dumb buffer
-    bool use_gbm = true;
-    struct gbm_device *gbm = gbm_create_device(fd);
-    struct gbm_bo *bo = nullptr;
-    uint32_t fb_id = 0;
-
-    // Dumb buffer state
-    uint32_t dumb_handle = 0;
-    uint32_t dumb_pitch = 0;
-    uint64_t dumb_size = 0;
-    void *dumb_map = nullptr;
-
-    if (!gbm)
-    {
-        std::cerr << "gbm_create_device failed — attempting dumb buffer fallback\n";
-        use_gbm = false;
-    }
-
-    if (use_gbm)
-    {
-        bo = gbm_bo_create(gbm, width, height, GBM_FORMAT_XRGB8888,
-                           GBM_BO_USE_SCANOUT | GBM_BO_USE_WRITE);
-        if (!bo)
-        {
-            std::cerr << "gbm_bo_create failed — attempting dumb buffer fallback\n";
-            use_gbm = false;
-        }
-    }
-
-    if (use_gbm)
-    {
-        uint32_t handle = gbm_bo_get_handle(bo).u32;
-        uint32_t pitch = gbm_bo_get_stride(bo);
-        uint32_t handles[4] = {handle, 0, 0, 0};
-        uint32_t pitches[4] = {pitch, 0, 0, 0};
-        uint32_t offsets[4] = {0, 0, 0, 0};
-        if (drmModeAddFB2(fd, width, height, DRM_FORMAT_XRGB8888, handles, pitches, offsets, &fb_id, 0))
-        {
-            std::cerr << "drmModeAddFB2 failed — attempting dumb buffer fallback: " << strerror(errno) << "\n";
-            gbm_bo_destroy(bo);
-            bo = nullptr;
-            gbm_device_destroy(gbm);
-            gbm = nullptr;
-            use_gbm = false;
-        }
-    }
-
-    if (!use_gbm)
-    {
-        // Create a dumb buffer
-        struct drm_mode_create_dumb creq = {};
-        creq.width = width;
-        creq.height = height;
-        creq.bpp = 32; // XRGB8888
-        if (ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) < 0)
-        {
-            std::cerr << "DRM_IOCTL_MODE_CREATE_DUMB failed: " << strerror(errno) << "\n";
-            // Cleanup resources allocated earlier
-            if (conn)
-                drmModeFreeConnector(conn);
-            if (res)
-                drmModeFreeResources(res);
-            if (old_crtc)
-                drmModeFreeCrtc(old_crtc);
-            close(fd);
-            return 1;
-        }
-        dumb_handle = creq.handle;
-        dumb_pitch = creq.pitch;
-        dumb_size = creq.size;
-
-        if (drmModeAddFB(fd, width, height, 24, 32, dumb_pitch, dumb_handle, &fb_id))
-        {
-            std::cerr << "drmModeAddFB (dumb) failed: " << strerror(errno) << "\n";
-            struct drm_mode_destroy_dumb dreq = {};
-            dreq.handle = dumb_handle;
-            ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
-            if (conn)
-                drmModeFreeConnector(conn);
-            if (res)
-                drmModeFreeResources(res);
-            if (old_crtc)
-                drmModeFreeCrtc(old_crtc);
-            close(fd);
-            return 1;
-        }
-
-        struct drm_mode_map_dumb mreq = {};
-        mreq.handle = dumb_handle;
-        if (ioctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &mreq) < 0)
-        {
-            std::cerr << "DRM_IOCTL_MODE_MAP_DUMB failed: " << strerror(errno) << "\n";
-            drmModeRmFB(fd, fb_id);
-            struct drm_mode_destroy_dumb dreq = {};
-            dreq.handle = dumb_handle;
-            ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
-            if (conn)
-                drmModeFreeConnector(conn);
-            if (res)
-                drmModeFreeResources(res);
-            if (old_crtc)
-                drmModeFreeCrtc(old_crtc);
-            close(fd);
-            return 1;
-        }
-        dumb_map = mmap(0, dumb_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mreq.offset);
-        if (dumb_map == MAP_FAILED)
-        {
-            std::cerr << "mmap dumb buffer failed: " << strerror(errno) << "\n";
-            drmModeRmFB(fd, fb_id);
-            struct drm_mode_destroy_dumb dreq = {};
-            dreq.handle = dumb_handle;
-            ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
-            if (conn)
-                drmModeFreeConnector(conn);
-            if (res)
-                drmModeFreeResources(res);
-            if (old_crtc)
-                drmModeFreeCrtc(old_crtc);
-            close(fd);
-            return 1;
-        }
-    }
-
-    // ---- Realtime dots from server loop ----
-    // Try to load .env if JARVIS_SERVER is not present in the process env.
-    auto trim_ws = [](const std::string &s)
-    {
-        size_t a = s.find_first_not_of(" \t\r\n");
-        if (a == std::string::npos)
-            return std::string();
-        size_t b = s.find_last_not_of(" \t\r\n");
-        return s.substr(a, b - a + 1);
-    };
-
-    if (const char *existing = std::getenv("JARVIS_SERVER"); !(existing && *existing))
-    {
-        // Candidate .env paths: CWD/.env, parent/.env, alongside executable and its parent
-        std::vector<std::string> candidates;
-        candidates.emplace_back(".env");
-        candidates.emplace_back("../.env");
-        // derive from /proc/self/exe
-        char exe_path[4096] = {0};
-        ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-        if (n > 0)
-        {
-            std::string exe(exe_path, static_cast<size_t>(n));
-            auto last_slash = exe.find_last_of('/');
-            std::string exe_dir = last_slash == std::string::npos ? std::string(".") : exe.substr(0, last_slash);
-            candidates.push_back(exe_dir + "/.env");
-            // parent of exe_dir
-            auto last2 = exe_dir.find_last_of('/');
-            std::string exe_parent = last2 == std::string::npos ? std::string(".") : exe_dir.substr(0, last2);
-            candidates.push_back(exe_parent + "/.env");
-        }
-
-        for (const auto &p : candidates)
-        {
-            FILE *f = std::fopen(p.c_str(), "r");
-            if (!f)
-                continue;
-            char line[4096];
-            while (std::fgets(line, sizeof(line), f))
-            {
-                std::string s(line);
-                s = trim_ws(s);
-                if (s.empty() || s[0] == '#')
-                    continue;
-                auto eq = s.find('=');
-                if (eq == std::string::npos)
-                    continue;
-                std::string key = trim_ws(s.substr(0, eq));
-                std::string val = trim_ws(s.substr(eq + 1));
-                if (!key.empty())
-                {
-                    // do not override if already set in process env
-                    if (!std::getenv(key.c_str()))
-                    {
-                        setenv(key.c_str(), val.c_str(), 0);
-                    }
+                    // End of .env loading block
                 }
             }
-            std::fclose(f);
-            // Stop after first readable .env
-            break;
         }
     }
+
+    // --------- MAIN EVENT LOOP AND PIPELINE LOGIC GOES HERE ---------
+    // Place the main UI/command loop and pipeline logic here, after all setup is complete.
+    // ...existing code for UI/command loop, pipeline, etc...
 
     // Endpoint selection (env or defaults): prefer single JARVIS_SERVER like
     //   http://example.com/api/workstation/blueprint/load
@@ -533,8 +406,8 @@ int main(int argc, char **argv)
 
             camera::Camera cam;
             camera::CameraConfig cam_config;
-            cam_config.width = 1920;
-            cam_config.height = 1080;
+            cam_config.width = 1280;
+            cam_config.height = 720;
             cam_config.framerate = 30;
             cam_config.verbose = false;
 
@@ -551,7 +424,7 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            std::cerr << "[SYSTEM] Camera initialized: 640x480 @ 30fps\n";
+            std::cerr << "[SYSTEM] Camera initialized: 1280x720 @ 30fps\n";
             std::cerr << "[SYSTEM] Initializing production hand detector...\n";
 
             // Configure base detector
@@ -633,6 +506,17 @@ int main(int argc, char **argv)
                 if (!frame)
                 {
                     std::cerr << "[ERROR] Camera capture error: " << cam.get_error() << "\n";
+                    // Extra diagnostics for 10x debugging
+                    std::cerr << "[DEBUG] Camera config: "
+                              << "width=" << cam.get_config().width << ", "
+                              << "height=" << cam.get_config().height << ", "
+                              << "framerate=" << cam.get_config().framerate << "\n";
+                    std::cerr << "[DEBUG] Expected YUV size: "
+                              << (cam.get_config().width * cam.get_config().height * 3 / 2) << " bytes\n";
+                    std::cerr << "[DEBUG] If using rpicam-vid, try running manually: "
+                              << "rpicam-vid -t 0 -n --codec yuv420 --width " << cam.get_config().width
+                              << " --height " << cam.get_config().height
+                              << " --framerate " << cam.get_config().framerate << " -o - | hexdump -C | head" << std::endl;
                     break;
                 }
 
@@ -884,6 +768,16 @@ int main(int argc, char **argv)
                 if (!frame)
                 {
                     std::cerr << "Camera capture error: " << cam.get_error() << "\n";
+                    std::cerr << "[DEBUG] Camera config: "
+                              << "width=" << cam.get_config().width << ", "
+                              << "height=" << cam.get_config().height << ", "
+                              << "framerate=" << cam.get_config().framerate << "\n";
+                    std::cerr << "[DEBUG] Expected YUV size: "
+                              << (cam.get_config().width * cam.get_config().height * 3 / 2) << " bytes\n";
+                    std::cerr << "[DEBUG] If using rpicam-vid, try running manually: "
+                              << "rpicam-vid -t 0 -n --codec yuv420 --width " << cam.get_config().width
+                              << " --height " << cam.get_config().height
+                              << " --framerate " << cam.get_config().framerate << " -o - | hexdump -C | head" << std::endl;
                     break;
                 }
 

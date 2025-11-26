@@ -114,22 +114,18 @@ namespace hand_detector
     bool IMX500HandDetector::init(const IMX500Config &config)
     {
         config_ = config;
+        initialized_ = false;
+        stats_ = DetectionStats();
 
+        // Enterprise-level: Always check for TFLite, fallback to IMX500 hardware if not available
 #ifndef HAVE_TFLITE
-        // Check if we can use IMX500 hardware postprocessing instead
-        std::cerr << "[IMX500] TensorFlow Lite C++ API not available\n";
-        std::cerr << "[IMX500] Checking for IMX500 hardware neural network...\n";
-
-        // Check if imx500 postprocessing is available
+        std::cerr << "[IMX500] [ERROR] TensorFlow Lite C++ API not available. Checking for IMX500 hardware neural network...\n";
         int ret = system("which rpicam-hello > /dev/null 2>&1");
         if (ret != 0)
         {
-            std::cerr << "[IMX500] ERROR: rpicam tools not found\n";
-            std::cerr << "[IMX500] Install with: sudo apt install imx500-all rpicam-apps\n";
+            std::cerr << "[IMX500] [FATAL] rpicam tools not found. Install with: sudo apt install imx500-all rpicam-apps\n";
             return false;
         }
-
-        // Check if camera is IMX500
         FILE *fp = popen("rpicam-hello --list-cameras 2>&1 | grep imx500", "r");
         char buf[256];
         bool has_imx500 = false;
@@ -141,17 +137,14 @@ namespace hand_detector
             }
             pclose(fp);
         }
-
         if (!has_imx500)
         {
-            std::cerr << "[IMX500] ERROR: IMX500 camera not detected\n";
+            std::cerr << "[IMX500] [FATAL] IMX500 camera not detected.\n";
             return false;
         }
-
         std::cerr << "[IMX500] ✓ IMX500 camera detected with hardware NPU\n";
         std::cerr << "[IMX500] ✓ Using native postprocessing pipeline\n";
         std::cerr << "[IMX500] Model: " << config_.model_path << "\n";
-
         initialized_ = true;
         return true;
 #else
@@ -162,30 +155,30 @@ namespace hand_detector
             std::cerr << "[IMX500] Model: " << config_.model_path << "\n";
             std::cerr << "[IMX500] NPU acceleration: " << (config_.use_npu ? "ON" : "OFF") << "\n";
         }
-
-        // Load model
+        // Load model with robust error handling
         if (!load_model(config_.model_path))
         {
+            std::cerr << "[IMX500] [FATAL] Model loading failed.\n";
+            initialized_ = false;
             return false;
         }
-
         initialized_ = true;
-
         if (config_.verbose)
         {
             std::cerr << "[IMX500] ✓ Detector initialized successfully\n";
             std::cerr << "[IMX500] Input shape: " << tflite_state_->input_width << "x"
                       << tflite_state_->input_height << "x" << tflite_state_->input_channels << "\n";
         }
-
         return true;
 #endif
     }
 
     bool IMX500HandDetector::load_model(const std::string &model_path)
     {
+        // Robust model loading: always check for TFLite
 #ifndef HAVE_TFLITE
-        (void)model_path; // Unused when TFLITE not available
+        (void)model_path;
+        std::cerr << "[IMX500] [ERROR] TFLite not available, cannot load model.\n";
         return false;
 #else
         // Try multiple model paths
@@ -196,7 +189,6 @@ namespace hand_detector
             "./hand_landmark_full.tflite",
             "./models/hand_landmark_full.tflite",
             "/usr/share/jarvis/models/hand_landmark_full.tflite"};
-
         std::string found_path;
         for (const auto &path : search_paths)
         {
@@ -207,53 +199,41 @@ namespace hand_detector
                 break;
             }
         }
-
         if (found_path.empty())
         {
-            std::cerr << "[IMX500] ERROR: Model file not found. Searched:\n";
+            std::cerr << "[IMX500] [FATAL] Model file not found. Searched:\n";
             for (const auto &path : search_paths)
             {
                 std::cerr << "  - " << path << "\n";
             }
-            std::cerr << "[IMX500] You can download the model from:\n";
+            std::cerr << "[IMX500] Download model from:\n";
             std::cerr << "  https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task\n";
             return false;
         }
-
         if (config_.verbose)
         {
             std::cerr << "[IMX500] Loading model from: " << found_path << "\n";
         }
-
-        // Load TFLite model
         tflite_state_->model = tflite::FlatBufferModel::BuildFromFile(found_path.c_str());
         if (!tflite_state_->model)
         {
-            std::cerr << "[IMX500] ERROR: Failed to load model\n";
+            std::cerr << "[IMX500] [FATAL] Failed to load model: " << found_path << "\n";
             return false;
         }
-
-        // Build interpreter
         tflite::InterpreterBuilder builder(*tflite_state_->model, tflite_state_->resolver);
         builder(&tflite_state_->interpreter);
-
         if (!tflite_state_->interpreter)
         {
-            std::cerr << "[IMX500] ERROR: Failed to create interpreter\n";
+            std::cerr << "[IMX500] [FATAL] Failed to create interpreter\n";
             return false;
         }
-
-        // Configure threads
         tflite_state_->interpreter->SetNumThreads(config_.num_threads);
-
-        // Apply delegates for acceleration
 #ifdef HAVE_IMX500_NPU
         if (config_.use_npu)
         {
             auto npu_options = imx500_npu_delegate_options_default();
             npu_options.cache_size_mb = config_.npu_cache_size_mb;
             tflite_state_->npu_delegate = imx500_npu_delegate_create(&npu_options);
-
             if (tflite_state_->npu_delegate)
             {
                 if (tflite_state_->interpreter->ModifyGraphWithDelegate(tflite_state_->npu_delegate) == kTfLiteOk)
@@ -265,21 +245,22 @@ namespace hand_detector
                 }
                 else
                 {
-                    std::cerr << "[IMX500] WARNING: NPU delegate failed, using CPU\n";
+                    std::cerr << "[IMX500] [WARNING] NPU delegate failed, using CPU fallback\n";
                     imx500_npu_delegate_delete(tflite_state_->npu_delegate);
                     tflite_state_->npu_delegate = nullptr;
                 }
             }
+            else
+            {
+                std::cerr << "[IMX500] [WARNING] NPU delegate creation failed\n";
+            }
         }
 #endif
-
-        // XNNPACK delegate (optimized CPU fallback)
         if (config_.use_xnnpack && !tflite_state_->npu_delegate)
         {
             auto xnnpack_options = TfLiteXNNPackDelegateOptionsDefault();
             xnnpack_options.num_threads = config_.num_threads;
             tflite_state_->xnnpack_delegate = TfLiteXNNPackDelegateCreate(&xnnpack_options);
-
             if (tflite_state_->xnnpack_delegate)
             {
                 if (tflite_state_->interpreter->ModifyGraphWithDelegate(tflite_state_->xnnpack_delegate) == kTfLiteOk)
@@ -289,27 +270,39 @@ namespace hand_detector
                         std::cerr << "[IMX500] ✓ XNNPACK delegate applied\n";
                     }
                 }
+                else
+                {
+                    std::cerr << "[IMX500] [WARNING] XNNPACK delegate failed, using default CPU\n";
+                    TfLiteXNNPackDelegateDelete(tflite_state_->xnnpack_delegate);
+                    tflite_state_->xnnpack_delegate = nullptr;
+                }
+            }
+            else
+            {
+                std::cerr << "[IMX500] [WARNING] XNNPACK delegate creation failed\n";
             }
         }
-
-        // Allocate tensors
         if (tflite_state_->interpreter->AllocateTensors() != kTfLiteOk)
         {
-            std::cerr << "[IMX500] ERROR: Failed to allocate tensors\n";
+            std::cerr << "[IMX500] [FATAL] Failed to allocate tensors\n";
             return false;
         }
-
-        // Get input tensor info
         tflite_state_->input_tensor_idx = tflite_state_->interpreter->inputs()[0];
         TfLiteTensor *input_tensor = tflite_state_->interpreter->tensor(tflite_state_->input_tensor_idx);
-
+        if (!input_tensor || !input_tensor->dims || input_tensor->dims->size < 4)
+        {
+            std::cerr << "[IMX500] [FATAL] Invalid input tensor shape\n";
+            return false;
+        }
         tflite_state_->input_height = input_tensor->dims->data[1];
         tflite_state_->input_width = input_tensor->dims->data[2];
         tflite_state_->input_channels = input_tensor->dims->data[3];
-
-        // Get output tensor indices
         tflite_state_->output_tensor_indices = tflite_state_->interpreter->outputs();
-
+        if (tflite_state_->output_tensor_indices.empty())
+        {
+            std::cerr << "[IMX500] [FATAL] No output tensors found in model\n";
+            return false;
+        }
         return true;
 #endif
     }
@@ -320,6 +313,7 @@ namespace hand_detector
 
         if (!initialized_)
         {
+            std::cerr << "[IMX500] [ERROR] Detector not initialized.\n";
             return detections;
         }
 
@@ -397,16 +391,20 @@ namespace hand_detector
 
         // Preprocess frame
         TfLiteTensor *input_tensor = tflite_state_->interpreter->tensor(tflite_state_->input_tensor_idx);
-        float *input_data = input_tensor->data.f;
-        preprocess_frame(frame, input_data);
-
-        // Run inference
-        if (tflite_state_->interpreter->Invoke() != kTfLiteOk)
+        if (!input_tensor || !input_tensor->data.f)
         {
-            std::cerr << "[IMX500] ERROR: Inference failed\n";
+            std::cerr << "[IMX500] [FATAL] Input tensor not available for inference\n";
             return detections;
         }
-
+        float *input_data = input_tensor->data.f;
+        preprocess_frame(frame, input_data);
+        // Run inference
+        auto invoke_status = tflite_state_->interpreter->Invoke();
+        if (invoke_status != kTfLiteOk)
+        {
+            std::cerr << "[IMX500] [FATAL] Inference failed (Invoke returned " << invoke_status << ")\n";
+            return detections;
+        }
         // Postprocess outputs
         detections = postprocess_detections();
 
@@ -504,61 +502,34 @@ namespace hand_detector
     std::vector<EnhancedHandDetection> IMX500HandDetector::postprocess_detections()
     {
         std::vector<EnhancedHandDetection> detections;
-
 #ifdef HAVE_TFLITE
         // MediaPipe hand landmarker outputs:
         // Output 0: landmarks [num_hands, 21, 3] - normalized (x, y, z) coordinates
         // Output 1: handedness [num_hands, 1] - left/right classification score
         // Output 2: world_landmarks [num_hands, 21, 3] - 3D world coordinates (optional)
-
         if (tflite_state_->output_tensor_indices.empty())
         {
+            std::cerr << "[IMX500] [FATAL] No output tensors available for postprocessing\n";
             return detections;
         }
-
-        // Get landmarks tensor (primary output)
         int landmarks_idx = tflite_state_->output_tensor_indices[0];
         TfLiteTensor *landmarks_tensor = tflite_state_->interpreter->tensor(landmarks_idx);
-
-        if (config_.verbose)
+        if (!landmarks_tensor || !landmarks_tensor->dims || landmarks_tensor->dims->size < 3)
         {
-            std::cerr << "[IMX500] Postprocessing outputs...\n";
-            for (size_t i = 0; i < tflite_state_->output_tensor_indices.size(); ++i)
-            {
-                int idx = tflite_state_->output_tensor_indices[i];
-                TfLiteTensor *tensor = tflite_state_->interpreter->tensor(idx);
-                std::cerr << "[IMX500] Output " << i << ": dims=";
-                for (int d = 0; d < tensor->dims->size; ++d)
-                {
-                    std::cerr << tensor->dims->data[d];
-                    if (d < tensor->dims->size - 1)
-                        std::cerr << "x";
-                }
-                std::cerr << "\n";
-            }
+            std::cerr << "[IMX500] [FATAL] Landmarks tensor shape invalid\n";
+            return detections;
         }
-
-        // Parse tensor dimensions
-        if (landmarks_tensor->dims->size < 3)
+        int num_hands = landmarks_tensor->dims->data[0];
+        int num_landmarks = landmarks_tensor->dims->data[1];
+        if (num_hands == 0 || num_landmarks != 21)
         {
             if (config_.verbose)
             {
-                std::cerr << "[IMX500] WARNING: Unexpected landmarks tensor shape\n";
+                std::cerr << "[IMX500] No hands detected (num_hands=" << num_hands << ", num_landmarks=" << num_landmarks << ")\n";
             }
             return detections;
         }
-
-        int num_hands = landmarks_tensor->dims->data[0];
-        int num_landmarks = landmarks_tensor->dims->data[1];       // Should be 21
-        int coords_per_landmark = landmarks_tensor->dims->data[2]; // Should be 3 (x, y, z)
-
-        if (num_hands == 0 || num_landmarks != 21)
-        {
-            return detections;
-        }
-
         float *landmarks_data = landmarks_tensor->data.f;
-
         // Get handedness if available
         float *handedness_data = nullptr;
         if (tflite_state_->output_tensor_indices.size() > 1)
@@ -567,93 +538,100 @@ namespace hand_detector
             TfLiteTensor *handedness_tensor = tflite_state_->interpreter->tensor(handedness_idx);
             handedness_data = handedness_tensor->data.f;
         }
-
-        // Process each detected hand
+        // Get world landmarks if available
+        float *world_landmarks_data = nullptr;
+        if (tflite_state_->output_tensor_indices.size() > 2)
+        {
+            int world_idx = tflite_state_->output_tensor_indices[2];
+            TfLiteTensor *world_tensor = tflite_state_->interpreter->tensor(world_idx);
+            world_landmarks_data = world_tensor->data.f;
+        }
+        // Process each detected hand robustly
         for (int h = 0; h < num_hands; ++h)
         {
-            EnhancedHandDetection detection;
-
-            // Extract 21 landmarks
-            int base_idx = h * num_landmarks * coords_per_landmark;
-
-            float min_x = 1.0f, min_y = 1.0f;
-            float max_x = 0.0f, max_y = 0.0f;
-
-            for (int i = 0; i < num_landmarks; ++i)
+            EnhancedHandDetection det;
+            // Landmarks
+            for (int i = 0; i < 21; ++i)
             {
-                int idx = base_idx + i * coords_per_landmark;
-
-                // Populate IMX500Landmark array
-                detection.landmarks[i].x = landmarks_data[idx + 0]; // Normalized x [0, 1]
-                detection.landmarks[i].y = landmarks_data[idx + 1]; // Normalized y [0, 1]
-                detection.landmarks[i].z = landmarks_data[idx + 2]; // Depth (relative)
-                detection.landmarks[i].visibility = 1.0f;
-                detection.landmarks[i].presence = 1.0f;
-
-                // Track bounding box
-                min_x = std::min(min_x, detection.landmarks[i].x);
-                min_y = std::min(min_y, detection.landmarks[i].y);
-                max_x = std::max(max_x, detection.landmarks[i].x);
-                max_y = std::max(max_y, detection.landmarks[i].y);
+                int offset = h * 21 * 3 + i * 3;
+                det.landmarks[i].x = landmarks_data[offset + 0];
+                det.landmarks[i].y = landmarks_data[offset + 1];
+                det.landmarks[i].z = landmarks_data[offset + 2];
+                det.landmarks[i].visibility = 1.0f;
+                det.landmarks[i].presence = 1.0f;
             }
-
-            // Convert normalized coordinates to pixel coordinates
-            // Assuming input was 224x224 or using frame dimensions
-            int frame_width = tflite_state_->input_width;
-            int frame_height = tflite_state_->input_height;
-
-            detection.bbox.x = static_cast<int>(min_x * frame_width);
-            detection.bbox.y = static_cast<int>(min_y * frame_height);
-            detection.bbox.width = static_cast<int>((max_x - min_x) * frame_width);
-            detection.bbox.height = static_cast<int>((max_y - min_y) * frame_height);
-            detection.bbox.confidence = 0.9f; // High confidence if landmarks detected
-
-            // Calculate center point
-            detection.center.x = detection.bbox.x + detection.bbox.width / 2;
-            detection.center.y = detection.bbox.y + detection.bbox.height / 2;
-
-            // Determine handedness (left/right)
+            // World landmarks (optional)
+            if (world_landmarks_data)
+            {
+                for (int i = 0; i < 21; ++i)
+                {
+                    int offset = h * 21 * 3 + i * 3;
+                    det.world_landmarks[i].x = world_landmarks_data[offset + 0];
+                    det.world_landmarks[i].y = world_landmarks_data[offset + 1];
+                    det.world_landmarks[i].z = world_landmarks_data[offset + 2];
+                    det.world_landmarks[i].visibility = 1.0f;
+                    det.world_landmarks[i].presence = 1.0f;
+                }
+            }
+            // Handedness
             if (handedness_data)
             {
-                float handedness_score = handedness_data[h];
-                detection.is_left = handedness_score < 0.5f; // < 0.5 = left, >= 0.5 = right
+                det.handedness = handedness_data[h];
+                det.is_right_hand = (det.handedness > 0.5f);
             }
             else
             {
-                // Fallback: use wrist position relative to middle finger
-                const Landmark &wrist = detection.landmarks[0];
-                const Landmark &middle_mcp = detection.landmarks[9];
-                detection.is_left = wrist.x < middle_mcp.x;
+                det.handedness = 0.0f;
+                det.is_right_hand = false;
             }
-
-            // Calculate gesture confidence based on landmark spread
-            float bbox_area = detection.bbox.width * detection.bbox.height;
-            detection.gesture_confidence = std::min(1.0f, bbox_area / 10000.0f);
-
-            // Classify gesture based on landmarks
-            detection.gesture = classify_gesture_from_landmarks(detection);
-
-            // Apply confidence threshold
-            if (detection.bbox.confidence >= config_.confidence_threshold)
+            // Compute bounding box and center
+            float min_x = 1.0f, max_x = 0.0f, min_y = 1.0f, max_y = 0.0f;
+            for (int i = 0; i < 21; ++i)
             {
-                detections.push_back(detection);
+                min_x = std::min(min_x, det.landmarks[i].x);
+                max_x = std::max(max_x, det.landmarks[i].x);
+                min_y = std::min(min_y, det.landmarks[i].y);
+                max_y = std::max(max_y, det.landmarks[i].y);
             }
+            det.bbox.x = static_cast<int>(min_x * config_.input_width);
+            det.bbox.y = static_cast<int>(min_y * config_.input_height);
+            det.bbox.width = static_cast<int>((max_x - min_x) * config_.input_width);
+            det.bbox.height = static_cast<int>((max_y - min_y) * config_.input_height);
+            det.bbox.confidence = 1.0f;
+            det.center.x = det.bbox.x + det.bbox.width / 2;
+            det.center.y = det.bbox.y + det.bbox.height / 2;
+            // Gesture classification
+            det.gesture = classify_gesture_from_landmarks(det);
+            det.num_fingers = count_extended_fingers(det);
+            det.gesture_confidence = 1.0f;
+            // Temporal smoothing (simple exponential for center)
+            if (!active_tracks_.empty())
+            {
+                HandTrack *track = find_matching_track(det);
+                if (track)
+                {
+                    det.center.x = static_cast<int>(config_.position_smoothing_alpha * det.center.x + (1.0f - config_.position_smoothing_alpha) * track->last_position.x);
+                    det.center.y = static_cast<int>(config_.position_smoothing_alpha * det.center.y + (1.0f - config_.position_smoothing_alpha) * track->last_position.y);
+                }
+            }
+            detections.push_back(det);
         }
-
-        if (config_.verbose && !detections.empty())
+        // Debug logging per frame
+        if (config_.verbose)
         {
-            std::cerr << "[IMX500] Detected " << detections.size() << " hand(s)\n";
+            std::cerr << "[IMX500] Detected " << detections.size() << " hand(s)";
             for (size_t i = 0; i < detections.size(); ++i)
             {
-                std::cerr << "[IMX500]   Hand " << i << ": "
-                          << (detections[i].is_left ? "LEFT" : "RIGHT")
+                std::cerr << " | Hand " << i << ": "
+                          << (detections[i].is_right_hand ? "RIGHT" : "LEFT")
                           << " @ (" << detections[i].center.x << ", " << detections[i].center.y << ")"
-                          << " conf=" << detections[i].bbox.confidence << "\n";
+                          << " conf=" << detections[i].bbox.confidence
+                          << " gesture=" << static_cast<int>(detections[i].gesture)
+                          << " fingers=" << detections[i].num_fingers;
             }
+            std::cerr << std::endl;
         }
-
 #endif
-
         return detections;
     }
 
@@ -809,29 +787,15 @@ namespace hand_detector
 
         // Check specific gestures in priority order
         if (is_thumb_up(detection))
-        {
             return Gesture::THUMBS_UP;
-        }
-
         if (is_ok_sign(detection))
-        {
-            return Gesture::OK;
-        }
-
+            return Gesture::OK_SIGN;
         if (is_peace_sign(detection))
-        {
             return Gesture::PEACE;
-        }
-
         if (is_pointing(detection))
-        {
             return Gesture::POINTING;
-        }
-
         if (is_fist(detection))
-        {
             return Gesture::FIST;
-        }
 
         // Count extended fingers for OPEN_PALM or numbered gestures
         int extended_count = count_extended_fingers(detection);
@@ -881,7 +845,7 @@ namespace hand_detector
         // Thumb: 1,2,3,4  Index: 5,6,7,8  Middle: 9,10,11,12  Ring: 13,14,15,16  Pinky: 17,18,19,20
         // 0 = wrist
 
-        int base_idx, mcp_idx, pip_idx, dip_idx, tip_idx;
+        int base_idx, mcp_idx, pip_idx, /*dip_idx,*/ tip_idx;
 
         switch (finger_idx)
         {
@@ -919,15 +883,15 @@ namespace hand_detector
             return false;
         }
 
-        const Landmark &wrist = det.landmarks[0];
-        const Landmark &tip = det.landmarks[tip_idx];
-        const Landmark &pip = det.landmarks[pip_idx];
-        const Landmark &mcp = det.landmarks[mcp_idx];
+        const IMX500Landmark &wrist = det.landmarks[0];
+        const IMX500Landmark &tip = det.landmarks[tip_idx];
+        const IMX500Landmark &pip = det.landmarks[pip_idx];
+        const IMX500Landmark &mcp = det.landmarks[mcp_idx];
 
         // Thumb uses different logic (horizontal extension)
         if (finger_idx == 0)
         {
-            const Landmark &thumb_base = det.landmarks[base_idx];
+            const IMX500Landmark &thumb_base = det.landmarks[base_idx];
             float thumb_extension = std::abs(tip.x - thumb_base.x);
             float palm_width = std::abs(det.landmarks[5].x - det.landmarks[17].x);
             return thumb_extension > palm_width * 0.4f;
@@ -957,8 +921,8 @@ namespace hand_detector
         bool pinky_curled = !is_finger_extended(det, 4);
 
         // Check if thumb is pointing upward (thumb tip y < thumb base y)
-        const Landmark &thumb_tip = det.landmarks[4];
-        const Landmark &thumb_base = det.landmarks[2];
+        const IMX500Landmark &thumb_tip = det.landmarks[4];
+        const IMX500Landmark &thumb_base = det.landmarks[2];
         bool thumb_upward = thumb_tip.y < thumb_base.y;
 
         return thumb_extended && thumb_upward && index_curled && middle_curled && ring_curled && pinky_curled;
@@ -972,16 +936,16 @@ namespace hand_detector
         return false;
 #else
         // Thumb and index finger form a circle, other fingers extended
-        const Landmark &thumb_tip = det.landmarks[4];
-        const Landmark &index_tip = det.landmarks[8];
+        const IMX500Landmark &thumb_tip = det.landmarks[4];
+        const IMX500Landmark &index_tip = det.landmarks[8];
 
         // Calculate distance between thumb tip and index tip
         float distance = std::sqrt(std::pow(thumb_tip.x - index_tip.x, 2) +
                                    std::pow(thumb_tip.y - index_tip.y, 2));
 
         // Calculate palm size for reference
-        const Landmark &wrist = det.landmarks[0];
-        const Landmark &middle_mcp = det.landmarks[9];
+        const IMX500Landmark &wrist = det.landmarks[0];
+        const IMX500Landmark &middle_mcp = det.landmarks[9];
         float palm_size = std::sqrt(std::pow(middle_mcp.x - wrist.x, 2) +
                                     std::pow(middle_mcp.y - wrist.y, 2));
 
@@ -1011,12 +975,12 @@ namespace hand_detector
         bool thumb_curled = !is_finger_extended(det, 0);
 
         // Check if index and middle fingers are separated (V shape)
-        const Landmark &index_tip = det.landmarks[8];
-        const Landmark &middle_tip = det.landmarks[12];
+        const IMX500Landmark &index_tip = det.landmarks[8];
+        const IMX500Landmark &middle_tip = det.landmarks[12];
         float separation = std::abs(index_tip.x - middle_tip.x);
 
-        const Landmark &wrist = det.landmarks[0];
-        const Landmark &middle_mcp = det.landmarks[9];
+        const IMX500Landmark &wrist = det.landmarks[0];
+        const IMX500Landmark &middle_mcp = det.landmarks[9];
         float palm_size = std::sqrt(std::pow(middle_mcp.x - wrist.x, 2) +
                                     std::pow(middle_mcp.y - wrist.y, 2));
 
@@ -1054,20 +1018,20 @@ namespace hand_detector
         int extended_count = count_extended_fingers(det);
 
         // Also check that fingertips are close to palm
-        const Landmark &wrist = det.landmarks[0];
+        const IMX500Landmark &wrist = det.landmarks[0];
         float avg_tip_distance = 0.0f;
 
         for (int finger = 1; finger <= 4; ++finger)
         {
             int tip_idx = finger * 4; // 4, 8, 12, 16, 20
-            const Landmark &tip = det.landmarks[tip_idx];
+            const IMX500Landmark &tip = det.landmarks[tip_idx];
             float dist = std::sqrt(std::pow(tip.x - wrist.x, 2) + std::pow(tip.y - wrist.y, 2));
             avg_tip_distance += dist;
         }
         avg_tip_distance /= 4.0f;
 
         // Calculate palm size
-        const Landmark &middle_mcp = det.landmarks[9];
+        const IMX500Landmark &middle_mcp = det.landmarks[9];
         float palm_size = std::sqrt(std::pow(middle_mcp.x - wrist.x, 2) +
                                     std::pow(middle_mcp.y - wrist.y, 2));
 
@@ -1240,7 +1204,7 @@ namespace hand_detector
         int finger_count = 0;
 
         // Get wrist position for reference
-        float wrist_y = hand.landmarks[camera::IMX500HandLandmark::WRIST].y * frame_height;
+        // float wrist_y = hand.landmarks[camera::IMX500HandLandmark::WRIST].y * frame_height;
 
         // Thumb: Check if tip is far from palm center (different logic than other fingers)
         const auto &thumb_tip = hand.landmarks[camera::IMX500HandLandmark::THUMB_TIP];

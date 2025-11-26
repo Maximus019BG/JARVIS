@@ -464,6 +464,19 @@ namespace sketch
             }
         }
 
+        // Debug: log all hands and selected gesture for drawing
+        if (!hands.empty())
+        {
+            std::cerr << "[SketchPad][Frame] Hands: ";
+            for (const auto &hand : hands)
+            {
+                std::cerr << hand_detector::HandDetector::gesture_to_string(hand.gesture)
+                          << "(conf=" << (int)(hand.bbox.confidence * 100) << "%) ";
+            }
+            std::cerr << "| Selected: " << hand_detector::HandDetector::gesture_to_string(active_gesture)
+                      << " (conf=" << (int)(best_confidence * 100) << "%)\n";
+        }
+
         // Track if we EVER had 2+ consecutive frames (for persistent line drawing)
         static int first_gesture_frames = 0;
         static Point first_gesture_pos;
@@ -518,6 +531,10 @@ namespace sketch
             {
                 current_pos = apply_calibration(current_pos);
             }
+
+            // Debug: log the smoothed position used for drawing
+            std::cerr << "[SketchPad][Frame] Smoothed drawing position: ("
+                      << current_pos.x << ", " << current_pos.y << ")\n";
         }
 
         // Check for non-pointing gestures (for state transitions)

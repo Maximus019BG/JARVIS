@@ -44,6 +44,10 @@ namespace hand_detector
             return false;
         }
 
+        // Enforce minimum gesture smoothing window
+        if (config_.gesture_history < 3)
+            config_.gesture_history = 3;
+
         if (config_.verbose)
         {
             std::cerr << "[HandDetector] Initialized\n";
@@ -51,6 +55,7 @@ namespace hand_detector
                       << "] S[" << config_.sat_min << "-" << config_.sat_max
                       << "] V[" << config_.val_min << "-" << config_.val_max << "]\n";
             std::cerr << "  SIMD support: " << (simd::is_neon_available() ? "NEON" : "Scalar") << "\n";
+            std::cerr << "  Gesture smoothing window: " << config_.gesture_history << " frames\n";
         }
 
         return true;
@@ -279,6 +284,15 @@ namespace hand_detector
             {
                 hand.gesture = classify_gesture(hand);
                 hand.gesture = stabilize_gesture(hand.gesture);
+            }
+
+            // Debug: log gesture, confidence, and position per hand
+            if (config_.verbose)
+            {
+                std::cerr << "[HandDetector][Frame " << current_frame_ << "] Hand candidate: "
+                          << "Gesture=" << gesture_to_string(hand.gesture)
+                          << ", Conf=" << (int)(hand.bbox.confidence * 100) << "%"
+                          << ", Center=(" << hand.center.x << "," << hand.center.y << ")\n";
             }
 
             if (config_.verbose)

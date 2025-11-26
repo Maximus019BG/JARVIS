@@ -69,8 +69,14 @@ namespace hand_detector
         detector_config_ = detector_config;
         production_config_ = production_config;
 
-        detector_ = std::make_unique<HandDetector>(detector_config);
-        if (!detector_->init(detector_config))
+        // Enforce minimum gesture smoothing window
+        if (detector_config_.gesture_history < 3)
+            detector_config_.gesture_history = 3;
+        if (production_config_.gesture_stabilization_frames < 3)
+            production_config_.gesture_stabilization_frames = 3;
+
+        detector_ = std::make_unique<HandDetector>(detector_config_);
+        if (!detector_->init(detector_config_))
         {
             return false;
         }
@@ -84,6 +90,8 @@ namespace hand_detector
             std::cerr << "  Tracking: " << (production_config_.enable_tracking ? "enabled" : "disabled") << "\n";
             std::cerr << "  Adaptive lighting: " << (production_config_.adaptive_lighting ? "enabled" : "disabled") << "\n";
             std::cerr << "  ROI optimization: " << (production_config_.enable_roi_tracking ? "enabled" : "disabled") << "\n";
+            std::cerr << "  Gesture smoothing window: " << detector_config_.gesture_history << " frames\n";
+            std::cerr << "  Gesture stabilization window: " << production_config_.gesture_stabilization_frames << " frames\n";
         }
 
         return true;
@@ -100,6 +108,19 @@ namespace hand_detector
 
         // Detect hands using base detector
         std::vector<HandDetection> detections = detector_->detect(frame);
+
+        // Debug: log all detected hands per frame
+        if (production_config_.verbose)
+        {
+            std::cerr << "[ProductionDetector][Frame " << adaptive_state_.frames_processed << "] "
+                      << detections.size() << " hand(s) detected\n";
+            for (const auto &hand : detections)
+            {
+                std::cerr << "  Gesture=" << HandDetector::gesture_to_string(hand.gesture)
+                          << ", Conf=" << (int)(hand.bbox.confidence * 100) << "%"
+                          << ", Center=(" << hand.center.x << "," << hand.center.y << ")\n";
+            }
+        }
 
         // ENTERPRISE ENHANCEMENT 1: Multi-stage confidence boosting
         // Boost confidence of detections in tracked regions
@@ -162,6 +183,15 @@ namespace hand_detector
                             }
                             det.center.x = sum_x / count;
                             det.center.y = sum_y / count;
+                        }
+
+                        // Debug: log stabilized gesture and confidence
+                        if (production_config_.verbose)
+                        {
+                            std::cerr << "[ProductionDetector][Track] Stabilized gesture="
+                                      << HandDetector::gesture_to_string(det.gesture)
+                                      << ", GestureConf=" << (int)(det.gesture_confidence * 100) << "%"
+                                      << ", SmoothedCenter=(" << det.center.x << "," << det.center.y << ")\n";
                         }
 
                         break;
