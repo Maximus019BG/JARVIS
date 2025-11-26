@@ -18,8 +18,7 @@
 #include <memory>
 #include <chrono>
 
-namespace hand_detector {
-namespace tflite {
+
 
 /**
  * @brief TensorFlow Lite hand detector configuration
@@ -27,6 +26,7 @@ namespace tflite {
 struct TFLiteConfig {
     // Model settings
     std::string model_path{"models/hand_landmark_lite.tflite"};
+    std::string palm_model_path{"models/palm_detection.tflite"}; // Palm detector model
     float min_detection_confidence{0.7f};   // Minimum confidence for hand presence
     float min_tracking_confidence{0.5f};     // Minimum confidence for tracking
     
@@ -52,9 +52,10 @@ struct TFLiteConfig {
 /**
  * @brief Enhanced hand detection with landmark tracking
  */
+
 struct HandDetection : public hand_detector::HandDetection {
-    std::vector<Point> landmarks;      // 21 hand landmarks (MediaPipe format)
-    Point smoothed_fingertip;          // Temporally smoothed index fingertip
+    std::vector<hand_detector::Point> landmarks;      // 21 hand landmarks (MediaPipe format)
+    hand_detector::Point smoothed_fingertip;          // Temporally smoothed index fingertip
     float landmark_confidence{0.0f};   // Per-landmark average confidence
     bool is_left_hand{false};          // Handedness classification
 };
@@ -83,6 +84,13 @@ public:
      * @param config Configuration settings
      * @return true if successful, false otherwise
      */
+
+    /**
+     * @brief Detect palms in a frame (palm detector only)
+     * @param frame Input camera frame (RGB888)
+     * @return Vector of palm bounding boxes (x, y, w, h, confidence)
+     */
+    std::vector<hand_detector::BoundingBox> detect_palms(const camera::Frame& frame);
     bool init(const TFLiteConfig& config);
     
     /**
@@ -96,7 +104,7 @@ public:
      * @brief Get detection statistics
      * @return Current statistics
      */
-    DetectionStats get_stats() const;
+    hand_detector::DetectionStats get_stats() const;
     
     /**
      * @brief Reset statistics
@@ -123,17 +131,20 @@ private:
                             int input_width, int input_height);
     void prepare_input_uint8(const camera::Frame& frame, uint8_t* input_buffer,
                             int input_width, int input_height);
+    // Internal helpers for palm-first pipeline
+    camera::Frame crop_frame_to_bbox(const camera::Frame& frame, const hand_detector::BoundingBox& bbox);
+    bool detect_landmarks_on_cropped(const camera::Frame& cropped, const hand_detector::BoundingBox& palm, HandDetection& hand);
+    bool detect_landmarks_on_full_frame(const camera::Frame& frame, HandDetection& hand);
     
     // Postprocessing
-    Gesture classify_gesture(const HandDetection& detection) const;
+    hand_detector::Gesture classify_gesture(const HandDetection& detection) const;
     bool is_finger_extended(const HandDetection& detection, int tip_idx) const;
     int count_extended_fingers(const HandDetection& detection) const;
-    BoundingBox compute_bbox_from_landmarks(const std::vector<Point>& landmarks) const;
+    hand_detector::BoundingBox compute_bbox_from_landmarks(const std::vector<hand_detector::Point>& landmarks) const;
     
     // Disable copy
     TFLiteHandDetector(const TFLiteHandDetector&) = delete;
     TFLiteHandDetector& operator=(const TFLiteHandDetector&) = delete;
 };
 
-} // namespace tflite
-} // namespace hand_detector
+

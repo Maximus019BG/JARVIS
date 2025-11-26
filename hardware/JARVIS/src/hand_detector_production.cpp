@@ -1,4 +1,26 @@
+
+
 #include "hand_detector_production.hpp"
+#include "hand_detector_tflite.hpp"
+#include "hand_detector.hpp"
+#include "camera.hpp"
+#include <vector>
+
+namespace hand_detector {
+
+// Palm detection (for palm-first pipeline)
+std::vector<hand_detector::BoundingBox> ProductionHandDetector::detect_palms(const camera::Frame& frame)
+{
+    if (tflite_detector_) {
+        return tflite_detector_->detect_palms(frame);
+    }
+    return {};
+}
+
+} // namespace hand_detector
+
+#include "hand_detector_production.hpp"
+#include "hand_detector_tflite.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -9,7 +31,8 @@ namespace hand_detector
 {
 
     ProductionHandDetector::ProductionHandDetector()
-        : detector_(std::make_unique<HandDetector>())
+                : detector_(std::make_unique<HandDetector>()),
+                    tflite_detector_(std::make_unique<TFLiteHandDetector>())
     {
         reset_stats();
         reset_tracking();
@@ -44,7 +67,8 @@ namespace hand_detector
                                                    const ProductionConfig &production_config)
         : detector_config_(detector_config),
           production_config_(production_config),
-          detector_(std::make_unique<HandDetector>(detector_config))
+          detector_(std::make_unique<HandDetector>(detector_config)),
+          tflite_detector_(std::make_unique<TFLiteHandDetector>())
     {
         reset_stats();
         reset_tracking();
@@ -75,10 +99,22 @@ namespace hand_detector
         if (production_config_.gesture_stabilization_frames < 3)
             production_config_.gesture_stabilization_frames = 3;
 
+
         detector_ = std::make_unique<HandDetector>(detector_config_);
         if (!detector_->init(detector_config_))
         {
             return false;
+        }
+
+        // Initialize TFLite hand detector for palm/landmark hybrid
+        TFLiteConfig tflite_cfg;
+        tflite_cfg.model_path = "models/hand_landmark_lite.tflite";
+        tflite_cfg.palm_model_path = "models/palm_detection.tflite";
+        tflite_cfg.verbose = production_config_.verbose;
+        if (!tflite_detector_->init(tflite_cfg)) {
+            if (production_config_.verbose) {
+                std::cerr << "[ProductionHandDetector] WARNING: TFLite hand/palm detector unavailable. Palm-first pipeline disabled.\n";
+            }
         }
 
         reset_stats();
@@ -440,7 +476,7 @@ namespace hand_detector
 
     void ProductionHandDetector::update_adaptive_params(const camera::Frame &frame)
     {
-        if (!frame.data || frame.format != camera::PixelFormat::RGB888)
+        if (frame.data.empty() || frame.format != camera::PixelFormat::RGB888)
         {
             return;
         }

@@ -463,7 +463,7 @@ namespace hand_detector
         const float scale_x = static_cast<float>(frame.width) / target_w;
         const float scale_y = static_cast<float>(frame.height) / target_h;
 
-        const uint8_t *src = frame.data;
+        const uint8_t *src = frame.data.data();
         const int src_stride = frame.stride;
 
         for (int y = 0; y < target_h; ++y)
