@@ -184,6 +184,10 @@ namespace sketch
         // Render sketch to buffer with anti-aliasing
         void render(void *map, uint32_t stride, uint32_t width, uint32_t height);
 
+        // Add a line directly using percentage coordinates (0-100).
+        // The SketchPad will apply grid snapping if enabled.
+        void add_line(const Point &start_percent, const Point &end_percent);
+
         // Get statistics
         int get_stroke_count() const { return sketch_.lines.size(); }
         int get_total_points() const { return sketch_.lines.size() * 2; }

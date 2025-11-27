@@ -586,6 +586,12 @@ int main(int argc, char **argv)
             uint64_t frame_counter = 0;
             int render_every = 2; // Render every 2 frames for smooth architects experience
 
+            // For simplified Enter-driven drawing: track last fingertip (percent coords)
+            sketch::Point last_tip_percent(0, 0);
+            bool have_last_tip = false;
+            bool have_start_point = false;
+            sketch::Point start_point_percent(0, 0);
+
             while (!quit)
             {
                 camera::Frame *frame = cam.capture_frame();
@@ -668,6 +674,39 @@ int main(int argc, char **argv)
                 // Update sketch with hand detections
                 sketchpad.update(detections);
 
+                // Track last fingertip when pointing/peace gestures are detected
+                if (!detections.empty())
+                {
+                    // choose highest-confidence pointing/peace detection
+                    float best_conf = 0.0f;
+                    const hand_detector::HandDetection *best_hand = nullptr;
+                    for (const auto &h : detections)
+                    {
+                        if ((h.gesture == hand_detector::Gesture::POINTING || h.gesture == hand_detector::Gesture::PEACE) && h.bbox.confidence > best_conf)
+                        {
+                            best_conf = h.bbox.confidence;
+                            best_hand = &h;
+                        }
+                    }
+                    if (best_hand && best_conf > 0.5f)
+                    {
+                        float px, py;
+                        if (!best_hand->fingertips.empty())
+                        {
+                            px = best_hand->fingertips[0].x;
+                            py = best_hand->fingertips[0].y;
+                        }
+                        else
+                        {
+                            px = best_hand->center.x;
+                            py = best_hand->center.y;
+                        }
+                        last_tip_percent = sketch::Point::from_pixels(px, py, sketchpad.get_sketch().width, sketchpad.get_sketch().height);
+                        have_last_tip = true;
+                        std::cerr << "[Blueprint] Last tip: (" << last_tip_percent.x << "," << last_tip_percent.y << ")\n";
+                    }
+                }
+
                 // Render to screen every N frames
                 if (frame_counter % render_every == 0)
                 {
@@ -749,6 +788,8 @@ int main(int argc, char **argv)
                         {
                             sketchpad.clear();
                             std::cerr << "\n[SYSTEM] ✓ Project cleared\n";
+                            have_start_point = false;
+                            have_last_tip = false;
                         }
                         if (c == 'i' || c == 'I')
                         {
@@ -778,6 +819,30 @@ int main(int argc, char **argv)
                             }
                             std::cerr << "║  State: " << std::left << std::setw(48) << state_str << "║\n";
                             std::cerr << "╚════════════════════════════════════════════════════════════╝\n\n";
+                        }
+                        // Enter pressed: set start/end based on last tip
+                        if (c == '\n' || c == '\r')
+                        {
+                            if (!have_last_tip)
+                            {
+                                std::cerr << "[Blueprint] No fingertip detected yet; cannot set point.\n";
+                            }
+                            else if (!have_start_point)
+                            {
+                                // Set start to nearest grid intersection via SketchPad snapping
+                                start_point_percent = last_tip_percent;
+                                have_start_point = true;
+                                std::cerr << "[Blueprint] START set at (" << start_point_percent.x << "," << start_point_percent.y << ")\n";
+                            }
+                            else
+                            {
+                                // Have start already -> set end and add line
+                                sketch::Point end_point = last_tip_percent;
+                                // Add line (SketchPad will snap to grid if enabled)
+                                sketchpad.add_line(start_point_percent, end_point);
+                                std::cerr << "[Blueprint] END set at (" << end_point.x << "," << end_point.y << ") - Line created.\n";
+                                have_start_point = false; // reset for next line
+                            }
                         }
                     }
                 }

@@ -110,9 +110,31 @@ namespace sketch
             y < 0 || y >= static_cast<int>(height))
             return;
 
-        uint32_t *pixels = reinterpret_cast<uint32_t *>(
-            static_cast<uint8_t *>(map) + y * stride);
-        pixels[x] = color;
+        uint8_t *base = static_cast<uint8_t *>(map) + y * stride;
+        // heuristic bytes-per-pixel
+        uint32_t bpp_bytes = stride / width;
+        if (bpp_bytes >= 4)
+        {
+            uint32_t *pixels = reinterpret_cast<uint32_t *>(base);
+            pixels[x] = color; // assume 0x00RRGGBB
+        }
+        else if (bpp_bytes >= 2)
+        {
+            // convert to RGB565
+            uint8_t r = (color >> 16) & 0xFF;
+            uint8_t g = (color >> 8) & 0xFF;
+            uint8_t b = color & 0xFF;
+            uint16_t r5 = static_cast<uint16_t>((r * 31) / 255) & 0x1F;
+            uint16_t g6 = static_cast<uint16_t>((g * 63) / 255) & 0x3F;
+            uint16_t b5 = static_cast<uint16_t>((b * 31) / 255) & 0x1F;
+            uint16_t val = static_cast<uint16_t>((r5 << 11) | (g6 << 5) | b5);
+            uint16_t *pixels = reinterpret_cast<uint16_t *>(base);
+            pixels[x] = val;
+        }
+        else
+        {
+            base[x] = static_cast<uint8_t>(color & 0xFF);
+        }
     }
 
     // Safe pixel setter with alpha blending
@@ -123,9 +145,57 @@ namespace sketch
             y < 0 || y >= static_cast<int>(height))
             return;
 
-        uint32_t *pixels = reinterpret_cast<uint32_t *>(
-            static_cast<uint8_t *>(map) + y * stride);
-        pixels[x] = blend_color(pixels[x], color, alpha);
+        // Read existing pixel into 0x00RRGGBB
+        uint8_t *base = static_cast<uint8_t *>(map) + y * stride;
+        uint32_t bpp_bytes = stride / width;
+        uint32_t bg = 0;
+        if (bpp_bytes >= 4)
+        {
+            uint32_t *pixels = reinterpret_cast<uint32_t *>(base);
+            bg = pixels[x] & 0x00FFFFFF;
+        }
+        else if (bpp_bytes >= 2)
+        {
+            uint16_t *pixels = reinterpret_cast<uint16_t *>(base);
+            uint16_t v = pixels[x];
+            // expand RGB565 to 24-bit
+            uint8_t r5 = (v >> 11) & 0x1F;
+            uint8_t g6 = (v >> 5) & 0x3F;
+            uint8_t b5 = v & 0x1F;
+            uint8_t r = static_cast<uint8_t>((r5 * 255) / 31);
+            uint8_t g = static_cast<uint8_t>((g6 * 255) / 63);
+            uint8_t b = static_cast<uint8_t>((b5 * 255) / 31);
+            bg = (r << 16) | (g << 8) | b;
+        }
+        else
+        {
+            bg = static_cast<uint32_t>(base[x]);
+        }
+
+        uint32_t blended = blend_color(bg, color, alpha);
+
+        // Write back blended value
+        if (bpp_bytes >= 4)
+        {
+            uint32_t *pixels = reinterpret_cast<uint32_t *>(base);
+            pixels[x] = blended;
+        }
+        else if (bpp_bytes >= 2)
+        {
+            uint8_t r = (blended >> 16) & 0xFF;
+            uint8_t g = (blended >> 8) & 0xFF;
+            uint8_t b = blended & 0xFF;
+            uint16_t r5 = static_cast<uint16_t>((r * 31) / 255) & 0x1F;
+            uint16_t g6 = static_cast<uint16_t>((g * 63) / 255) & 0x3F;
+            uint16_t b5 = static_cast<uint16_t>((b * 31) / 255) & 0x1F;
+            uint16_t val = static_cast<uint16_t>((r5 << 11) | (g6 << 5) | b5);
+            uint16_t *pixels = reinterpret_cast<uint16_t *>(base);
+            pixels[x] = val;
+        }
+        else
+        {
+            base[x] = static_cast<uint8_t>(blended & 0xFF);
+        }
     }
 
     // Sketch implementation
@@ -759,6 +829,37 @@ namespace sketch
         current_confirmation_.reset();
         gesture_changed_since_start_ = false;
         position_buffer_.clear();
+    }
+
+    void SketchPad::add_line(const Point &start_percent, const Point &end_percent)
+    {
+        Point s = start_percent;
+        Point e = end_percent;
+        if (grid_config_.enabled && grid_config_.snap_to_grid)
+        {
+            s = snap_to_grid(s);
+            e = snap_to_grid(e);
+        }
+
+        // ensure minimum length
+        float dist = s.distance(e);
+        if (dist < 0.1f)
+        {
+            std::cerr << "[SketchPad] add_line: ignored - too short (" << dist << "%)\n";
+            return;
+        }
+
+        Line line;
+        line.start = s;
+        line.end = e;
+        line.color = current_color_;
+        line.thickness = current_thickness_;
+        line.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        sketch_.lines.push_back(line);
+
+        std::cerr << "[SketchPad] add_line: created line from (" << s.x << "," << s.y << ") to (" << e.x << "," << e.y << ")\n";
     }
 
     bool SketchPad::save(const std::string &base_filename)
