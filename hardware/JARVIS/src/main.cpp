@@ -17,6 +17,7 @@
 #include <drm_mode.h>
 #include <string>
 #include <vector>
+#include <linux/fb.h>
 
 #include "draw_ticker.hpp"
 #include "http_client.hpp"
@@ -119,6 +120,12 @@ int main(int argc, char **argv)
     size_t dumb_size = 0;
     uint32_t dumb_handle = 0;
     struct gbm_device *gbm = nullptr;
+    // Fallback framebuffer device (/dev/fb0) mapping for systems where DRM GBM mapping isn't created
+    int fb0_fd = -1;
+    void *fb0_map = nullptr;
+    uint32_t fb0_stride = 0;
+    size_t fb0_size = 0;
+    uint32_t fb0_bpp = 0;
 
     // Helper for whitespace trimming
     auto trim_ws = [](const std::string &s) -> std::string
@@ -464,6 +471,85 @@ int main(int argc, char **argv)
             sketchpad.set_snap_to_grid(true);
             sketchpad.set_show_measurements(true);
 
+            // Try an immediate initial render of the grid so the user sees it
+            // as soon as they enter blueprint mode (if display buffer is ready).
+            {
+                void *map_data = nullptr;
+                uint32_t map_stride = 0;
+
+                if (use_gbm && bo)
+                {
+                    void *ret = gbm_bo_map(bo, 0, 0, width, height, GBM_BO_TRANSFER_WRITE, &map_stride, &map_data);
+                    if (!ret)
+                    {
+                        std::cerr << "[SketchPad] Initial render: gbm_bo_map failed\n";
+                    }
+                    else
+                    {
+                        draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
+                        sketchpad.render(map_data, map_stride, width, height);
+                        gbm_bo_unmap(bo, map_data);
+                        if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode))
+                        {
+                            std::cerr << "[SketchPad] Initial render: drmModeSetCrtc failed\n";
+                        }
+                    }
+                }
+                else if (dumb_map)
+                {
+                    map_stride = dumb_pitch;
+                    map_data = dumb_map;
+                    draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
+                    sketchpad.render(map_data, map_stride, width, height);
+                    if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode))
+                    {
+                        std::cerr << "[SketchPad] Initial render: drmModeSetCrtc failed\n";
+                    }
+                }
+                else
+                {
+                    std::cerr << "[SketchPad] Initial render: display buffer not initialized; grid will appear on next render pass.\n";
+                }
+            }
+            // If display buffer wasn't initialized via DRM/GBM, try mapping /dev/fb0 now and re-render there
+            if (!use_gbm && !dumb_map && !fb0_map)
+            {
+                int fb = open("/dev/fb0", O_RDWR);
+                if (fb >= 0)
+                {
+                    struct fb_var_screeninfo vinfo;
+                    struct fb_fix_screeninfo finfo;
+                    if (ioctl(fb, FBIOGET_FSCREENINFO, &finfo) == -1 || ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) == -1)
+                    {
+                        std::cerr << "[SketchPad] FB ioctl failed when attempting /dev/fb0 fallback: " << strerror(errno) << "\n";
+                        close(fb);
+                    }
+                    else
+                    {
+                        fb0_stride = finfo.line_length;
+                        fb0_bpp = vinfo.bits_per_pixel;
+                        fb0_size = finfo.smem_len;
+                        void *m = mmap(NULL, fb0_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0);
+                        if (m == MAP_FAILED)
+                        {
+                            std::cerr << "[SketchPad] mmap(/dev/fb0) failed: " << strerror(errno) << "\n";
+                            close(fb);
+                        }
+                        else
+                        {
+                            fb0_fd = fb;
+                            fb0_map = m;
+                            std::cerr << "[SketchPad] Mapped /dev/fb0: " << vinfo.xres << "x" << vinfo.yres << " bpp=" << vinfo.bits_per_pixel << "\n";
+                            // Re-init sketchpad to framebuffer resolution so percentage mapping is correct
+                            sketchpad.init(sketch_name, vinfo.xres, vinfo.yres);
+                            // Render immediately
+                            draw_ticker::clear_buffer(fb0_map, fb0_stride, vinfo.xres, vinfo.yres, 0x00000000);
+                            sketchpad.render(fb0_map, fb0_stride, vinfo.xres, vinfo.yres);
+                            msync(fb0_map, fb0_size, MS_SYNC);
+                        }
+                    }
+                }
+            }
             std::cerr << "[SYSTEM] Enterprise drawing system ready\n\n";
             std::cerr << "╔════════════════════════════════════════════════════════════╗\n";
             std::cerr << "║                   DRAWING INSTRUCTIONS                     ║\n";
@@ -617,6 +703,16 @@ int main(int argc, char **argv)
                         {
                             std::cerr << "[ERROR] Display update failed\n";
                         }
+                    }
+                    else if (fb0_map)
+                    {
+                        // Fallback rendering directly to /dev/fb0 mmap
+                        // fb0_stride/fb0_map were set earlier when mapping /dev/fb0
+                        // Use fb0 resolution for render
+                        // We assume sketchpad was re-init'd to fb resolution when mapping occurred
+                        draw_ticker::clear_buffer(fb0_map, fb0_stride, sketchpad.get_sketch().width, sketchpad.get_sketch().height, 0x00000000);
+                        sketchpad.render(fb0_map, fb0_stride, sketchpad.get_sketch().width, sketchpad.get_sketch().height);
+                        msync(fb0_map, fb0_size, MS_SYNC);
                     }
                 }
 
@@ -977,6 +1073,110 @@ int main(int argc, char **argv)
             std::cerr << "Press Enter to continue...\n";
             std::getline(std::cin, line);
         }
+        else if (line == "test_display")
+        {
+            std::cerr << "\n[TEST_DISPLAY] Attempting to write test pattern to /dev/fb0...\n";
+
+            int fb = open("/dev/fb0", O_RDWR);
+            if (fb < 0)
+            {
+                std::cerr << "[TEST_DISPLAY] Failed to open /dev/fb0: " << strerror(errno) << "\n";
+            }
+            else
+            {
+                struct fb_var_screeninfo vinfo;
+                struct fb_fix_screeninfo finfo;
+                if (ioctl(fb, FBIOGET_FSCREENINFO, &finfo) == -1 || ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) == -1)
+                {
+                    std::cerr << "[TEST_DISPLAY] FB ioctl failed: " << strerror(errno) << "\n";
+                    close(fb);
+                }
+                else
+                {
+                    std::cerr << "[TEST_DISPLAY] FB: resolution=" << vinfo.xres << "x" << vinfo.yres
+                              << " bpp=" << vinfo.bits_per_pixel << " line_len=" << finfo.line_length << "\n";
+
+                    size_t screensize = finfo.smem_len;
+                    void *fbm = mmap(NULL, screensize, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0);
+                    if (fbm == MAP_FAILED)
+                    {
+                        std::cerr << "[TEST_DISPLAY] mmap failed: " << strerror(errno) << "\n";
+                        close(fb);
+                    }
+                    else
+                    {
+                        // Draw a simple checkerboard/high-contrast pattern
+                        uint32_t width_fb = vinfo.xres;
+                        uint32_t height_fb = vinfo.yres;
+                        uint32_t stride = finfo.line_length; // bytes per line
+                        std::cerr << "[TEST_DISPLAY] Drawing pattern...\n";
+
+                        for (uint32_t y = 0; y < height_fb; ++y)
+                        {
+                            uint8_t *row = reinterpret_cast<uint8_t *>(fbm) + y * stride;
+                            for (uint32_t x = 0; x < width_fb; ++x)
+                            {
+                                bool white = (((x / 32) + (y / 32)) % 2) == 0;
+                                if (vinfo.bits_per_pixel == 32)
+                                {
+                                    uint32_t *px = reinterpret_cast<uint32_t *>(row) + x;
+                                    *px = white ? 0x00FFFFFF : 0x00000000; // 0x00RRGGBB
+                                }
+                                else if (vinfo.bits_per_pixel == 16)
+                                {
+                                    uint16_t *px = reinterpret_cast<uint16_t *>(row) + x;
+                                    // 565
+                                    *px = white ? 0xFFFF : 0x0000;
+                                }
+                                else
+                                {
+                                    // Fallback: set raw bytes (may be paletted)
+                                    row[x] = white ? 0xFF : 0x00;
+                                }
+                            }
+                        }
+
+                        // Sync and pause so user can see it
+                        msync(fbm, screensize, MS_SYNC);
+                        std::cerr << "[TEST_DISPLAY] Pattern drawn to /dev/fb0. Press Enter to restore (or wait 5s)...\n";
+                        // Wait for user or timeout
+                        fd_set rfds;
+                        struct timeval tv;
+                        FD_ZERO(&rfds);
+                        FD_SET(STDIN_FILENO, &rfds);
+                        tv.tv_sec = 5;
+                        tv.tv_usec = 0;
+                        select(STDIN_FILENO + 1, &rfds, NULL, NULL, &tv);
+
+                        // Clear pattern (black)
+                        for (uint32_t y = 0; y < height_fb; ++y)
+                        {
+                            uint8_t *row = reinterpret_cast<uint8_t *>(fbm) + y * stride;
+                            if (vinfo.bits_per_pixel == 32)
+                            {
+                                uint32_t *px = reinterpret_cast<uint32_t *>(row);
+                                for (uint32_t x = 0; x < width_fb; ++x)
+                                    px[x] = 0x00000000;
+                            }
+                            else if (vinfo.bits_per_pixel == 16)
+                            {
+                                uint16_t *px = reinterpret_cast<uint16_t *>(row);
+                                for (uint32_t x = 0; x < width_fb; ++x)
+                                    px[x] = 0x0000;
+                            }
+                            else
+                            {
+                                memset(row, 0, stride);
+                            }
+                        }
+                        msync(fbm, screensize, MS_SYNC);
+                        munmap(fbm, screensize);
+                        close(fb);
+                        std::cerr << "[TEST_DISPLAY] Restored framebuffer.\n";
+                    }
+                }
+            }
+        }
         else if (line == "stop")
         {
             // User typed "stop"; exit the loop
@@ -1009,6 +1209,14 @@ int main(int argc, char **argv)
         dreq.handle = dumb_handle;
         ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
     }
+    // Unmap and close fallback /dev/fb0 if used
+    if (fb0_map && fb0_map != MAP_FAILED)
+    {
+        msync(fb0_map, fb0_size, MS_SYNC);
+        munmap(fb0_map, fb0_size);
+    }
+    if (fb0_fd >= 0)
+        close(fb0_fd);
     drmModeFreeConnector(conn);
     drmModeFreeResources(res);
     close(fd);

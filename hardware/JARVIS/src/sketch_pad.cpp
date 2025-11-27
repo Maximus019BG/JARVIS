@@ -133,20 +133,14 @@ namespace sketch
     {
         std::string full_path = filename;
         if (full_path.find(".jarvis") == std::string::npos)
-        {
             full_path += ".jarvis";
-        }
-
         std::ofstream file(full_path);
-        if (!file.is_open())
-        {
+        if (!file.is_open()) {
             std::cerr << "[Sketch] Failed to open file for writing: " << full_path << "\n";
             return false;
         }
-
         file << to_json();
         file.close();
-
         std::cout << "[Sketch] Saved to: " << full_path << "\n";
         return true;
     }
@@ -155,224 +149,74 @@ namespace sketch
     {
         std::string full_path = filename;
         if (full_path.find(".jarvis") == std::string::npos)
-        {
             full_path += ".jarvis";
-        }
-
         std::ifstream file(full_path);
-        if (!file.is_open())
-        {
+        if (!file.is_open()) {
             std::cerr << "[Sketch] Failed to open file for reading: " << full_path << "\n";
             return false;
         }
-
         std::stringstream buffer;
         buffer << file.rdbuf();
         file.close();
-
         bool success = from_json(buffer.str());
-        if (success)
-        {
+        if (success) {
             std::cout << "[Sketch] Loaded from: " << full_path << "\n";
         }
         return success;
     }
 
+    // Minimal JSON: {"lines":[{"x0":..,"y0":..,"x1":..,"y1":..}, ...]}
     std::string Sketch::to_json() const
     {
         std::ostringstream json;
-
-        json << "{\n";
-        json << "  \"name\": \"" << escape_json_string(name) << "\",\n";
-        json << "  \"width\": " << width << ",\n";
-        json << "  \"height\": " << height << ",\n";
-        json << "  \"created_timestamp\": " << created_timestamp << ",\n";
-        json << "  \"lines\": [\n";
-
-        for (size_t i = 0; i < lines.size(); ++i)
-        {
+        json << "{\n  \"lines\": [\n";
+        for (size_t i = 0; i < lines.size(); ++i) {
             const auto &line = lines[i];
-            json << "    {\n";
-            json << "      \"start\": {\"x\": " << line.start.x << ", \"y\": " << line.start.y << "},\n";
-            json << "      \"end\": {\"x\": " << line.end.x << ", \"y\": " << line.end.y << "},\n";
-            json << "      \"color\": " << line.color << ",\n";
-            json << "      \"thickness\": " << line.thickness << ",\n";
-            json << "      \"timestamp\": " << line.timestamp << "\n";
-            json << "    }";
-            if (i < lines.size() - 1)
-                json << ",";
+            json << "    {\"x0\": " << line.start.x << ", \"y0\": " << line.start.y
+                 << ", \"x1\": " << line.end.x << ", \"y1\": " << line.end.y << "}";
+            if (i < lines.size() - 1) json << ",";
             json << "\n";
         }
-
-        json << "  ]\n";
-        json << "}\n";
-
+        json << "  ]\n}";
         return json.str();
     }
 
     bool Sketch::from_json(const std::string &json)
     {
-        try
-        {
-            // Extract name
-            size_t name_pos = json.find("\"name\":");
-            if (name_pos != std::string::npos)
-            {
-                size_t start = json.find("\"", name_pos + 7) + 1;
-                size_t end = json.find("\"", start);
-                if (start != std::string::npos && end != std::string::npos)
-                {
-                    name = json.substr(start, end - start);
-                }
-            }
-
-            // Extract dimensions
-            auto extract_number = [&json](const std::string &key) -> uint64_t
-            {
-                size_t pos = json.find("\"" + key + "\":");
-                if (pos == std::string::npos)
-                    return 0;
-                size_t num_start = pos + key.length() + 3;
-                size_t num_end = json.find_first_of(",}", num_start);
-                if (num_end == std::string::npos)
-                    return 0;
-                std::string num_str = json.substr(num_start, num_end - num_start);
-                num_str.erase(0, num_str.find_first_not_of(" \t\n\r"));
-                num_str.erase(num_str.find_last_not_of(" \t\n\r") + 1);
-                return std::stoull(num_str);
-            };
-
-            width = static_cast<uint32_t>(extract_number("width"));
-            height = static_cast<uint32_t>(extract_number("height"));
-            created_timestamp = extract_number("created_timestamp");
-
-            // Parse lines
+        try {
             lines.clear();
             size_t lines_start = json.find("\"lines\":");
-            if (lines_start == std::string::npos)
-                return false;
-
+            if (lines_start == std::string::npos) return false;
             size_t array_start = json.find("[", lines_start);
-            size_t array_end = json.rfind("]");
-            if (array_start == std::string::npos || array_end == std::string::npos)
-                return false;
-
-            size_t pos = array_start;
-            int brace_depth = 0;
-            size_t line_start = std::string::npos;
-
-            for (size_t i = array_start; i < array_end; ++i)
-            {
-                if (json[i] == '{')
-                {
-                    if (brace_depth == 0)
-                        line_start = i;
-                    brace_depth++;
-                }
-                else if (json[i] == '}')
-                {
-                    brace_depth--;
-                    if (brace_depth == 0 && line_start != std::string::npos)
-                    {
-                        std::string line_json = json.substr(line_start, i - line_start + 1);
-
-                        Line line;
-
-                        // Parse start point
-                        size_t start_pos = line_json.find("\"start\":");
-                        if (start_pos != std::string::npos)
-                        {
-                            size_t x_pos = line_json.find("\"x\":", start_pos);
-                            size_t y_pos = line_json.find("\"y\":", start_pos);
-                            if (x_pos != std::string::npos && y_pos != std::string::npos)
-                            {
-                                x_pos += 4;
-                                size_t x_end = line_json.find_first_of(",}", x_pos);
-                                std::string x_str = line_json.substr(x_pos, x_end - x_pos);
-                                x_str.erase(0, x_str.find_first_not_of(" \t\n\r"));
-                                x_str.erase(x_str.find_last_not_of(" \t\n\r") + 1);
-                                line.start.x = std::stof(x_str);
-
-                                y_pos += 4;
-                                size_t y_end = line_json.find_first_of(",}", y_pos);
-                                std::string y_str = line_json.substr(y_pos, y_end - y_pos);
-                                y_str.erase(0, y_str.find_first_not_of(" \t\n\r"));
-                                y_str.erase(y_str.find_last_not_of(" \t\n\r") + 1);
-                                line.start.y = std::stof(y_str);
-                            }
-                        }
-
-                        // Parse end point
-                        size_t end_pos = line_json.find("\"end\":");
-                        if (end_pos != std::string::npos)
-                        {
-                            size_t x_pos = line_json.find("\"x\":", end_pos);
-                            size_t y_pos = line_json.find("\"y\":", end_pos);
-                            if (x_pos != std::string::npos && y_pos != std::string::npos)
-                            {
-                                x_pos += 4;
-                                size_t x_end = line_json.find_first_of(",}", x_pos);
-                                std::string x_str = line_json.substr(x_pos, x_end - x_pos);
-                                x_str.erase(0, x_str.find_first_not_of(" \t\n\r"));
-                                x_str.erase(x_str.find_last_not_of(" \t\n\r") + 1);
-                                line.end.x = std::stof(x_str);
-
-                                y_pos += 4;
-                                size_t y_end = line_json.find_first_of(",}", y_pos);
-                                std::string y_str = line_json.substr(y_pos, y_end - y_pos);
-                                y_str.erase(0, y_str.find_first_not_of(" \t\n\r"));
-                                y_str.erase(y_str.find_last_not_of(" \t\n\r") + 1);
-                                line.end.y = std::stof(y_str);
-                            }
-                        }
-
-                        // Parse color
-                        size_t color_pos = line_json.find("\"color\":");
-                        if (color_pos != std::string::npos)
-                        {
-                            size_t num_start = color_pos + 8;
-                            size_t num_end = line_json.find_first_of(",}", num_start);
-                            std::string num_str = line_json.substr(num_start, num_end - num_start);
-                            num_str.erase(0, num_str.find_first_not_of(" \t\n\r"));
-                            num_str.erase(num_str.find_last_not_of(" \t\n\r") + 1);
-                            line.color = std::stoul(num_str);
-                        }
-
-                        // Parse thickness
-                        size_t thick_pos = line_json.find("\"thickness\":");
-                        if (thick_pos != std::string::npos)
-                        {
-                            size_t num_start = thick_pos + 12;
-                            size_t num_end = line_json.find_first_of(",}", num_start);
-                            std::string num_str = line_json.substr(num_start, num_end - num_start);
-                            num_str.erase(0, num_str.find_first_not_of(" \t\n\r"));
-                            num_str.erase(num_str.find_last_not_of(" \t\n\r") + 1);
-                            line.thickness = std::stoi(num_str);
-                        }
-
-                        // Parse timestamp
-                        size_t ts_pos = line_json.find("\"timestamp\":");
-                        if (ts_pos != std::string::npos)
-                        {
-                            size_t num_start = ts_pos + 12;
-                            size_t num_end = line_json.find_first_of(",}", num_start);
-                            std::string num_str = line_json.substr(num_start, num_end - num_start);
-                            num_str.erase(0, num_str.find_first_not_of(" \t\n\r"));
-                            num_str.erase(num_str.find_last_not_of(" \t\n\r") + 1);
-                            line.timestamp = std::stoull(num_str);
-                        }
-
-                        lines.push_back(line);
-                        line_start = std::string::npos;
-                    }
-                }
+            size_t array_end = json.find("]", array_start);
+            if (array_start == std::string::npos || array_end == std::string::npos) return false;
+            size_t pos = array_start + 1;
+            while (pos < array_end) {
+                size_t obj_start = json.find("{", pos);
+                if (obj_start == std::string::npos || obj_start > array_end) break;
+                size_t obj_end = json.find("}", obj_start);
+                if (obj_end == std::string::npos || obj_end > array_end) break;
+                std::string obj = json.substr(obj_start, obj_end - obj_start + 1);
+                Line line;
+                auto extract = [&](const char *key) -> float {
+                    size_t k = obj.find(key);
+                    if (k == std::string::npos) return 0.0f;
+                    size_t v = obj.find(":", k);
+                    if (v == std::string::npos) return 0.0f;
+                    size_t end = obj.find_first_of(",}", v);
+                    std::string val = obj.substr(v + 1, end - v - 1);
+                    return std::stof(val);
+                };
+                line.start.x = extract("x0");
+                line.start.y = extract("y0");
+                line.end.x = extract("x1");
+                line.end.y = extract("y1");
+                lines.push_back(line);
+                pos = obj_end + 1;
             }
-
             return true;
-        }
-        catch (const std::exception &e)
-        {
-            std::cerr << "[Sketch] JSON parse error: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[Sketch] JSON parse error (minimal format)\n";
             return false;
         }
     }
@@ -1104,7 +948,7 @@ namespace sketch
                 set_pixel(map, stride, width, height,
                           static_cast<int>(px) + dx,
                           static_cast<int>(py) + dy,
-                          0xFFFFFF00); // Yellow marker
+                          0x00FFFF00); // Yellow marker (0x00RRGGBB)
             }
         }
 

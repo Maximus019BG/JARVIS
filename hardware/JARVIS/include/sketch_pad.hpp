@@ -51,12 +51,12 @@ namespace sketch
         bool show_measurements;
 
         GridConfig() : enabled(true),
-                       grid_spacing_percent(5.0f),  // 5% of screen per grid square
-                       real_world_spacing_cm(5.0f), // Default: 5cm per grid square
-                       grid_color(0x00505050),      // Light grey
-                       grid_thickness(1),
-                       snap_to_grid(true),
-                       show_measurements(true)
+               grid_spacing_percent(5.0f),  // 5% of screen per grid square
+               real_world_spacing_cm(5.0f), // Default: 5cm per grid square
+               grid_color(0x00FFFF00),      // Solid yellow (0x00RRGGBB)
+                   grid_thickness(2),
+                   snap_to_grid(true),
+                   show_measurements(true)
         {
         }
     };
@@ -92,16 +92,10 @@ namespace sketch
 
         Sketch() : width(640), height(480), created_timestamp(0) {}
 
-        // Save to .jarvis file (JSON format)
+        // Save/load in minimal JSON: {"lines":[{"x0":..,"y0":..,"x1":..,"y1":..}, ...]}
         bool save(const std::string &filename) const;
-
-        // Load from .jarvis file
         bool load(const std::string &filename);
-
-        // Convert to JSON string
         std::string to_json() const;
-
-        // Parse from JSON string
         bool from_json(const std::string &json);
     };
 
