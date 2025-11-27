@@ -304,9 +304,16 @@ namespace sketch
           anti_aliasing_enabled_(true),
           subpixel_rendering_(true),
           predictive_smoothing_(true),
-          use_projector_calibration_(false),
+                    use_projector_calibration_(false),
           last_line_timestamp_(0)
     {
+                // manual preview flag
+                // default false; set_manual_start will enable
+                // so Enter-driven flow can show a dot at the chosen start
+                // without interfering with state machine
+                // declared below in class members
+                // (we'll initialize here)
+                // ...initialized in member initializer list implicitly via default
     }
 
     SketchPad::SketchPad(uint32_t width, uint32_t height)
@@ -860,6 +867,27 @@ namespace sketch
         sketch_.lines.push_back(line);
 
         std::cerr << "[SketchPad] add_line: created line from (" << s.x << "," << s.y << ") to (" << e.x << "," << e.y << ")\n";
+    }
+
+    void SketchPad::set_manual_start(const Point &p)
+    {
+        // Snap to grid if enabled so the manual start dot lies on an intersection
+        Point snapped = p;
+        if (grid_config_.enabled && grid_config_.snap_to_grid)
+        {
+            snapped = snap_to_grid(p);
+        }
+
+        start_point_ = snapped;
+        preview_end_point_ = snapped;
+        manual_preview_active_ = true;
+
+        std::cerr << "[SketchPad] Manual START set (snapped) at (" << start_point_.x << "," << start_point_.y << ")\n";
+    }
+
+    void SketchPad::clear_manual_start()
+    {
+        manual_preview_active_ = false;
     }
 
     bool SketchPad::save(const std::string &base_filename)

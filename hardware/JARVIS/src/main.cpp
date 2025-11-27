@@ -830,9 +830,11 @@ int main(int argc, char **argv)
                             else if (!have_start_point)
                             {
                                 // Set start to nearest grid intersection via SketchPad snapping
-                                start_point_percent = last_tip_percent;
-                                have_start_point = true;
-                                std::cerr << "[Blueprint] START set at (" << start_point_percent.x << "," << start_point_percent.y << ")\n";
+                                    start_point_percent = last_tip_percent;
+                                    have_start_point = true;
+                                    // tell sketchpad to show a dot at this start
+                                    sketchpad.set_manual_start(start_point_percent);
+                                    std::cerr << "[Blueprint] START set at (" << start_point_percent.x << "," << start_point_percent.y << ")\n";
                             }
                             else
                             {
@@ -842,6 +844,7 @@ int main(int argc, char **argv)
                                 sketchpad.add_line(start_point_percent, end_point);
                                 std::cerr << "[Blueprint] END set at (" << end_point.x << "," << end_point.y << ") - Line created.\n";
                                 have_start_point = false; // reset for next line
+                                sketchpad.clear_manual_start();
                             }
                         }
                     }

@@ -221,8 +221,12 @@ namespace sketch
         DrawingState get_state() const { return state_; }
         const Point &get_start_point() const { return start_point_; }
         const Point &get_preview_end_point() const { return preview_end_point_; }
-        bool has_preview() const { return state_ == DrawingState::START_CONFIRMED ||
-                                          state_ == DrawingState::WAITING_FOR_END; }
+        bool has_preview() const { return manual_preview_active_ || state_ == DrawingState::START_CONFIRMED ||
+                          state_ == DrawingState::WAITING_FOR_END; }
+
+        // Manual start helpers (for Enter-driven flow)
+        void set_manual_start(const Point &p);
+        void clear_manual_start();
 
     private:
         Sketch sketch_;
@@ -255,6 +259,9 @@ namespace sketch
 
         // Projector calibration
         ProjectorCalibration calibration_;
+
+        // Manual preview flag used by Enter-driven flow
+        bool manual_preview_active_ = false;
 
         // Statistics
         uint64_t last_line_timestamp_;
