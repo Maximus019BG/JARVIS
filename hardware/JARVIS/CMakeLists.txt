@@ -169,7 +169,10 @@ target_link_libraries(jarvis_core
 )
 
 # Link nlohmann_json to core so code can include <nlohmann/json.hpp>
-target_link_libraries(jarvis_core PRIVATE nlohmann_json::nlohmann_json)
+# Make it PUBLIC so targets linking against `jarvis_core` (like the
+# `JARVIS` executable) also get the include directories and usage
+# requirements provided by nlohmann_json.
+target_link_libraries(jarvis_core PUBLIC nlohmann_json::nlohmann_json)
 
 # Pass pkg-config cflags if available
 if(GBM_CFLAGS_OTHER)

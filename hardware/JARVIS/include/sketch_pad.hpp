@@ -2,6 +2,7 @@
 
 #include "hand_detector.hpp"
 #include <vector>
+#include <functional>
 #include <string>
 #include <deque>
 #include <cmath>
@@ -171,6 +172,8 @@ namespace sketch
 
         // Get current sketch
         const Sketch &get_sketch() const { return sketch_; }
+        // Return resolved path for last loaded/saved sketch (empty if none)
+        std::string get_last_loaded_path() const { return last_loaded_path_; }
 
         // Clear current sketch
         void clear();
@@ -180,6 +183,13 @@ namespace sketch
 
         // Load sketch from file
         bool load(const std::string &base_filename);
+        // Load sketch from raw JSON contents. This bypasses the on-disk
+        // signature verification and is intended for recovery when the
+        // file signature is invalid but the payload is parseable.
+        // `resolved_path` should be the final filesystem path (including
+        // `blueprints/` and the `.jarvis` suffix) that will be used as
+        // `last_loaded_path_` if load succeeds.
+        bool load_from_json(const std::string &json_str, const std::string &resolved_path);
 
         // Render sketch to buffer with anti-aliasing
         void render(void *map, uint32_t stride, uint32_t width, uint32_t height);
@@ -228,6 +238,13 @@ namespace sketch
         void set_manual_start(const Point &p);
         void clear_manual_start();
 
+        // Register a callback invoked after a successful save. The argument
+        // is the resolved filesystem path that was written.
+        void set_on_save_callback(std::function<void(const std::string &)> cb)
+        {
+            on_save_callback_ = std::move(cb);
+        }
+
     private:
         Sketch sketch_;
 
@@ -270,6 +287,9 @@ namespace sketch
         GridConfig grid_config_;
         // Remember the exact file path that was last loaded so saves can write back
         std::string last_loaded_path_;
+        // Optional callback invoked after a successful save. The argument is
+        // the resolved file path that was written.
+        std::function<void(const std::string &)> on_save_callback_;
 
         // Helper functions
         Point get_smoothed_position();
@@ -288,6 +308,8 @@ namespace sketch
 
         void update_state_machine(const std::vector<hand_detector::HandDetection> &hands);
         void finalize_line();
+
+
 
         // Grid system helpers
         Point snap_to_grid(const Point &p) const;

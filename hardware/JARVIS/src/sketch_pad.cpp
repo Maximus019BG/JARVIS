@@ -260,6 +260,57 @@ namespace sketch
         }
     }
 
+    bool SketchPad::load_from_json(const std::string &json_str, const std::string &resolved_path)
+    {
+        // Attempt to parse JSON payload even if signature verification fails
+        try
+        {
+            // Reuse Sketch::from_json logic to populate sketch_. If parsing
+            // succeeds, update grid config if present and set last_loaded_path_.
+            if (!sketch_.from_json(json_str))
+            {
+                std::cerr << "[SketchPad] load_from_json: failed to parse sketch JSON\n";
+                return false;
+            }
+
+            // Attempt to extract grid metadata if present
+            try
+            {
+                json j = json::parse(json_str);
+                if (j.contains("grid"))
+                {
+                    auto g = j["grid"];
+                    grid_config_.grid_spacing_percent = g.value("grid_spacing_percent", grid_config_.grid_spacing_percent);
+                    grid_config_.real_world_spacing_cm = g.value("real_world_spacing_cm", grid_config_.real_world_spacing_cm);
+                    grid_config_.snap_to_grid = g.value("snap_to_grid", grid_config_.snap_to_grid);
+                    grid_config_.show_measurements = g.value("show_measurements", grid_config_.show_measurements);
+                    grid_config_.enabled = true;
+                }
+            }
+            catch (...) { /* ignore optional grid parse errors */ }
+
+            // Ensure resolved_path ends with .jarvis
+            std::string full = resolved_path;
+            if (full.find(".jarvis") == std::string::npos)
+                full += ".jarvis";
+            last_loaded_path_ = full;
+
+            // Reset state machine and buffers
+            state_ = DrawingState::WAITING_FOR_START;
+            current_confirmation_.reset();
+            gesture_changed_since_start_ = false;
+            position_buffer_.clear();
+
+            std::cerr << "[SketchPad] Loaded project from JSON fallback: '" << full << "'\n";
+            return true;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "[SketchPad] load_from_json exception: " << e.what() << "\n";
+            return false;
+        }
+    }
+
     // SketchPad implementation - Enterprise drawing for architects
     SketchPad::SketchPad()
         : state_(DrawingState::WAITING_FOR_START),
@@ -1022,6 +1073,20 @@ namespace sketch
         // Remember where we saved so subsequent saves without filename write back
         last_loaded_path_ = full_path;
         std::cerr << "[SketchPad] Saved project: '" << full_path << "'\n";
+        // Invoke on-save callback if registered so external code can react
+        // (e.g., post the saved file to a cloud server).
+        if (on_save_callback_)
+        {
+            try
+            {
+                on_save_callback_(full_path);
+            }
+            catch (...) {
+                // Swallow exceptions - save succeeded; callback failure
+                // should not break save semantics.
+                std::cerr << "[SketchPad] on_save_callback_ raised an exception\n";
+            }
+        }
         return true;
     }
 
