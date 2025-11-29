@@ -877,21 +877,60 @@ namespace sketch
 
     bool SketchPad::save(const std::string &base_filename)
     {
-        // Save full project including grid config and signature into blueprints/<name>.jarvis
-        std::string base = base_filename.empty() ? sketch_.name : base_filename;
-        std::string full_path = (base.find('/') == std::string::npos) ? std::string("blueprints/") + base : base;
-        if (full_path.find(".jarvis") == std::string::npos) full_path += ".jarvis";
-
-        // Ensure directory
-        struct stat st = {};
-        if (stat("blueprints", &st) != 0)
-        {
-            if (mkdir("blueprints", 0755) != 0 && errno != EEXIST)
+            // Determine target path. If we previously loaded from an explicit path,
+            // prefer saving back to that same resolved file so edits go to the same file.
+            std::string full_path;
+            if ((base_filename.empty() || base_filename == sketch_.name) && !last_loaded_path_.empty())
             {
-                std::cerr << "[SketchPad] Failed to create blueprints/ directory: " << strerror(errno) << "\n";
+                full_path = last_loaded_path_;
+            }
+            else
+            {
+                std::string base = base_filename.empty() ? sketch_.name : base_filename;
+                full_path = (base.find('/') == std::string::npos) ? std::string("blueprints/") + base : base;
+                if (full_path.find(".jarvis") == std::string::npos)
+                    full_path += ".jarvis";
+            }
+
+            // Ensure parent directory exists (create recursively as needed)
+            auto ensure_parent = [](const std::string &path) -> bool {
+                auto pos = path.find_last_of('/');
+                if (pos == std::string::npos)
+                    return true; // no parent dir
+                std::string dir = path.substr(0, pos);
+                // Create directories iteratively
+                std::string accum;
+                size_t start = 0;
+                if (dir.size() > 0 && dir[0] == '/')
+                {
+                    accum = "/";
+                    start = 1;
+                }
+                while (start < dir.size())
+                {
+                    auto next = dir.find('/', start);
+                    std::string part = dir.substr(start, (next == std::string::npos) ? std::string::npos : next - start);
+                    if (!accum.empty() && accum.back() != '/')
+                        accum += "/";
+                    accum += part;
+                    struct stat st = {};
+                    if (stat(accum.c_str(), &st) != 0)
+                    {
+                        if (mkdir(accum.c_str(), 0755) != 0 && errno != EEXIST)
+                            return false;
+                    }
+                    if (next == std::string::npos)
+                        break;
+                    start = next + 1;
+                }
+                return true;
+            };
+
+            if (!ensure_parent(full_path))
+            {
+                std::cerr << "[SketchPad] Failed to create parent directory for: " << full_path << "\n";
                 return false;
             }
-        }
 
         // Build JSON
         json j;
@@ -980,6 +1019,8 @@ namespace sketch
             return false;
         }
 
+        // Remember where we saved so subsequent saves without filename write back
+        last_loaded_path_ = full_path;
         std::cerr << "[SketchPad] Saved project: '" << full_path << "'\n";
         return true;
     }
@@ -1072,6 +1113,8 @@ namespace sketch
         position_buffer_.clear();
 
         std::cerr << "[SketchPad] Loaded project: '" << full_path << "'\n";
+        // Remember the resolved path so subsequent save() writes back to same file
+        last_loaded_path_ = full_path;
         return true;
     }
 

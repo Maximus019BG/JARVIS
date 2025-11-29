@@ -268,6 +268,8 @@ namespace sketch
 
         // Grid system
         GridConfig grid_config_;
+        // Remember the exact file path that was last loaded so saves can write back
+        std::string last_loaded_path_;
 
         // Helper functions
         Point get_smoothed_position();

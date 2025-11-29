@@ -1218,8 +1218,312 @@ int main(int argc, char **argv)
                 }
             }
 
-            std::cerr << "Press Enter to continue...\n";
-            std::getline(std::cin, line);
+            // Instead of a simple pause, enter an interactive editing session
+            // so `load <name>` behaves like `blueprint` but starting from the
+            // already-loaded sketch. This lets the user continue drawing.
+
+            std::cerr << "Entering interactive edit mode for loaded sketch...\n";
+
+            // Initialize camera for interactive editing
+            camera::Camera cam;
+            camera::CameraConfig cam_config;
+            cam_config.width = 1280;
+            cam_config.height = 720;
+            cam_config.framerate = 30;
+            cam_config.verbose = false;
+
+            if (!cam.init(cam_config))
+            {
+                std::cerr << "[ERROR] Camera initialization failed: " << cam.get_error() << "\n";
+                std::cerr << "[INFO] Edit mode requires a working camera; aborting interactive edit.\n";
+                continue;
+            }
+
+            if (!cam.start())
+            {
+                std::cerr << "[ERROR] Camera start failed: " << cam.get_error() << "\n";
+                continue;
+            }
+
+            // Configure hand detector (same defaults as blueprint)
+            hand_detector::DetectorConfig det_config;
+            det_config.verbose = false;
+            det_config.enable_gesture = true;
+            det_config.min_hand_area = 2000;
+            det_config.downscale_factor = 2;
+
+            hand_detector::ProductionConfig prod_config;
+            prod_config.enable_tracking = true;
+            prod_config.adaptive_lighting = true;
+            prod_config.gesture_stabilization_frames = 10;
+            prod_config.tracking_history_frames = 5;
+            prod_config.filter_low_confidence = true;
+            prod_config.min_detection_quality = 0.5f;
+            prod_config.verbose = false;
+
+            hand_detector::ProductionHandDetector detector(det_config, prod_config);
+
+            // Prepare sketchpad for editing: keep loaded grid/settings but set drawing defaults
+            sketchpad.set_color(0x00FFFFFF);
+            sketchpad.set_thickness(4);
+            sketchpad.set_confirmation_frames(2);
+            sketchpad.enable_anti_aliasing(true);
+            sketchpad.enable_subpixel_rendering(true);
+
+            std::cerr << "[SYSTEM] Interactive edit mode ready. Use Enter to set START/END, 's' save, 'c' clear, 'q' quit.\n";
+
+            // Set stdin non-blocking for responsive key handling
+            int stdin_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+            fcntl(STDIN_FILENO, F_SETFL, stdin_flags | O_NONBLOCK);
+
+            bool quit = false;
+            bool calibrated = false;
+            uint64_t frame_counter = 0;
+            int render_every = 2;
+
+            // Manual start/end helpers (percent coords)
+            sketch::Point last_tip_percent(0, 0);
+            bool have_last_tip = false;
+            bool have_start_point = false;
+            sketch::Point start_point_percent(0, 0);
+
+            while (!quit)
+            {
+                camera::Frame *frame = cam.capture_frame();
+                if (!frame)
+                {
+                    std::cerr << "[ERROR] Camera capture error: " << cam.get_error() << "\n";
+                    break;
+                }
+
+                auto detections = detector.detect(*frame);
+                frame_counter++;
+
+                // Auto-calibrate on first good detection
+                if (!calibrated && !detections.empty() && detections[0].bbox.confidence > 0.7f)
+                {
+                    if (detector.auto_calibrate(*frame))
+                    {
+                        std::cerr << "[SYSTEM] ✓ Auto-calibrated hand detection\n";
+                        calibrated = true;
+                    }
+                }
+
+                // Print detection summary occasionally
+                if (!detections.empty() || frame_counter % 30 == 0)
+                {
+                    std::cout << "[frame " << frame_counter << "] " << detections.size() << " hand(s)";
+                    if (detections.empty())
+                        std::cout << "\n";
+                }
+
+                for (size_t i = 0; i < detections.size(); ++i)
+                {
+                    const auto &hand = detections[i];
+                    std::string label = hand_detector::HandDetector::gesture_to_string(hand.gesture);
+                    if (hand.gesture == hand_detector::Gesture::OPEN_PALM)
+                        label = "OPEN PALM ✋";
+                    else if (hand.gesture == hand_detector::Gesture::FIST)
+                        label = "FIST ✊";
+                    else if (hand.gesture == hand_detector::Gesture::POINTING)
+                        label = "POINTING ☝ [DRAWING]";
+                    else if (hand.gesture == hand_detector::Gesture::PEACE)
+                        label = "PEACE ✌ [DRAWING]";
+
+                    std::cout << "\n  ➜ Hand #" << (i + 1)
+                              << ": " << label
+                              << " | fingers=" << hand.num_fingers
+                              << " | conf=" << (int)(hand.bbox.confidence * 100) << "%"
+                              << " | pos=(" << (int)hand.center.x << "," << (int)hand.center.y << ")";
+
+                    if (!hand.fingertips.empty())
+                        std::cout << " | tip=(" << (int)hand.fingertips[0].x << "," << (int)hand.fingertips[0].y << ")";
+                }
+                if (!detections.empty())
+                    std::cout << "\n";
+
+                // Update sketchpad with detections
+                sketchpad.update(detections);
+
+                // Track fingertip for manual controls
+                if (!detections.empty())
+                {
+                    float best_conf = 0.0f;
+                    const hand_detector::HandDetection *best_hand = nullptr;
+                    for (const auto &h : detections)
+                    {
+                        if ((h.gesture == hand_detector::Gesture::POINTING || h.gesture == hand_detector::Gesture::PEACE) && h.bbox.confidence > best_conf)
+                        {
+                            best_conf = h.bbox.confidence;
+                            best_hand = &h;
+                        }
+                    }
+                    if (best_hand && best_conf > 0.5f)
+                    {
+                        float px, py;
+                        if (!best_hand->fingertips.empty())
+                        {
+                            px = best_hand->fingertips[0].x;
+                            py = best_hand->fingertips[0].y;
+                        }
+                        else
+                        {
+                            px = best_hand->center.x;
+                            py = best_hand->center.y;
+                        }
+                        last_tip_percent = sketch::Point::from_pixels(px, py, sketchpad.get_sketch().width, sketchpad.get_sketch().height);
+                        have_last_tip = true;
+                        std::cerr << "[Edit] Last tip: (" << last_tip_percent.x << "," << last_tip_percent.y << ")\n";
+                    }
+                }
+
+                // Periodic render
+                if (frame_counter % render_every == 0)
+                {
+                    void *map_data = nullptr;
+                    uint32_t map_stride = 0;
+
+                    if (use_gbm && bo)
+                    {
+                        void *ret = gbm_bo_map(bo, 0, 0, width, height, GBM_BO_TRANSFER_WRITE, &map_stride, &map_data);
+                        if (!ret)
+                        {
+                            std::cerr << "[SketchPad] gbm_bo_map failed during interactive edit\n";
+                        }
+                        else
+                        {
+                            draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
+                            sketchpad.render(map_data, map_stride, width, height);
+                            gbm_bo_unmap(bo, map_data);
+                            if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode))
+                                std::cerr << "[SketchPad] drmModeSetCrtc failed during interactive edit\n";
+                        }
+                    }
+                    else if (dumb_map)
+                    {
+                        map_stride = dumb_pitch;
+                        map_data = dumb_map;
+                        draw_ticker::clear_buffer(map_data, map_stride, width, height, 0x00000000);
+                        sketchpad.render(map_data, map_stride, width, height);
+                        if (drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &mode))
+                            std::cerr << "[SketchPad] drmModeSetCrtc failed during interactive edit\n";
+                    }
+                    else if (fb0_map)
+                    {
+                        draw_ticker::clear_buffer(fb0_map, fb0_stride, sketchpad.get_sketch().width, sketchpad.get_sketch().height, 0x00000000);
+                        sketchpad.render(fb0_map, fb0_stride, sketchpad.get_sketch().width, sketchpad.get_sketch().height);
+                        msync(fb0_map, fb0_size, MS_SYNC);
+                    }
+                }
+
+                // Non-blocking keyboard handling
+                char buf[16];
+                ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+                if (n > 0)
+                {
+                    for (ssize_t i = 0; i < n; ++i)
+                    {
+                        char c = buf[i];
+                        if (c == 'q' || c == 'Q')
+                        {
+                            if (sketchpad.save(sketch_name))
+                            {
+                                std::cerr << "\n[SYSTEM] ✓ Project saved: '" << sketch_name << ".jarvis'\n";
+                            }
+                            quit = true;
+                            break;
+                        }
+                        if (c == 's' || c == 'S')
+                        {
+                            if (sketchpad.save(sketch_name))
+                            {
+                                std::cerr << "\n[SYSTEM] ✓ Project saved: '" << sketch_name << ".jarvis'\n";
+                            }
+                            else
+                            {
+                                std::cerr << "\n[ERROR] Save failed\n";
+                            }
+                        }
+                        if (c == 'c' || c == 'C')
+                        {
+                            sketchpad.clear();
+                            std::cerr << "\n[SYSTEM] ✓ Project cleared\n";
+                            have_start_point = false;
+                            have_last_tip = false;
+                            if (sketchpad.save(sketch_name))
+                            {
+                                std::cerr << "[SYSTEM] ✓ Cleared project saved: '" << sketch_name << ".jarvis'\n";
+                            }
+                            else
+                            {
+                                std::cerr << "[ERROR] Failed to save cleared project\n";
+                            }
+                        }
+                        if (c == 'i' || c == 'I')
+                        {
+                            std::cerr << "\n╔════════════════════════════════════════════════════════════╗\n";
+                            std::cerr << "║                    PROJECT INFORMATION                     ║\n";
+                            std::cerr << "╠════════════════════════════════════════════════════════════╣\n";
+                            std::cerr << "║  Project: " << std::left << std::setw(48) << sketch_name << "║\n";
+                            std::cerr << "║  Lines drawn: " << std::left << std::setw(44) << sketchpad.get_stroke_count() << "║\n";
+                            std::cerr << "║  Resolution: " << width << "x" << height << std::setw(36) << " " << "║\n";
+                            std::string state_str;
+                            switch (sketchpad.get_state())
+                            {
+                            case sketch::DrawingState::WAITING_FOR_START:
+                                state_str = "Waiting for START point (point 5 frames)";
+                                break;
+                            case sketch::DrawingState::START_CONFIRMED:
+                                state_str = "START locked - change gesture";
+                                break;
+                            case sketch::DrawingState::WAITING_FOR_END:
+                                state_str = "Waiting for END point (point 5 frames)";
+                                break;
+                            case sketch::DrawingState::END_CONFIRMED:
+                                state_str = "Line completed!";
+                                break;
+                            }
+                            std::cerr << "║  State: " << std::left << std::setw(48) << state_str << "║\n";
+                            std::cerr << "╚════════════════════════════════════════════════════════════╝\n\n";
+                        }
+                        if (c == '\n' || c == '\r')
+                        {
+                            if (!have_last_tip)
+                            {
+                                std::cerr << "[Edit] No fingertip detected yet; cannot set point.\n";
+                            }
+                            else if (!have_start_point)
+                            {
+                                start_point_percent = last_tip_percent;
+                                have_start_point = true;
+                                sketchpad.set_manual_start(start_point_percent);
+                                std::cerr << "[Edit] START set at (" << start_point_percent.x << "," << start_point_percent.y << ")\n";
+                            }
+                            else
+                            {
+                                sketch::Point end_point = last_tip_percent;
+                                sketchpad.add_line(start_point_percent, end_point);
+                                std::cerr << "[Edit] END set at (" << end_point.x << "," << end_point.y << ") - Line created.\n";
+                                have_start_point = false;
+                                sketchpad.clear_manual_start();
+                                if (sketchpad.save(sketch_name))
+                                {
+                                    std::cerr << "[SketchPad] ✔ Saved project: '" << sketch_name << ".jarvis'\n";
+                                }
+                                else
+                                {
+                                    std::cerr << "[SketchPad] ✖ Failed to save project: '" << sketch_name << "'\n";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Restore stdin flags and stop camera
+            fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
+            cam.stop();
+            std::cerr << "\n[System] Exiting interactive edit mode for '" << sketch_name << "'.\n";
         }
         else if (line == "test_display")
         {
