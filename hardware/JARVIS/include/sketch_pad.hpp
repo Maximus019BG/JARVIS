@@ -2,6 +2,7 @@
 
 #include "hand_detector.hpp"
 #include <vector>
+#include <functional>
 #include <string>
 #include <deque>
 #include <cmath>
@@ -51,12 +52,12 @@ namespace sketch
         bool show_measurements;
 
         GridConfig() : enabled(true),
-                       grid_spacing_percent(5.0f),  // 5% of screen per grid square
-                       real_world_spacing_cm(5.0f), // Default: 5cm per grid square
-                       grid_color(0x00505050),      // Light grey
-                       grid_thickness(1),
-                       snap_to_grid(true),
-                       show_measurements(true)
+               grid_spacing_percent(5.0f),  // 5% of screen per grid square
+               real_world_spacing_cm(5.0f), // Default: 5cm per grid square
+               grid_color(0x00FFFF00),      // Solid yellow (0x00RRGGBB)
+                   grid_thickness(2),
+                   snap_to_grid(true),
+                   show_measurements(true)
         {
         }
     };
@@ -92,16 +93,10 @@ namespace sketch
 
         Sketch() : width(640), height(480), created_timestamp(0) {}
 
-        // Save to .jarvis file (JSON format)
+        // Save/load in minimal JSON: {"lines":[{"x0":..,"y0":..,"x1":..,"y1":..}, ...]}
         bool save(const std::string &filename) const;
-
-        // Load from .jarvis file
         bool load(const std::string &filename);
-
-        // Convert to JSON string
         std::string to_json() const;
-
-        // Parse from JSON string
         bool from_json(const std::string &json);
     };
 
@@ -177,6 +172,8 @@ namespace sketch
 
         // Get current sketch
         const Sketch &get_sketch() const { return sketch_; }
+        // Return resolved path for last loaded/saved sketch (empty if none)
+        std::string get_last_loaded_path() const { return last_loaded_path_; }
 
         // Clear current sketch
         void clear();
@@ -186,9 +183,20 @@ namespace sketch
 
         // Load sketch from file
         bool load(const std::string &base_filename);
+        // Load sketch from raw JSON contents. This bypasses the on-disk
+        // signature verification and is intended for recovery when the
+        // file signature is invalid but the payload is parseable.
+        // `resolved_path` should be the final filesystem path (including
+        // `blueprints/` and the `.jarvis` suffix) that will be used as
+        // `last_loaded_path_` if load succeeds.
+        bool load_from_json(const std::string &json_str, const std::string &resolved_path);
 
         // Render sketch to buffer with anti-aliasing
         void render(void *map, uint32_t stride, uint32_t width, uint32_t height);
+
+        // Add a line directly using percentage coordinates (0-100).
+        // The SketchPad will apply grid snapping if enabled.
+        void add_line(const Point &start_percent, const Point &end_percent);
 
         // Get statistics
         int get_stroke_count() const { return sketch_.lines.size(); }
@@ -223,8 +231,19 @@ namespace sketch
         DrawingState get_state() const { return state_; }
         const Point &get_start_point() const { return start_point_; }
         const Point &get_preview_end_point() const { return preview_end_point_; }
-        bool has_preview() const { return state_ == DrawingState::START_CONFIRMED ||
-                                          state_ == DrawingState::WAITING_FOR_END; }
+        bool has_preview() const { return manual_preview_active_ || state_ == DrawingState::START_CONFIRMED ||
+                          state_ == DrawingState::WAITING_FOR_END; }
+
+        // Manual start helpers (for Enter-driven flow)
+        void set_manual_start(const Point &p);
+        void clear_manual_start();
+
+        // Register a callback invoked after a successful save. The argument
+        // is the resolved filesystem path that was written.
+        void set_on_save_callback(std::function<void(const std::string &)> cb)
+        {
+            on_save_callback_ = std::move(cb);
+        }
 
     private:
         Sketch sketch_;
@@ -258,11 +277,19 @@ namespace sketch
         // Projector calibration
         ProjectorCalibration calibration_;
 
+        // Manual preview flag used by Enter-driven flow
+        bool manual_preview_active_ = false;
+
         // Statistics
         uint64_t last_line_timestamp_;
 
         // Grid system
         GridConfig grid_config_;
+        // Remember the exact file path that was last loaded so saves can write back
+        std::string last_loaded_path_;
+        // Optional callback invoked after a successful save. The argument is
+        // the resolved file path that was written.
+        std::function<void(const std::string &)> on_save_callback_;
 
         // Helper functions
         Point get_smoothed_position();
@@ -281,6 +308,8 @@ namespace sketch
 
         void update_state_machine(const std::vector<hand_detector::HandDetection> &hands);
         void finalize_line();
+
+
 
         // Grid system helpers
         Point snap_to_grid(const Point &p) const;

@@ -26,7 +26,7 @@ namespace camera
     // Frame methods
     bool Frame::get_rgb(uint32_t x, uint32_t y, uint8_t &r, uint8_t &g, uint8_t &b) const
     {
-        if (!data || x >= width || y >= height)
+        if (data.empty() || x >= width || y >= height)
             return false;
 
         if (format == PixelFormat::RGB888)
@@ -57,7 +57,7 @@ namespace camera
 
     bool Frame::get_rgb_from_yuv(uint32_t x, uint32_t y, uint8_t &r, uint8_t &g, uint8_t &b) const
     {
-        if (!data || x >= width || y >= height || format != PixelFormat::YUV420)
+        if (data.empty() || x >= width || y >= height || format != PixelFormat::YUV420)
             return false;
 
         // YUV420 layout: Y plane, then U plane (width/2 * height/2), then V plane
@@ -238,7 +238,7 @@ namespace camera
 
             auto now = std::chrono::steady_clock::now();
             frame.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-            frame.data = buffer.data();
+            frame.data = buffer;
             frame.size = buffer.size();
             frame.width = config_.width;
             frame.height = config_.height;

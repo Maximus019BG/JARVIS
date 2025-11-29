@@ -22,10 +22,9 @@ protected:
         test_frame.timestamp_ns = 0;
         
         frame_data.resize(test_frame.size);
-        test_frame.data = frame_data.data();
-        
+        test_frame.data = frame_data;
         // Fill with black background
-        std::memset(test_frame.data, 0, test_frame.size);
+        std::fill(test_frame.data.begin(), test_frame.data.end(), 0);
     }
     
     void TearDown() override {
@@ -200,19 +199,17 @@ TEST_F(HandDetectorTest, ResetStatistics) {
 TEST(FrameTest, RGBAccess) {
     Frame frame;
     std::vector<uint8_t> data(640 * 480 * 3);
-    
-    frame.data = data.data();
+    frame.data = data;
     frame.width = 640;
     frame.height = 480;
     frame.format = PixelFormat::RGB888;
     frame.stride = 640 * 3;
     frame.size = data.size();
-    
     // Set a pixel
     size_t idx = (100 * 640 + 200) * 3;
-    data[idx] = 255;     // R
-    data[idx + 1] = 128; // G
-    data[idx + 2] = 64;  // B
+    frame.data[idx] = 255;     // R
+    frame.data[idx + 1] = 128; // G
+    frame.data[idx + 2] = 64;  // B
     
     uint8_t r, g, b;
     EXPECT_TRUE(frame.get_rgb(200, 100, r, g, b));

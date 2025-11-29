@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <openssl/hmac.h>
 
 namespace crypto {
 
@@ -57,6 +58,33 @@ std::string aes256_encrypt(const std::string& plaintext, const std::string& secr
     // Prepend IV to ciphertext and return as hex
     std::string result = to_hex(iv, sizeof(iv)) + to_hex(ciphertext.data(), ciphertext_len);
     return result;
+}
+
+std::string hmac_sha256_hex(const std::string& data, const std::string& key)
+{
+    unsigned int len = EVP_MAX_MD_SIZE;
+    unsigned char out[EVP_MAX_MD_SIZE];
+    if (!HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+              reinterpret_cast<const unsigned char*>(data.data()), static_cast<int>(data.size()), out, &len))
+    {
+        return std::string();
+    }
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (unsigned int i = 0; i < len; ++i)
+        oss << std::setw(2) << static_cast<int>(out[i]);
+    return oss.str();
+}
+
+std::string sha256_hex(const std::string& data)
+{
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char*>(data.data()), data.size(), hash);
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        oss << std::setw(2) << static_cast<int>(hash[i]);
+    return oss.str();
 }
 
 } // namespace crypto

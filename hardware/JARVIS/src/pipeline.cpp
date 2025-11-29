@@ -172,7 +172,49 @@ namespace pipeline
             frame.size = rgb.size();
             frame.stride = config_.detect_width * 3;
             frame.timestamp_ns = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-            auto detections = detector_->detect(frame);
+
+            // --- PALM-FIRST DETECTION PIPELINE ---
+            std::vector<hand_detector::HandDetection> detections;
+            std::vector<hand_detector::BoundingBox> palms = detector_->detect_palms(frame);
+            if (!palms.empty()) {
+                // For each palm, crop region and run landmark model
+                for (const auto& palm : palms) {
+                    // Crop palm region from frame (with margin)
+                    int margin = 20;
+                    int x = std::max(0, palm.x - margin);
+                    int y = std::max(0, palm.y - margin);
+                    int w = std::min(frame.width - x, palm.width + 2 * margin);
+                    int h = std::min(frame.height - y, palm.height + 2 * margin);
+                    camera::Frame palm_frame = frame;
+                    std::vector<uint8_t> crop(w * h * 3);
+                    for (int row = 0; row < h; ++row) {
+                        std::memcpy(&crop[row * w * 3],
+                                    &frame.data[((y + row) * frame.width + x) * 3],
+                                    w * 3);
+                    }
+                    palm_frame.data = crop.data();
+                    palm_frame.width = w;
+                    palm_frame.height = h;
+                    palm_frame.size = crop.size();
+                    palm_frame.stride = w * 3;
+                    // Run landmark model on palm region
+                    auto hand_dets = detector_->detect(palm_frame);
+                    for (auto& det : hand_dets) {
+                        // Adjust landmark coordinates to full frame
+                        for (auto& lm : det.landmarks) {
+                            lm.x += x;
+                            lm.y += y;
+                        }
+                        det.bbox.x += x;
+                        det.bbox.y += y;
+                        detections.push_back(det);
+                    }
+                }
+            } else {
+                // Fallback: run landmark model on full frame
+                detections = detector_->detect(frame);
+            }
+
             // --- Change 4: Hold last valid detection logic ---
             if (!detections.empty())
             {

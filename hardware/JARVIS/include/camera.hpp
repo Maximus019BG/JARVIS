@@ -98,8 +98,8 @@ namespace camera
     // Represents a single camera frame
     struct Frame
     {
-        uint8_t *data;         // Raw pixel data
-        size_t size;           // Data size in bytes
+        std::vector<uint8_t> data; // Raw pixel data
+        size_t size;           // Data size in bytes (optional, can be data.size())
         uint32_t width;        // Frame width
         uint32_t height;       // Frame height
         PixelFormat format;    // Pixel format
@@ -112,9 +112,9 @@ namespace camera
         bool has_imx500_metadata;
 
         // Constructor
-        Frame() : data(nullptr), size(0), width(0), height(0),
-                  format(PixelFormat::UNKNOWN), timestamp_ns(0), stride(0),
-                  has_imx500_metadata(false) {}
+        Frame() : data(), size(0), width(0), height(0),
+              format(PixelFormat::UNKNOWN), timestamp_ns(0), stride(0),
+              has_imx500_metadata(false) {}
 
         // Get pixel at (x, y) for RGB888
         bool get_rgb(uint32_t x, uint32_t y, uint8_t &r, uint8_t &g, uint8_t &b) const;

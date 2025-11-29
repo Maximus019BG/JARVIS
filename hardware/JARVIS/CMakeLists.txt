@@ -36,13 +36,19 @@ endif()
 
 # ============================================================================
 # Dependencies
-# Use local flatbuffers build (v24.3.25) for this project only
-set(FLATBUFFERS_ROOT "${CMAKE_SOURCE_DIR}/../../flatbuffers")
-include_directories(BEFORE SYSTEM ${FLATBUFFERS_ROOT}/include)
-link_directories(${FLATBUFFERS_ROOT})
+find_package(Flatbuffers REQUIRED)
 # ============================================================================
 find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
+
+# FetchContent used for optional third-party single-header libraries (nlohmann/json)
+include(FetchContent)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+)
+FetchContent_MakeAvailable(nlohmann_json)
 
 # Optional: TensorFlow Lite for neural network support
 find_path(TFLITE_INCLUDE_DIR tensorflow/lite/interpreter.h
@@ -139,7 +145,7 @@ target_include_directories(jarvis_core
         ${DRM_INCLUDE_DIRS}
         /usr/include/libdrm
         ${OPENSSL_INCLUDE_DIR}
-        ${FLATBUFFERS_ROOT}/include
+        # Flatbuffers include is now system-provided
 )
 
 # Add TFLite support if available
@@ -159,8 +165,14 @@ target_link_libraries(jarvis_core
         ${GBM_LIBRARIES}
         ${DRM_LIBRARIES}
         m
-        ${FLATBUFFERS_ROOT}/libflatbuffers.a
+        flatbuffers
 )
+
+# Link nlohmann_json to core so code can include <nlohmann/json.hpp>
+# Make it PUBLIC so targets linking against `jarvis_core` (like the
+# `JARVIS` executable) also get the include directories and usage
+# requirements provided by nlohmann_json.
+target_link_libraries(jarvis_core PUBLIC nlohmann_json::nlohmann_json)
 
 # Pass pkg-config cflags if available
 if(GBM_CFLAGS_OTHER)

@@ -80,7 +80,7 @@ namespace hand_detector
 
         std::vector<HandDetection> detections;
 
-        if (!frame.data || frame.width == 0 || frame.height == 0)
+        if (frame.data.empty() || frame.width == 0 || frame.height == 0)
         {
             return detections;
         }
@@ -107,7 +107,7 @@ namespace hand_detector
         {
             if (config_.downscale_factor > 1)
             {
-                camera::utils::resize_nearest(frame.data, temp_buffer_.data(),
+                camera::utils::resize_nearest(frame.data.data(), temp_buffer_.data(),
                                               frame.width, frame.height,
                                               work_width, work_height, 3);
                 if (config_.enable_simd && simd::is_neon_available())
@@ -123,11 +123,11 @@ namespace hand_detector
             {
                 if (config_.enable_simd && simd::is_neon_available())
                 {
-                    simd::convert_rgb_to_hsv_simd(frame.data, hsv_buffer_.data(), pixel_count);
+                    simd::convert_rgb_to_hsv_simd(frame.data.data(), hsv_buffer_.data(), pixel_count);
                 }
                 else
                 {
-                    simd::scalar::convert_rgb_to_hsv(frame.data, hsv_buffer_.data(), pixel_count);
+                    simd::scalar::convert_rgb_to_hsv(frame.data.data(), hsv_buffer_.data(), pixel_count);
                 }
             }
         }
@@ -395,7 +395,7 @@ namespace hand_detector
                                       int roi_x, int roi_y,
                                       int roi_w, int roi_h)
     {
-        if (!frame.data || frame.format != camera::PixelFormat::RGB888)
+        if (frame.data.empty() || frame.format != camera::PixelFormat::RGB888)
         {
             return false;
         }

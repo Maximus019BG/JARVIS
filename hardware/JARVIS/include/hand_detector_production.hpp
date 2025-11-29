@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hand_detector.hpp"
+#include "hand_detector_tflite.hpp"
 #include "camera.hpp"
 #include <vector>
 #include <deque>
@@ -62,6 +63,9 @@ public:
     
     // Detect hands with tracking and stabilization
     std::vector<HandDetection> detect(const camera::Frame& frame);
+
+    // Palm detection (for palm-first pipeline)
+    std::vector<BoundingBox> detect_palms(const camera::Frame& frame);
     
     // Update configurations
     void set_detector_config(const DetectorConfig& config);
@@ -93,6 +97,8 @@ private:
     
     // Core detector
     std::unique_ptr<HandDetector> detector_;
+    // TFLite hand detector for palm/landmark hybrid
+    std::unique_ptr<TFLiteHandDetector> tflite_detector_;
     
     // Tracking state
     std::vector<TrackedHand> tracked_hands_;

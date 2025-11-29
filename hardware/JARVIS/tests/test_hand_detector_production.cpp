@@ -62,11 +62,10 @@ TEST_F(ProductionHandDetectorTest, EmptyFrameDetection) {
     
     // Create empty frame
     camera::Frame frame;
-    frame.data = nullptr;
+    frame.data.clear();
     frame.width = 0;
     frame.height = 0;
     frame.format = camera::PixelFormat::RGB888;
-    
     auto detections = detector.detect(frame);
     EXPECT_TRUE(detections.empty());
 }
@@ -78,9 +77,8 @@ TEST_F(ProductionHandDetectorTest, BlackFrameDetection) {
     const int width = 640;
     const int height = 480;
     std::vector<uint8_t> black_data(width * height * 3, 0);
-    
     camera::Frame frame;
-    frame.data = black_data.data();
+    frame.data = black_data;
     frame.width = width;
     frame.height = height;
     frame.format = camera::PixelFormat::RGB888;
@@ -103,8 +101,7 @@ TEST_F(ProductionHandDetectorTest, GestureStabilization) {
     const int width = 320;
     const int height = 240;
     std::vector<uint8_t> test_data(width * height * 3, 128);
-    
-    frame.data = test_data.data();
+    frame.data = test_data;
     frame.width = width;
     frame.height = height;
     frame.format = camera::PixelFormat::RGB888;
@@ -128,19 +125,16 @@ TEST_F(ProductionHandDetectorTest, AdaptiveLighting) {
     
     // Test with bright frame
     std::vector<uint8_t> bright_data(width * height * 3, 200);
-    frame.data = bright_data.data();
+    frame.data = bright_data;
     frame.width = width;
     frame.height = height;
     frame.format = camera::PixelFormat::RGB888;
     frame.timestamp_ns = 0;
-    
     detector.detect(frame);
-    
     // Test with dark frame
     std::vector<uint8_t> dark_data(width * height * 3, 50);
-    frame.data = dark_data.data();
+    frame.data = dark_data;
     frame.timestamp_ns = 33000000;
-    
     detector.detect(frame);
     
     // Verify adaptive lighting doesn't crash
