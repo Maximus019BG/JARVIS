@@ -274,6 +274,9 @@ int main(int argc, char **argv)
     uint16_t port = 8080;
     std::string path = "/dots";
 
+    // Remember last loaded sketch name so blueprint can default to it
+    std::string last_loaded_sketch_name;
+
     // Read device ID from environment
     std::string device_id = "TestDevice123"; // default fallback
     if (const char *env_device_id = std::getenv("JARVIS_DEVICE_ID"); env_device_id && *env_device_id)
@@ -386,7 +389,10 @@ int main(int argc, char **argv)
 
             if (sketch_name.empty())
             {
-                sketch_name = "untitled_project";
+                if (!last_loaded_sketch_name.empty())
+                    sketch_name = last_loaded_sketch_name;
+                else
+                    sketch_name = "untitled_project";
             }
 
             // Ask for grid spacing
@@ -459,6 +465,11 @@ int main(int argc, char **argv)
             // Initialize enterprise sketch pad
             sketch::SketchPad sketchpad(width, height);
             sketchpad.init(sketch_name, width, height);
+            // If a .jarvis exists for this sketch name, load it so user can update existing blueprint
+            if (sketchpad.load(sketch_name))
+            {
+                std::cerr << "[SketchPad] Loaded existing project: '" << sketch_name << "'\n";
+            }
             sketchpad.set_color(0x00FFFFFF);      // White for projection
             sketchpad.set_thickness(4);           // Clear lines for architects
             sketchpad.set_confirmation_frames(2); // 2 frame confirmation with tolerance
@@ -790,6 +801,15 @@ int main(int argc, char **argv)
                             std::cerr << "\n[SYSTEM] ✓ Project cleared\n";
                             have_start_point = false;
                             have_last_tip = false;
+                            // Persist cleared state
+                            if (sketchpad.save(sketch_name))
+                            {
+                                std::cerr << "[SYSTEM] ✓ Cleared project saved: '" << sketch_name << ".jarvis'\n";
+                            }
+                            else
+                            {
+                                std::cerr << "[ERROR] Failed to save cleared project\n";
+                            }
                         }
                         if (c == 'i' || c == 'I')
                         {
@@ -845,6 +865,15 @@ int main(int argc, char **argv)
                                 std::cerr << "[Blueprint] END set at (" << end_point.x << "," << end_point.y << ") - Line created.\n";
                                 have_start_point = false; // reset for next line
                                 sketchpad.clear_manual_start();
+                                    // Persist new line immediately
+                                    if (sketchpad.save(sketch_name))
+                                    {
+                                        std::cerr << "[SketchPad] ✔ Saved project: '" << sketch_name << ".jarvis'\n";
+                                    }
+                                    else
+                                    {
+                                        std::cerr << "[SketchPad] ✖ Failed to save project: '" << sketch_name << "'\n";
+                                    }
                             }
                         }
                     }
@@ -1090,6 +1119,9 @@ int main(int argc, char **argv)
                 continue;
             }
 
+            // Remember this as the last-loaded project so blueprint defaults to it
+            last_loaded_sketch_name = sketch_name;
+
             std::cerr << "✓ Sketch loaded successfully\n";
             std::cerr << "  Strokes: " << sketchpad.get_stroke_count() << "\n";
             std::cerr << "  Points: " << sketchpad.get_total_points() << "\n";
@@ -1133,9 +1165,57 @@ int main(int argc, char **argv)
                     std::cerr << "✓ Sketch displayed on screen\n";
                 }
             }
+            else if (fb0_map)
+            {
+                // Fallback rendering directly to /dev/fb0 mmap
+                draw_ticker::clear_buffer(fb0_map, fb0_stride, sketchpad.get_sketch().width, sketchpad.get_sketch().height, 0x00000000);
+                sketchpad.render(fb0_map, fb0_stride, sketchpad.get_sketch().width, sketchpad.get_sketch().height);
+                msync(fb0_map, fb0_size, MS_SYNC);
+                std::cerr << "✓ Sketch displayed via /dev/fb0 mmap\n";
+            }
             else
             {
-                std::cerr << "Failed to map display buffer\n";
+                // Try mapping /dev/fb0 now as a fallback (same logic as blueprint mode)
+                int fb = open("/dev/fb0", O_RDWR);
+                if (fb < 0)
+                {
+                    std::cerr << "Failed to open /dev/fb0: " << strerror(errno) << "\n";
+                }
+                else
+                {
+                    struct fb_var_screeninfo vinfo;
+                    struct fb_fix_screeninfo finfo;
+                    if (ioctl(fb, FBIOGET_FSCREENINFO, &finfo) == -1 || ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) == -1)
+                    {
+                        std::cerr << "FB ioctl failed: " << strerror(errno) << "\n";
+                        close(fb);
+                    }
+                    else
+                    {
+                        fb0_stride = finfo.line_length;
+                        fb0_bpp = vinfo.bits_per_pixel;
+                        fb0_size = finfo.smem_len;
+                        void *m = mmap(NULL, fb0_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0);
+                        if (m == MAP_FAILED)
+                        {
+                            std::cerr << "mmap(/dev/fb0) failed: " << strerror(errno) << "\n";
+                            close(fb);
+                        }
+                        else
+                        {
+                            fb0_fd = fb;
+                            fb0_map = m;
+                            std::cerr << "Mapped /dev/fb0: " << vinfo.xres << "x" << vinfo.yres << " bpp=" << vinfo.bits_per_pixel << "\n";
+                            // Re-init sketchpad to framebuffer resolution so percentage mapping is correct
+                            sketchpad.init(sketch_name, vinfo.xres, vinfo.yres);
+                            // Render immediately
+                            draw_ticker::clear_buffer(fb0_map, fb0_stride, vinfo.xres, vinfo.yres, 0x00000000);
+                            sketchpad.render(fb0_map, fb0_stride, vinfo.xres, vinfo.yres);
+                            msync(fb0_map, fb0_size, MS_SYNC);
+                            std::cerr << "✓ Sketch displayed via /dev/fb0 mmap\n";
+                        }
+                    }
+                }
             }
 
             std::cerr << "Press Enter to continue...\n";

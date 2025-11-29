@@ -41,6 +41,15 @@ find_package(Flatbuffers REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
 
+# FetchContent used for optional third-party single-header libraries (nlohmann/json)
+include(FetchContent)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 # Optional: TensorFlow Lite for neural network support
 find_path(TFLITE_INCLUDE_DIR tensorflow/lite/interpreter.h
     PATHS 
@@ -158,6 +167,9 @@ target_link_libraries(jarvis_core
         m
         flatbuffers
 )
+
+# Link nlohmann_json to core so code can include <nlohmann/json.hpp>
+target_link_libraries(jarvis_core PRIVATE nlohmann_json::nlohmann_json)
 
 # Pass pkg-config cflags if available
 if(GBM_CFLAGS_OTHER)

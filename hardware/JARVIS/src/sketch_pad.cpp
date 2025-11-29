@@ -1,5 +1,7 @@
 #include "sketch_pad.hpp"
 #include "draw_ticker.hpp"
+#include <nlohmann/json.hpp>
+#include "crypto.hpp"
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -9,6 +11,11 @@
 #include <iomanip>
 #include <cstring>
 #include <limits>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cerrno>
 
 namespace sketch
 {
@@ -48,36 +55,7 @@ namespace sketch
         std::cerr << "[ProjectorCalibration] Calibration computed (affine approximation)\n";
     }
 
-    // JSON serialization helpers
-    static std::string escape_json_string(const std::string &s)
-    {
-        std::string result;
-        for (char c : s)
-        {
-            switch (c)
-            {
-            case '"':
-                result += "\\\"";
-                break;
-            case '\\':
-                result += "\\\\";
-                break;
-            case '\n':
-                result += "\\n";
-                break;
-            case '\r':
-                result += "\\r";
-                break;
-            case '\t':
-                result += "\\t";
-                break;
-            default:
-                result += c;
-                break;
-            }
-        }
-        return result;
-    }
+    using json = nlohmann::json;
 
     // Helper to blend colors with alpha
     static inline uint32_t blend_color(uint32_t bg, uint32_t fg, float alpha)
@@ -202,8 +180,11 @@ namespace sketch
     bool Sketch::save(const std::string &filename) const
     {
         std::string full_path = filename;
+        if (full_path.find('/') == std::string::npos)
+            full_path = std::string("blueprints/") + filename;
         if (full_path.find(".jarvis") == std::string::npos)
             full_path += ".jarvis";
+
         std::ofstream file(full_path);
         if (!file.is_open()) {
             std::cerr << "[Sketch] Failed to open file for writing: " << full_path << "\n";
@@ -218,6 +199,8 @@ namespace sketch
     bool Sketch::load(const std::string &filename)
     {
         std::string full_path = filename;
+        if (full_path.find('/') == std::string::npos)
+            full_path = std::string("blueprints/") + filename;
         if (full_path.find(".jarvis") == std::string::npos)
             full_path += ".jarvis";
         std::ifstream file(full_path);
@@ -238,55 +221,41 @@ namespace sketch
     // Minimal JSON: {"lines":[{"x0":..,"y0":..,"x1":..,"y1":..}, ...]}
     std::string Sketch::to_json() const
     {
-        std::ostringstream json;
-        json << "{\n  \"lines\": [\n";
-        for (size_t i = 0; i < lines.size(); ++i) {
-            const auto &line = lines[i];
-            json << "    {\"x0\": " << line.start.x << ", \"y0\": " << line.start.y
-                 << ", \"x1\": " << line.end.x << ", \"y1\": " << line.end.y << "}";
-            if (i < lines.size() - 1) json << ",";
-            json << "\n";
+        json j;
+        j["name"] = name;
+        j["width"] = width;
+        j["height"] = height;
+        j["created_timestamp"] = created_timestamp;
+        j["lines"] = json::array();
+        for (const auto &line : lines) {
+            json li = { {"x0", line.start.x}, {"y0", line.start.y}, {"x1", line.end.x}, {"y1", line.end.y} };
+            j["lines"].push_back(li);
         }
-        json << "  ]\n}";
-        return json.str();
+        return j.dump();
     }
 
-    bool Sketch::from_json(const std::string &json)
+    bool Sketch::from_json(const std::string &json_str)
     {
         try {
+            json j = json::parse(json_str);
             lines.clear();
-            size_t lines_start = json.find("\"lines\":");
-            if (lines_start == std::string::npos) return false;
-            size_t array_start = json.find("[", lines_start);
-            size_t array_end = json.find("]", array_start);
-            if (array_start == std::string::npos || array_end == std::string::npos) return false;
-            size_t pos = array_start + 1;
-            while (pos < array_end) {
-                size_t obj_start = json.find("{", pos);
-                if (obj_start == std::string::npos || obj_start > array_end) break;
-                size_t obj_end = json.find("}", obj_start);
-                if (obj_end == std::string::npos || obj_end > array_end) break;
-                std::string obj = json.substr(obj_start, obj_end - obj_start + 1);
-                Line line;
-                auto extract = [&](const char *key) -> float {
-                    size_t k = obj.find(key);
-                    if (k == std::string::npos) return 0.0f;
-                    size_t v = obj.find(":", k);
-                    if (v == std::string::npos) return 0.0f;
-                    size_t end = obj.find_first_of(",}", v);
-                    std::string val = obj.substr(v + 1, end - v - 1);
-                    return std::stof(val);
-                };
-                line.start.x = extract("x0");
-                line.start.y = extract("y0");
-                line.end.x = extract("x1");
-                line.end.y = extract("y1");
-                lines.push_back(line);
-                pos = obj_end + 1;
+            name = j.value("name", name);
+            width = j.value("width", width);
+            height = j.value("height", height);
+            created_timestamp = j.value("created_timestamp", created_timestamp);
+            if (j.contains("lines") && j["lines"].is_array()) {
+                for (auto &li : j["lines"]) {
+                    Line line;
+                    line.start.x = li.value("x0", 0.0f);
+                    line.start.y = li.value("y0", 0.0f);
+                    line.end.x = li.value("x1", 0.0f);
+                    line.end.y = li.value("y1", 0.0f);
+                    lines.push_back(line);
+                }
             }
             return true;
-        } catch (...) {
-            std::cerr << "[Sketch] JSON parse error (minimal format)\n";
+        } catch (const std::exception &e) {
+            std::cerr << "[Sketch] JSON parse error: " << e.what() << "\n";
             return false;
         }
     }
@@ -327,13 +296,24 @@ namespace sketch
 
     void SketchPad::init(const std::string &name, uint32_t width, uint32_t height)
     {
+        bool preserving = false;
+        if (sketch_.name == name && !sketch_.lines.empty())
+        {
+            // Preserve existing loaded lines when re-initializing to a new resolution
+            preserving = true;
+            std::cerr << "[SketchPad] init: preserving " << sketch_.lines.size() << " loaded lines for '" << name << "'\n";
+        }
+
         sketch_.name = name;
         sketch_.width = width;
         sketch_.height = height;
-        sketch_.created_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                        std::chrono::system_clock::now().time_since_epoch())
-                                        .count();
-        sketch_.lines.clear();
+        if (!preserving)
+        {
+            sketch_.created_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                            std::chrono::system_clock::now().time_since_epoch())
+                                            .count();
+            sketch_.lines.clear();
+        }
 
         state_ = DrawingState::WAITING_FOR_START;
         current_confirmation_.reset();
@@ -827,6 +807,11 @@ namespace sketch
                   << "%," << std::setw(6) << line.end.y << "%) "
                   << "length: " << std::setw(5) << std::setprecision(1) << dist << "% "
                   << "(" << std::setw(6) << std::setprecision(2) << real_length << " cm)\n";
+        // Persist after each confirmed line so an unexpected shutdown preserves progress
+        if (!save(sketch_.name))
+        {
+            std::cerr << "[SketchPad] Warning: auto-save after line failed\n";
+        }
     }
 
     void SketchPad::clear()
@@ -892,20 +877,202 @@ namespace sketch
 
     bool SketchPad::save(const std::string &base_filename)
     {
-        return sketch_.save(base_filename);
+        // Save full project including grid config and signature into blueprints/<name>.jarvis
+        std::string base = base_filename.empty() ? sketch_.name : base_filename;
+        std::string full_path = (base.find('/') == std::string::npos) ? std::string("blueprints/") + base : base;
+        if (full_path.find(".jarvis") == std::string::npos) full_path += ".jarvis";
+
+        // Ensure directory
+        struct stat st = {};
+        if (stat("blueprints", &st) != 0)
+        {
+            if (mkdir("blueprints", 0755) != 0 && errno != EEXIST)
+            {
+                std::cerr << "[SketchPad] Failed to create blueprints/ directory: " << strerror(errno) << "\n";
+                return false;
+            }
+        }
+
+        // Build JSON
+        json j;
+        j["name"] = sketch_.name;
+        j["width"] = sketch_.width;
+        j["height"] = sketch_.height;
+        j["created_timestamp"] = sketch_.created_timestamp;
+        j["grid"] = {
+            {"grid_spacing_percent", grid_config_.grid_spacing_percent},
+            {"real_world_spacing_cm", grid_config_.real_world_spacing_cm},
+            {"snap_to_grid", grid_config_.snap_to_grid},
+            {"show_measurements", grid_config_.show_measurements}
+        };
+        j["lines"] = json::array();
+        for (const auto &line : sketch_.lines)
+        {
+            json li = { {"x0", line.start.x}, {"y0", line.start.y}, {"x1", line.end.x}, {"y1", line.end.y} };
+            j["lines"].push_back(li);
+        }
+
+        // Compute signature
+        const char *secret_env = std::getenv("JARVIS_SECRET");
+        // Use deterministic binary serialization (CBOR) for signature computation
+        std::vector<uint8_t> cbor_sig = json::to_cbor(j);
+        std::string payload_sig(cbor_sig.begin(), cbor_sig.end());
+        std::string sig;
+        if (secret_env && *secret_env)
+            sig = crypto::hmac_sha256_hex(payload_sig, std::string(secret_env));
+        else
+            sig = crypto::sha256_hex(payload_sig);
+        j["signature"] = sig;
+
+        // Write atomically to a temp file then rename. Use restrictive permissions (user read/write only).
+        std::string tmp_path = full_path + ".tmp";
+
+        std::string payload = j.dump(2) + "\n";
+
+        // Open temp file with 0600 permissions
+        int fd = open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+        if (fd < 0)
+        {
+            std::cerr << "[SketchPad] Failed to open temp file for writing: " << tmp_path << " (" << strerror(errno) << ")\n";
+            return false;
+        }
+
+        // Write full payload (loop to handle partial writes)
+        const char *buf = payload.data();
+        size_t to_write = payload.size();
+        while (to_write > 0)
+        {
+            ssize_t written = ::write(fd, buf, to_write);
+            if (written < 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                std::cerr << "[SketchPad] Write error: " << strerror(errno) << "\n";
+                close(fd);
+                unlink(tmp_path.c_str());
+                return false;
+            }
+            to_write -= static_cast<size_t>(written);
+            buf += written;
+        }
+
+        // Ensure data hits disk
+        if (fsync(fd) != 0)
+        {
+            std::cerr << "[SketchPad] fsync failed: " << strerror(errno) << "\n";
+            close(fd);
+            unlink(tmp_path.c_str());
+            return false;
+        }
+
+        if (close(fd) != 0)
+        {
+            std::cerr << "[SketchPad] close failed: " << strerror(errno) << "\n";
+            unlink(tmp_path.c_str());
+            return false;
+        }
+
+        // Atomically replace target
+        if (rename(tmp_path.c_str(), full_path.c_str()) != 0)
+        {
+            std::cerr << "[SketchPad] rename failed: " << strerror(errno) << "\n";
+            unlink(tmp_path.c_str());
+            return false;
+        }
+
+        std::cerr << "[SketchPad] Saved project: '" << full_path << "'\n";
+        return true;
     }
 
     bool SketchPad::load(const std::string &base_filename)
     {
-        bool success = sketch_.load(base_filename);
-        if (success)
+        std::string base = base_filename.empty() ? sketch_.name : base_filename;
+        std::string full_path = (base.find('/') == std::string::npos) ? std::string("blueprints/") + base : base;
+        if (full_path.find(".jarvis") == std::string::npos) full_path += ".jarvis";
+
+        std::ifstream file(full_path);
+        if (!file.is_open())
         {
-            state_ = DrawingState::WAITING_FOR_START;
-            current_confirmation_.reset();
-            gesture_changed_since_start_ = false;
-            position_buffer_.clear();
+            std::cerr << "[SketchPad] Failed to open file for reading: " << full_path << "\n";
+            return false;
         }
-        return success;
+        json j;
+        try { file >> j; } catch (const std::exception &e) { std::cerr << "[SketchPad] JSON parse error: " << e.what() << "\n"; return false; }
+        file.close();
+
+        if (!j.contains("signature"))
+        {
+            std::cerr << "[SketchPad] Missing signature in file: " << full_path << "\n";
+            return false;
+        }
+        std::string sig = j["signature"].get<std::string>();
+        json jcopy = j;
+        jcopy.erase("signature");
+        // Recreate deterministic binary representation (CBOR) for verification
+        std::vector<uint8_t> cbor_verify = json::to_cbor(jcopy);
+        std::string payload(cbor_verify.begin(), cbor_verify.end());
+        const char *secret_env = std::getenv("JARVIS_SECRET");
+        std::string expected;
+        if (secret_env && *secret_env)
+            expected = crypto::hmac_sha256_hex(payload, std::string(secret_env));
+        else
+            expected = crypto::sha256_hex(payload);
+
+        if (expected != sig)
+        {
+            std::cerr << "[SketchPad] Signature mismatch (file may be tampered): " << full_path << "\n";
+            return false;
+        }
+
+        // Populate sketch and grid
+        try
+        {
+            sketch_.name = j.value("name", sketch_.name);
+            sketch_.width = j.value("width", sketch_.width);
+            sketch_.height = j.value("height", sketch_.height);
+            sketch_.created_timestamp = j.value("created_timestamp", sketch_.created_timestamp);
+
+            if (j.contains("grid"))
+            {
+                auto g = j["grid"];
+                grid_config_.grid_spacing_percent = g.value("grid_spacing_percent", grid_config_.grid_spacing_percent);
+                grid_config_.real_world_spacing_cm = g.value("real_world_spacing_cm", grid_config_.real_world_spacing_cm);
+                grid_config_.snap_to_grid = g.value("snap_to_grid", grid_config_.snap_to_grid);
+                grid_config_.show_measurements = g.value("show_measurements", grid_config_.show_measurements);
+                // If grid info exists in file, enable grid rendering
+                grid_config_.enabled = true;
+            }
+
+            sketch_.lines.clear();
+                if (j.contains("lines") && j["lines"].is_array())
+                {
+                    for (auto &li : j["lines"]) {
+                        Line line;
+                        line.start.x = li.value("x0", 0.0f);
+                        line.start.y = li.value("y0", 0.0f);
+                        line.end.x = li.value("x1", 0.0f);
+                        line.end.y = li.value("y1", 0.0f);
+                        // If file doesn't include color/thickness, default to white and a sane thickness
+                        line.color = li.value("color", static_cast<uint32_t>(0x00FFFFFF));
+                        line.thickness = li.value("thickness", current_thickness_ > 0 ? current_thickness_ : 3);
+                        sketch_.lines.push_back(line);
+                    }
+                }
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "[SketchPad] JSON load error: " << e.what() << "\n";
+            return false;
+        }
+
+        // Reset state machine
+        state_ = DrawingState::WAITING_FOR_START;
+        current_confirmation_.reset();
+        gesture_changed_since_start_ = false;
+        position_buffer_.clear();
+
+        std::cerr << "[SketchPad] Loaded project: '" << full_path << "'\n";
+        return true;
     }
 
     // Enterprise rendering with anti-aliasing
@@ -1104,6 +1271,15 @@ namespace sketch
             Point pixel_start(start_px, start_py);
             Point pixel_end(end_px, end_py);
 
+            // Choose a visible color for lines (fallback to white if unset)
+            uint32_t draw_color = (line.color == 0) ? 0x00FFFFFF : line.color;
+
+            std::cerr << "[SketchPad][Render] Line: start=(" << line.start.x << "," << line.start.y << ") "
+                      << "end=(" << line.end.x << "," << line.end.y << ") "
+                      << "pixels=(" << start_px << "," << start_py << ") -> (" << end_px << "," << end_py << ") "
+                      << "color=0x" << std::hex << std::setw(8) << std::setfill('0') << draw_color << std::dec
+                      << " thickness=" << line.thickness << "\n";
+
             // Draw dots at start and end grid points
             const int dot_radius = 4;
             for (int dy = -dot_radius; dy <= dot_radius; ++dy)
@@ -1126,22 +1302,13 @@ namespace sketch
                 }
             }
 
-            if (anti_aliasing_enabled_ && subpixel_rendering_)
-            {
-                // Enterprise anti-aliased rendering
-                draw_aa_line(map, stride, width, height,
-                             pixel_start, pixel_end, line.color, line.thickness);
-            }
-            else
-            {
-                // Fallback to standard line drawing
-                draw_ticker::draw_line(map, stride, width, height,
-                                       static_cast<int>(start_px),
-                                       static_cast<int>(start_py),
-                                       static_cast<int>(end_px),
-                                       static_cast<int>(end_py),
-                                       line.color, line.thickness);
-            }
+            // Use robust integer Bresenham fallback for loaded sketches to ensure visibility
+            draw_ticker::draw_line(map, stride, width, height,
+                                   static_cast<int>(start_px),
+                                   static_cast<int>(start_py),
+                                   static_cast<int>(end_px),
+                                   static_cast<int>(end_py),
+                                   draw_color, line.thickness);
 
             // Render measurement label if enabled
             if (grid_config_.show_measurements)
