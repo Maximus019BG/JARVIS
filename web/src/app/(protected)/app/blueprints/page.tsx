@@ -155,7 +155,7 @@ export default function BlueprintsPage() {
   };
 
   const handleCreateNew = () => {
-    router.push("/app/blueprints/create");
+    toast.info("Create a new blueprint by using jarvis")
   };
 
   const handleViewBlueprint = (blueprint: Blueprint) => {

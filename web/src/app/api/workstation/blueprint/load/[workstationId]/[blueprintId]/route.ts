@@ -5,7 +5,6 @@ import { eq, and } from "drizzle-orm";
 import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { auth } from "~/lib/auth";
 import { workstation } from "~/server/db/schemas/workstation";
-import { eq } from "drizzle-orm";
 
 export async function GET(
   _request: Request,

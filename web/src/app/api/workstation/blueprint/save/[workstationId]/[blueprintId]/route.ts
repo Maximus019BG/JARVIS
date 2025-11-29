@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
@@ -6,7 +7,6 @@ import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { workstation } from "~/server/db/schemas/workstation";
 import { z } from "zod";
 import { blueprintSaveSchema } from "~/lib/validation/blueprints";
-import { auth } from "~/lib/auth";
 
 export async function POST(
   _request: Request,
@@ -17,101 +17,104 @@ export async function POST(
     // Parse and validate request body in one go
     const data = blueprintSaveSchema.parse(await _request.json());
 
-  if (!workstationId) {
-    return NextResponse.json(
-      { error: "Workstation not found" },
-      { status: 404 },
-    );
-  } else if (!blueprintId) {
-    return NextResponse.json({ error: "Blueprint not found" }, { status: 404 });
-  }
+    if (!workstationId) {
+      return NextResponse.json(
+        { error: "Workstation not found" },
+        { status: 404 },
+      );
+    }
 
-  // Get encryption secret from environment
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch (error) {
-    console.error("Encryption secret not configured:", error);
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    );
-  }
+    if (!blueprintId) {
+      return NextResponse.json({ error: "Blueprint not found" }, { status: 404 });
+    }
 
-  // Decode (or pass-through if not encrypted)
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedBlueprintId = decodeId(blueprintId, secret);
+    // Get encryption secret from environment
+    let secret: string;
+    try {
+      secret = getEncryptionSecret();
+    } catch (error) {
+      console.error("Encryption secret not configured:", error);
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 },
+      );
+    }
 
-  const session = await auth.api.getSession({
-    headers: _request.headers,
-  });
+    // Decode (or pass-through if not encrypted)
+    const decodedWorkstationId = decodeId(workstationId, secret);
+    const decodedBlueprintId = decodeId(blueprintId, secret);
 
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+    // Device authenticates by providing the workstation ID; do not require a user session here.
 
-  const workstationExists = await db
-    .select()
-    .from(workstation)
-    .where(
-      eq(workstation.id, decodedWorkstationId),
-    )
-    .limit(1);
+    const workstationExists = await db
+      .select()
+      .from(workstation)
+      .where(
+        eq(workstation.id, decodedWorkstationId),
+      )
+      .limit(1);
 
-  const workstationRecord = workstationExists[0];
-  if (!workstationRecord || workstationExists.length === 0) {
-    return NextResponse.json(
-      { error: "Workstation not found" },
-      { status: 404 },
-    );
-  }
+    const workstationRecord = workstationExists[0];
+    if (!workstationRecord || workstationExists.length === 0) {
+      return NextResponse.json(
+        { error: "Workstation not found" },
+        { status: 404 },
+      );
+    }
 
-  // Ensure session matches workstation owner
-  if (session.user.id !== workstationRecord.userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+    // The device provided the workstation ID; we trust the device to reference the correct workstation.
+    // (If you need device-level auth later, add header-based tokens or a device registry.)
 
-  // Save or update blueprint
-  const existing = await db
-    .select()
-    .from(blueprint)
-    .where(
-      and(
-        eq(blueprint.id, decodedBlueprintId),
-        eq(blueprint.workstationId, decodedWorkstationId),
-      ),
-    )
-    .limit(1);
-
-  if (existing.length > 0) {
-    await db
-      .update(blueprint)
-      .set({
-        name: data.name ?? (existing[0] as any).name,
-        metadata: data.data ? JSON.stringify(data.data) : (existing[0] as any).metadata,
-        updatedAt: new Date(),
-      })
+    // Save or update blueprint
+    const existing = await db
+      .select()
+      .from(blueprint)
       .where(
         and(
           eq(blueprint.id, decodedBlueprintId),
           eq(blueprint.workstationId, decodedWorkstationId),
         ),
-      );
-  } else {
-    await db.insert(blueprint).values({
-    id: decodedBlueprintId,
-    name: data.name ?? "Untitled Blueprint",
-    createdAt: new Date(),
-    createdBy: workstationRecord.userId,
-    metadata: data.data ? JSON.stringify(data.data) : null,
-    workstationId: decodedWorkstationId,
-    updatedAt: new Date(),
+      )
+      .limit(1);
 
-  });
+    if (existing.length > 0) {
+      await db
+        .update(blueprint)
+        .set({
+          name: data.name ?? (existing[0] as any).name,
+          metadata: data.data ? JSON.stringify(data.data) : (existing[0] as any).metadata,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(blueprint.id, decodedBlueprintId),
+            eq(blueprint.workstationId, decodedWorkstationId),
+          ),
+        );
 
-  return NextResponse.json({ success: true });
-  
+      return NextResponse.json({ success: true });
+    } else {
+      await db.insert(blueprint).values({
+        id: decodedBlueprintId,
+        name: data.name ?? "Untitled Blueprint",
+        createdAt: new Date(),
+        createdBy: workstationRecord.userId,
+        metadata: data.data ? JSON.stringify(data.data) : null,
+        workstationId: decodedWorkstationId,
+        updatedAt: new Date(),
+      });
+
+      return NextResponse.json({ success: true });
+    }
   } catch (error) {
+    // Handle DNS / network errors that commonly happen when the DB host cannot be resolved
+    if ((error as any)?.code === "ENOTFOUND" || (typeof (error as any)?.message === "string" && (error as any).message.includes("ENOTFOUND"))) {
+      console.error("Network/DNS error while accessing DB host:", error);
+      return NextResponse.json(
+        { error: "Database host not found (DNS resolution failed)" },
+        { status: 502 },
+      );
+    }
     // Handle Zod validation errors
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -119,7 +122,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     // Handle JSON parsing errors
     if (error instanceof SyntaxError) {
       return NextResponse.json(
@@ -127,7 +130,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     // Handle other errors
     console.error("Unexpected error:", error);
     return NextResponse.json(
@@ -136,4 +139,3 @@ export async function POST(
     );
   }
 }
-
