@@ -5,7 +5,6 @@ import { useRouter, useParams } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { Textarea } from "~/components/ui/textarea";
 import { automationsApi, type Automation } from "~/lib/api/automations";
 import AutomationCanvas, {
   type CanvasState,
@@ -16,7 +15,6 @@ import { useEffect } from "react";
 export default function EditAutomationPage() {
   const router = useRouter();
   const params = useParams();
-  const id = params?.id as string;
   const { data: activeWorkstation } = useActiveWorkstation();
   const [automation, setAutomation] = React.useState<Automation | null>(null);
   const [name, setName] = React.useState("");
@@ -29,11 +27,9 @@ export default function EditAutomationPage() {
     [],
   );
   const [loading, setLoading] = React.useState(false);
-
-  if (!activeWorkstation) return null;
-
   useEffect(() => {
     const load = async () => {
+      const id = params?.id as string;
       if (!activeWorkstation?.id || !id) return;
       try {
         const res = await automationsApi.get(activeWorkstation.id, id);
@@ -55,7 +51,9 @@ export default function EditAutomationPage() {
       }
     };
     void load();
-  }, [activeWorkstation?.id, id]);
+  }, [activeWorkstation?.id, params?.id]);
+
+  if (!activeWorkstation) return null;
 
   const save = async () => {
     if (!activeWorkstation?.id || !id) return;

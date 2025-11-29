@@ -16,26 +16,24 @@ import { useEffect } from "react";
 import { blueprintsApi } from "~/lib/api/blueprints";
 
 interface EditBlueprintPageProps {
-  params: {
-    id: string;
-  };
+  // Next can pass `params` directly to client pages. Keep it optional
+  // and typed as an object to avoid Promise-related type issues.
+  params?: { id: string };
 }
 
 export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
   const router = useRouter();
   const { data: activeWorkstation } = useActiveWorkstation();
+  const id = params?.id;
   const [content, setContent] = React.useState("");
   const [name, setName] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-
-  if (!activeWorkstation) return null;
-
   useEffect(() => {
     const load = async () => {
-      if (!activeWorkstation?.id) return;
+      if (!activeWorkstation?.id || !id) return;
       try {
         const res = await fetch(
-          `/api/workstation/blueprint/load/${activeWorkstation.id}/${params.id}`,
+          `/api/workstation/blueprint/load/${activeWorkstation.id}/${id}`,
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -45,7 +43,9 @@ export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
       }
     };
     void load();
-  }, [activeWorkstation?.id, params.id]);
+  }, [activeWorkstation?.id, id]);
+
+  if (!activeWorkstation) return null;
 
   return (
     <div className="container mx-auto space-y-6 p-6">
@@ -60,7 +60,7 @@ export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
               Edit Blueprint
             </h1>
             <p className="text-muted-foreground">
-              Modify blueprint {params.id}
+              Modify blueprint {id}
             </p>
           </div>
         </div>
@@ -80,12 +80,12 @@ export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
               setLoading(true);
               try {
                 await fetch(
-                  `/api/workstation/blueprint/save/${activeWorkstation.id}/${params.id}`,
+                  `/api/workstation/blueprint/save/${activeWorkstation.id}/${id}`,
                   {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      name: name || `Blueprint ${params.id}`,
+                      name: name || `Blueprint ${id}`,
                       data: JSON.parse(content || "{}"),
                     }),
                   },
@@ -106,7 +106,7 @@ export default function EditBlueprintPage({ params }: EditBlueprintPageProps) {
         <CardHeader>
           <CardTitle>Blueprint Editor</CardTitle>
           <CardDescription>
-            Edit the configuration and workflow for blueprint {params.id}
+            Edit the configuration and workflow for blueprint {id}
           </CardDescription>
         </CardHeader>
         <CardContent>
