@@ -2,21 +2,15 @@
 
 import React from "react";
 import { Plus } from "lucide-react";
-import { Header } from "~/components/dashboard/header";
-import { DashboardSidebar } from "~/components/dashboard/dashboard-sidebar";
 import { Card, CardHeader, CardTitle, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 
 export default function DashboardPage() {
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <Header />
-
-      <div className="flex flex-1 overflow-hidden">
-        <DashboardSidebar />
-
-        <main className="flex-1 p-6 overflow-auto">
+    <div className="h-dvh w-full flex flex-col bg-background">
+       <div className="flex w-full flex-1 overflow-hidden">
+        <div className="flex-1  w-full p-6 overflow-auto">
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold">Dashboard</h1>
@@ -109,7 +103,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </div>
-        </main>
+        </div>
       </div>
     </div>
   );
