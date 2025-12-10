@@ -158,7 +158,8 @@ export default function BlueprintsPage() {
   };
 
   const handleEditBlueprint = (blueprint: Blueprint) => {
-    router.push(`/app/blueprints/${blueprint.id}/edit`);
+    const userId = blueprint.createdBy;
+    router.push(`/app/blueprints/${blueprint.id}/${userId}/edit`);
   };
 
   const handleDeleteBlueprint = async (blueprint: Blueprint) => {
@@ -188,7 +189,7 @@ export default function BlueprintsPage() {
 
   const handleRunBlueprint = (blueprint: Blueprint) => {
     // Navigate to the viewer page which will request metadata and render the blueprint
-    const userId = blueprint.createdBy
+    const userId = blueprint.createdBy;
     void router.push(`/app/blueprints/${blueprint.id}/${userId}/view`);
   };
 

@@ -40,7 +40,7 @@ export function BlueprintViewer({ id, userId }: Props) {
       setError(null);
       try {
         const { data } = await axios.get<Metadata | { metadata: Metadata }>(
-          `/api/blueprints/${id}/metadata`,
+          `/api/workstation/blueprint/${id}/metadata`,
         );
         if (!mounted) return;
         // assume metadata is directly returned or nested
