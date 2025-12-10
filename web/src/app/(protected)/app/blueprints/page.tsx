@@ -187,8 +187,9 @@ export default function BlueprintsPage() {
   };
 
   const handleRunBlueprint = (blueprint: Blueprint) => {
-    toast.info(`Running blueprint "${blueprint.name}"...`);
-    // Implement blueprint execution logic
+    // Navigate to the viewer page which will request metadata and render the blueprint
+    const userId = blueprint.createdBy
+    void router.push(`/app/blueprints/${blueprint.id}/${userId}/view`);
   };
 
   const handlePageChange = (page: number) => {

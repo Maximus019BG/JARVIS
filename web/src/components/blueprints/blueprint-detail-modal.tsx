@@ -83,7 +83,7 @@ export function BlueprintDetailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] max-w-4xl p-0">
+      <DialogContent className="h-[90vh] w-full max-w-4xl p-0">
         <div className="flex h-full flex-col">
           <DialogHeader className="p-6 pb-4">
             <div className="flex items-start justify-between">
@@ -118,7 +118,7 @@ export function BlueprintDetailModal({
                 </div>
               </div>
 
-              <div className="flex flex-shrink-0 items-center space-x-2 p-4 ">
+              <div className="flex flex-shrink-0 items-center space-x-2 p-4">
                 {onRun && (
                   <Button onClick={() => onRun(blueprint)}>
                     <Play className="mr-2 h-4 w-4" />
@@ -131,16 +131,15 @@ export function BlueprintDetailModal({
                     Edit
                   </Button>
                 )}
-      
               </div>
             </div>
           </DialogHeader>
 
           <Separator />
 
-          <ScrollArea className="flex-1 p-6">
+          <ScrollArea className="min-h-0 flex-1 p-6">
             <Tabs defaultValue="overview" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-1 md:grid-cols-4">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="configuration">Configuration</TabsTrigger>
                 <TabsTrigger value="metadata">Metadata</TabsTrigger>
@@ -306,7 +305,7 @@ export function BlueprintDetailModal({
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <pre className="bg-muted max-h-96 overflow-auto rounded-md p-4 text-sm">
+                    <pre className="bg-muted max-h-96 max-w-full overflow-auto rounded-md p-4 text-sm break-all whitespace-pre-wrap">
                       {JSON.stringify(parsedMetadata, null, 2)}
                     </pre>
                   </CardContent>
