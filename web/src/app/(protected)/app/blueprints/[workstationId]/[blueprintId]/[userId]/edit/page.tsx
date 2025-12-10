@@ -13,7 +13,7 @@ export default async function BlueprintEditPage({ params }: Props) {
   const { workstationId, blueprintId, userId } = await params;
 
   return (
-    <div className="h-screen">
+    <div className="h-full">
       <BlueprintEditor
         blueprintId={blueprintId}
         userId={userId}

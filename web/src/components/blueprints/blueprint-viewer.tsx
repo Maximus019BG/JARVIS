@@ -90,7 +90,7 @@ export function BlueprintViewer({ id, userId, workstationId }: Props) {
   };
 
   return (
-    <div className="flex h-screen w-full gap-4 overflow-hidden p-4">
+    <div className="flex h-full w-full gap-4 overflow-hidden p-4">
       <div className="relative flex min-w-0 flex-1 items-center justify-center rounded-md border bg-[#1a1a1a] p-4">
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -165,21 +165,9 @@ export function BlueprintViewer({ id, userId, workstationId }: Props) {
             );
           })}
         </svg>
-
-        {/* Edit button in bottom left */}
-        <Button
-          onClick={() =>
-            router.push(`/app/blueprints/${workstationId}/${id}/${userId}/edit`)
-          }
-          className="absolute bottom-4 left-4"
-          size="sm"
-        >
-          <Edit className="mr-2 h-4 w-4" />
-          Edit
-        </Button>
       </div>
 
-      <aside className="bg-card w-80 flex-shrink-0 space-y-4 overflow-y-auto rounded-md border p-4">
+      <aside className="bg-card flex w-80 flex-shrink-0 flex-col rounded-md border p-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
             {metadata.name ?? "Blueprint"}
@@ -189,48 +177,64 @@ export function BlueprintViewer({ id, userId, workstationId }: Props) {
           </Button>
         </div>
 
-        <div className="bg-muted/50 space-y-1 rounded-md border p-3">
-          <p className="text-muted-foreground text-xs font-medium">Signature</p>
-          <p className="font-mono text-xs break-all">
-            {metadata.signature ?? "-"}
-          </p>
+        <div className="flex-1 space-y-4 overflow-y-auto">
+          <div className="bg-muted/50 space-y-1 rounded-md border p-3">
+            <p className="text-muted-foreground text-xs font-medium">
+              Signature
+            </p>
+            <p className="font-mono text-xs break-all">
+              {metadata.signature ?? "-"}
+            </p>
+          </div>
+
+          <div className="bg-muted/50 space-y-2 rounded-md border p-3">
+            <div>
+              <p className="text-muted-foreground text-xs font-medium">
+                Dimensions
+              </p>
+              <p className="text-sm">
+                {width} × {height} px
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs font-medium">
+                Grid Spacing
+              </p>
+              <p className="text-sm">
+                {gridPercent}% ({metadata.grid?.real_world_spacing_cm ?? "-"}{" "}
+                cm)
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs font-medium">
+                Snap to Grid
+              </p>
+              <p className="text-sm">
+                {metadata.grid?.snap_to_grid ? "Enabled" : "Disabled"}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-muted/50 rounded-md border p-3">
+            <p className="text-muted-foreground text-xs font-medium">Created</p>
+            <p className="text-sm">
+              {metadata.created_timestamp
+                ? new Date(metadata.created_timestamp).toLocaleString()
+                : "-"}
+            </p>
+          </div>
         </div>
 
-        <div className="bg-muted/50 space-y-2 rounded-md border p-3">
-          <div>
-            <p className="text-muted-foreground text-xs font-medium">
-              Dimensions
-            </p>
-            <p className="text-sm">
-              {width} × {height} px
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs font-medium">
-              Grid Spacing
-            </p>
-            <p className="text-sm">
-              {gridPercent}% ({metadata.grid?.real_world_spacing_cm ?? "-"} cm)
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs font-medium">
-              Snap to Grid
-            </p>
-            <p className="text-sm">
-              {metadata.grid?.snap_to_grid ? "Enabled" : "Disabled"}
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-muted/50 rounded-md border p-3">
-          <p className="text-muted-foreground text-xs font-medium">Created</p>
-          <p className="text-sm">
-            {metadata.created_timestamp
-              ? new Date(metadata.created_timestamp).toLocaleString()
-              : "-"}
-          </p>
-        </div>
+        <Button
+          onClick={() =>
+            router.push(`/app/blueprints/${workstationId}/${id}/${userId}/edit`)
+          }
+          className="mt-4 w-full"
+          size="sm"
+        >
+          <Edit className="mr-2 h-4 w-4" />
+          Edit
+        </Button>
       </aside>
     </div>
   );

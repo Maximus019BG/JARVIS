@@ -283,7 +283,7 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-full flex-col">
       {/* Header */}
       <div className="bg-card border-b p-4">
         <div className="flex items-center justify-between">
@@ -300,44 +300,22 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
-            <div>
-              <Label htmlFor="name" className="text-muted-foreground text-xs">
-                Blueprint Name
-              </Label>
-              <Input
-                id="name"
-                value={metadata.name}
-                onChange={(e) =>
-                  setMetadata((prev) => ({ ...prev, name: e.target.value }))
-                }
-                className="w-64"
-              />
-            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleUndo}
-              disabled={metadata.lines.length === 0}
-            >
-              <Undo className="mr-2 h-4 w-4" />
-              Undo
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClear}
-              disabled={metadata.lines.length === 0}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? "Saving..." : "Save"}
-            </Button>
+          <div />
+
+          <div>
+            <Label htmlFor="name" className="text-muted-foreground text-xs">
+              Blueprint Name
+            </Label>
+            <Input
+              id="name"
+              value={metadata.name}
+              onChange={(e) =>
+                setMetadata((prev) => ({ ...prev, name: e.target.value }))
+              }
+              className="w-64"
+            />
           </div>
         </div>
       </div>
@@ -358,8 +336,8 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
         </div>
 
         {/* Settings Panel */}
-        <Card className="w-80 flex-shrink-0">
-          <CardContent className="space-y-4 p-4">
+        <Card className="flex w-80 flex-shrink-0 flex-col">
+          <CardContent className="flex-1 space-y-4 overflow-y-auto p-4">
             <div>
               <h3 className="mb-4 font-semibold">Grid Settings</h3>
 
@@ -479,6 +457,36 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
               </div>
             </div>
           </CardContent>
+
+          {/* Action Buttons at Bottom */}
+          <div className="space-y-2 border-t p-4">
+            <Button onClick={handleSave} disabled={saving} className="w-full">
+              <Save className="mr-2 h-4 w-4" />
+              {saving ? "Saving..." : "Save"}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleUndo}
+                disabled={metadata.lines.length === 0}
+                className="flex-1"
+              >
+                <Undo className="mr-2 h-4 w-4" />
+                Undo
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClear}
+                disabled={metadata.lines.length === 0}
+                className="flex-1"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
     </div>

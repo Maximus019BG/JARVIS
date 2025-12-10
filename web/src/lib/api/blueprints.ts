@@ -138,4 +138,24 @@ export const blueprintsApi = {
     const response = await api.get("/workstation/blueprint/stats");
     return response.data;
   },
+
+  // Get recent blueprints across all workstations
+  getRecentBlueprints: async (
+    limit: number = 10,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      workstationId: string;
+      workstationName: string;
+      createdBy: string;
+      createdAt: string;
+      updatedAt: string | null;
+    }>
+  > => {
+    const response = await api.get(
+      `/workstation/blueprint/recent?limit=${limit}`,
+    );
+    return response.data;
+  },
 };
