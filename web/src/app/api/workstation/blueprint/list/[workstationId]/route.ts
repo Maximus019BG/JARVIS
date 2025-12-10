@@ -55,14 +55,16 @@ export async function GET(
     .where(eq(blueprint.workstationId, decodedWorkstationId));
 
   if (recentOnly) {
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    //TODO: add cutoff logic
+    // const cutoff = new Date();
+    // cutoff.setDate(cutoff.getDate() - 7); // 7 days ago
     query = db
       .select()
       .from(blueprint)
       .where(
         and(
           eq(blueprint.workstationId, decodedWorkstationId),
-          sql`(${blueprint.updatedAt} >= ${cutoff.toISOString()})`,
+          // sql`(${blueprint.updatedAt} >= ${cutoff.toISOString()})`,
         ),
       );
   }
@@ -70,7 +72,7 @@ export async function GET(
   const rows = await query;
 
   return NextResponse.json(
-    rows.map((r: any) => ({
+    rows.map((r) => ({
       ...r,
       lastModified: r.updatedAt ?? r.createdAt,
     })),
