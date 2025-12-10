@@ -3,18 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  Zap,
-  TrendingUp,
-  Users,
-  Clock,
-  AlertCircle,
-  RefreshCw,
-} from "lucide-react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Button } from "~/components/ui/button";
+import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "~/components/ui/alert";
+import { Button } from "~/components/ui/button";
 import {
   Pagination,
   PaginationContent,
@@ -29,6 +20,9 @@ import { BlueprintCard } from "~/components/blueprints/blueprint-card";
 import { BlueprintFiltersComponent } from "~/components/blueprints/blueprint-filters";
 import { BlueprintDetailModal } from "~/components/blueprints/blueprint-detail-modal";
 import { BlueprintGridSkeleton } from "~/components/blueprints/blueprint-skeleton";
+import { BlueprintsHeader } from "~/components/blueprints/blueprint-header";
+import { BlueprintStats } from "~/components/blueprints/blueprint-stats";
+import { BlueprintsGrid } from "~/components/blueprints/blueprint-grid";
 
 import {
   blueprintsApi,
@@ -155,7 +149,7 @@ export default function BlueprintsPage() {
   };
 
   const handleCreateNew = () => {
-    toast.info("Create a new blueprint by using jarvis")
+    toast.info("Create a new blueprint by using jarvis");
   };
 
   const handleViewBlueprint = (blueprint: Blueprint) => {
@@ -293,89 +287,8 @@ export default function BlueprintsPage() {
     <div className="container mx-auto space-y-8 p-6">
       {/* Header */}
       <div className="flex flex-col space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Blueprints</h1>
-            <p className="text-muted-foreground">
-              Manage and deploy your automation blueprints with precision and
-              control
-            </p>
-          </div>
-          <Button onClick={() => loadBlueprints()} variant="outline" size="sm">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Blueprints
-                </CardTitle>
-                <Zap className="text-muted-foreground h-4 w-4" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.total}</div>
-                <p className="text-muted-foreground text-xs">
-                  Across all workstations
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Active Blueprints
-                </CardTitle>
-                <TrendingUp className="text-muted-foreground h-4 w-4" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.active}</div>
-                <p className="text-muted-foreground text-xs">
-                  {Math.round((stats.active / stats.total) * 100)}% of total
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Workstations
-                </CardTitle>
-                <Users className="text-muted-foreground h-4 w-4" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {Object.keys(stats.byWorkstation).length}
-                </div>
-                <p className="text-muted-foreground text-xs">
-                  Connected workstations
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Recent Activity
-                </CardTitle>
-                <Clock className="text-muted-foreground h-4 w-4" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {stats.recentActivity.reduce(
-                    (sum, day) => sum + day.count,
-                    0,
-                  )}
-                </div>
-                <p className="text-muted-foreground text-xs">Last 5 days</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        <BlueprintsHeader onRefresh={() => loadBlueprints()} />
+        <BlueprintStats stats={stats} />
       </div>
 
       {/* Filters */}
@@ -403,42 +316,16 @@ export default function BlueprintsPage() {
       {/* Blueprints Grid */}
       {!loading && !error && (
         <>
-          {blueprints.length === 0 ? (
-            <Card className="p-12 text-center">
-              <CardContent>
-                <Zap className="text-muted-foreground mx-auto mb-4 h-12 w-12" />
-                <h3 className="mb-2 text-lg font-semibold">
-                  No blueprints found
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {Object.values(filters).some(
-                    (value) =>
-                      value && (Array.isArray(value) ? value.length > 0 : true),
-                  )
-                    ? "No blueprints match your current filters. Try adjusting your search criteria."
-                    : "Get started by creating your first blueprint."}
-                </p>
-                <Button onClick={handleCreateNew}>
-                  <Zap className="mr-2 h-4 w-4" />
-                  Create Your First Blueprint
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {blueprints.map((blueprint) => (
-                <BlueprintCard
-                  key={blueprint.id}
-                  blueprint={blueprint}
-                  onView={handleViewBlueprint}
-                  onEdit={handleEditBlueprint}
-                  onDelete={handleDeleteBlueprint}
-                  onClone={handleCloneBlueprint}
-                  onRun={handleRunBlueprint}
-                />
-              ))}
-            </div>
-          )}
+          <BlueprintsGrid
+            blueprints={blueprints}
+            filters={filters}
+            onCreateNew={handleCreateNew}
+            onView={handleViewBlueprint}
+            onEdit={handleEditBlueprint}
+            onDelete={handleDeleteBlueprint}
+            onClone={handleCloneBlueprint}
+            onRun={handleRunBlueprint}
+          />
 
           {/* Pagination */}
           {renderPagination()}

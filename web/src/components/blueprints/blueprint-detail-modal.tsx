@@ -56,7 +56,22 @@ export function BlueprintDetailModal({
 }: BlueprintDetailModalProps) {
   if (!blueprint) return null;
 
-  const parsedMetadata = blueprint.metadata ? JSON.parse(blueprint.metadata) : {};
+  const parsedMetadata: Record<string, unknown> = (() => {
+    const meta = blueprint.metadata;
+    if (!meta) return {};
+    if (typeof meta === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(meta);
+        return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+      } catch {
+        return {};
+      }
+    }
+    if (typeof meta === 'object') {
+      return meta as Record<string, unknown>;
+    }
+    return {};
+  })();
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -205,7 +220,7 @@ export function BlueprintDetailModal({
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm leading-relaxed">
-                      {blueprint.description || 'No description provided for this blueprint.'}
+                      {blueprint.description ?? 'No description provided for this blueprint.'}
                     </p>
                   </CardContent>
                 </Card>
