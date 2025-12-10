@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import axios from "axios";
 import { Button } from "~/components/ui/button";
 
 type Line = { x0: number; x1: number; y0: number; y1: number };
@@ -38,12 +39,13 @@ export function BlueprintViewer({ id, userId }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/blueprints/${id}/metadata`);
-        if (!res.ok) throw new Error(`Status ${res.status}`);
-        const json = await res.json();
+        const { data } = await axios.get<Metadata | { metadata: Metadata }>(
+          `/api/blueprints/${id}/metadata`,
+        );
         if (!mounted) return;
         // assume metadata is directly returned or nested
-        setMetadata(json.metadata ?? json);
+        const metadata = "metadata" in data ? data.metadata : data;
+        setMetadata(metadata);
       } catch (err) {
         console.error(err);
         if (!mounted) return;
@@ -70,6 +72,20 @@ export function BlueprintViewer({ id, userId }: Props) {
 
   const toX = (v: number) => (v / 100) * width;
   const toY = (v: number) => (v / 100) * height;
+
+  // Calculate line length in cm based on grid spacing
+  const realSpacingCm = metadata.grid?.real_world_spacing_cm ?? 5;
+  const calculateLength = (ln: Line) => {
+    const x1 = toX(ln.x0);
+    const y1 = toY(ln.y0);
+    const x2 = toX(ln.x1);
+    const y2 = toY(ln.y1);
+    const pixelLength = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    // Convert pixels to cm using grid spacing
+    const pixelsPerGridCell = stepX;
+    const cmPerPixel = realSpacingCm / pixelsPerGridCell;
+    return (pixelLength * cmPerPixel).toFixed(1);
+  };
 
   return (
     <div className="flex h-screen w-full gap-4 overflow-hidden p-4">
@@ -104,18 +120,48 @@ export function BlueprintViewer({ id, userId }: Props) {
           <rect width="100%" height="100%" fill="url(#grid)" />
 
           {/* Draw blueprint lines */}
-          {metadata.lines?.map((ln, idx) => (
-            <line
-              key={idx}
-              x1={toX(ln.x0)}
-              y1={toY(ln.y0)}
-              x2={toX(ln.x1)}
-              y2={toY(ln.y1)}
-              stroke="#ffffff"
-              strokeWidth={2}
-              strokeLinecap="round"
-            />
-          ))}
+          {metadata.lines?.map((ln, idx) => {
+            const x1 = toX(ln.x0);
+            const y1 = toY(ln.y0);
+            const x2 = toX(ln.x1);
+            const y2 = toY(ln.y1);
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            const length = calculateLength(ln);
+
+            // Calculate perpendicular offset for label
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const lineLength = Math.sqrt(dx * dx + dy * dy);
+            const offsetDistance = 15;
+            const offsetX = (-dy / lineLength) * offsetDistance;
+            const offsetY = (dx / lineLength) * offsetDistance;
+
+            return (
+              <g key={idx}>
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+                <text
+                  x={midX + offsetX}
+                  y={midY + offsetY}
+                  fill="#4ade80"
+                  fontSize="12"
+                  fontWeight="500"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                >
+                  {length} cm
+                </text>
+              </g>
+            );
+          })}
         </svg>
       </div>
 
