@@ -83,23 +83,16 @@ export default function BlueprintsPage() {
 
   // No client-side mock generator in use anymore
 
-  // Mock stats still used if server-side not available
-  const generateMockStats = () => ({
-    total: 50,
-    active: 35,
-    byWorkstation: {
-      "Development Station": 20,
-      "Production Station": 18,
-      "Testing Station": 12,
-    },
-    recentActivity: [
-      { date: "2024-11-01", count: 5 },
-      { date: "2024-11-02", count: 3 },
-      { date: "2024-11-03", count: 7 },
-      { date: "2024-11-04", count: 2 },
-      { date: "2024-11-05", count: 4 },
-    ],
-  });
+  // Load stats
+  const loadStats = React.useCallback(async () => {
+    try {
+      const statsData = await blueprintsApi.getBlueprintStats();
+      setStats(statsData);
+    } catch (error) {
+      console.error("Error loading blueprint stats:", error);
+      // Don't show error toast for stats, just silently fail
+    }
+  }, []);
 
   // Load blueprints
   const loadBlueprints = React.useCallback(async () => {
@@ -124,10 +117,6 @@ export default function BlueprintsPage() {
       setBlueprints(response.blueprints);
       setTotalPages(response.totalPages);
       setTotalCount(response.total);
-
-      if (!stats) {
-        setStats(generateMockStats());
-      }
     } catch (error) {
       console.error("Error loading blueprints:", error);
       setError("Failed to load blueprints. Please try again.");
@@ -135,12 +124,16 @@ export default function BlueprintsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeWorkstation?.id, currentPage, filters, stats]);
+  }, [activeWorkstation?.id, currentPage, filters]);
 
   // Effects
   useEffect(() => {
     void loadBlueprints();
   }, [loadBlueprints]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
 
   // Event handlers
   const handleFiltersChange = (newFilters: BlueprintFilters) => {

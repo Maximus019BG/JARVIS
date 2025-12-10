@@ -74,7 +74,7 @@ export function BlueprintStats({ stats }: Props) {
           <div className="text-2xl font-bold">
             {stats.recentActivity.reduce((sum, day) => sum + day.count, 0)}
           </div>
-          <p className="text-muted-foreground text-xs">Last 5 days</p>
+          <p className="text-muted-foreground text-xs">Last 7 days</p>
         </CardContent>
       </Card>
     </div>

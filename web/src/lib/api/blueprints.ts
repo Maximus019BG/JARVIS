@@ -135,7 +135,7 @@ export const blueprintsApi = {
     byWorkstation: Record<string, number>;
     recentActivity: Array<{ date: string; count: number }>;
   }> => {
-    const response = await api.get("/blueprints/stats");
+    const response = await api.get("/workstation/blueprint/stats");
     return response.data;
   },
 };
