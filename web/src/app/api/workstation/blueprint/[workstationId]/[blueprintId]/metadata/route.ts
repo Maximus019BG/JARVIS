@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "~/lib/auth";
 import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
@@ -8,7 +8,8 @@ import { workstation } from "~/server/db/schemas/workstation";
 
 type RouteContext = {
   params: Promise<{
-    id: string;
+    workstationId: string;
+    blueprintId: string;
   }>;
 };
 
@@ -17,12 +18,12 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    const { id } = await context.params;
+    const { workstationId, blueprintId } = await context.params;
 
-    if (!id) {
+    if (!workstationId || !blueprintId) {
       return NextResponse.json(
-        { error: "Blueprint not found" },
-        { status: 404 },
+        { error: "Invalid request parameters" },
+        { status: 400 },
       );
     }
 
@@ -32,20 +33,35 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Decode ID using configured secret (pass-through when not encrypted)
+    // Decode IDs using configured secret (pass-through when not encrypted)
     const secret = getEncryptionSecret();
-    const decodedId = decodeId(id, secret);
+    const decodedWorkstationId = decodeId(workstationId, secret);
+    const decodedBlueprintId = decodeId(blueprintId, secret);
 
-    // Fetch blueprint with workstation ownership to enforce access
+    // Verify workstation belongs to user
+    const ws = await db
+      .select()
+      .from(workstation)
+      .where(eq(workstation.id, decodedWorkstationId))
+      .limit(1);
+
+    if (!ws[0] || ws[0].userId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Fetch blueprint with workstation and ownership validation
     const rows = await db
       .select({
         metadata: blueprint.metadata,
         name: blueprint.name,
-        workstationUserId: workstation.userId,
       })
       .from(blueprint)
-      .innerJoin(workstation, eq(blueprint.workstationId, workstation.id))
-      .where(eq(blueprint.id, decodedId))
+      .where(
+        and(
+          eq(blueprint.id, decodedBlueprintId),
+          eq(blueprint.workstationId, decodedWorkstationId),
+        ),
+      )
       .limit(1);
 
     const row = rows[0];
@@ -55,10 +71,6 @@ export async function GET(
         { error: "Blueprint not found" },
         { status: 404 },
       );
-    }
-
-    if (row.workstationUserId !== session.user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     let metadata: unknown = row.metadata;

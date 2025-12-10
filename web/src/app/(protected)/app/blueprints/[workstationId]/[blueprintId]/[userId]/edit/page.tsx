@@ -3,17 +3,22 @@ import BlueprintEditor from "~/components/blueprints/blueprint-editor";
 
 type Props = {
   params: Promise<{
-    id: string;
+    workstationId: string;
+    blueprintId: string;
     userId: string;
   }>;
 };
 
 export default async function BlueprintEditPage({ params }: Props) {
-  const { id, userId } = await params;
+  const { workstationId, blueprintId, userId } = await params;
 
   return (
     <div className="h-screen">
-      <BlueprintEditor blueprintId={id} userId={userId} />
+      <BlueprintEditor
+        blueprintId={blueprintId}
+        userId={userId}
+        workstationId={workstationId}
+      />
     </div>
   );
 }

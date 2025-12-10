@@ -32,9 +32,10 @@ type Metadata = {
 type Props = {
   blueprintId: string;
   userId: string;
+  workstationId: string;
 };
 
-export function BlueprintEditor({ blueprintId, userId }: Props) {
+export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { data: activeWorkstation } = useActiveWorkstation();
@@ -67,7 +68,7 @@ export function BlueprintEditor({ blueprintId, userId }: Props) {
     async function loadBlueprint() {
       try {
         const { data } = await axios.get<Metadata | { metadata: Metadata }>(
-          `/api/blueprints/${blueprintId}/metadata`,
+          `/api/workstation/blueprint/${workstationId}/${blueprintId}/metadata`,
         );
         const loadedMetadata = "metadata" in data ? data.metadata : data;
         setMetadata(loadedMetadata);
@@ -79,7 +80,7 @@ export function BlueprintEditor({ blueprintId, userId }: Props) {
       }
     }
     void loadBlueprint();
-  }, [blueprintId]);
+  }, [blueprintId, workstationId]);
 
   // Draw canvas
   const drawCanvas = useCallback(() => {
@@ -287,7 +288,15 @@ export function BlueprintEditor({ blueprintId, userId }: Props) {
       <div className="bg-card border-b p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                router.push(
+                  `/app/blueprints/${workstationId}/${blueprintId}/${userId}/view`,
+                )
+              }
+            >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>

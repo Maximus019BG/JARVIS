@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { Button } from "~/components/ui/button";
+import { Edit } from "lucide-react";
 
 type Line = { x0: number; x1: number; y0: number; y1: number };
 
@@ -25,9 +26,10 @@ type Metadata = {
 type Props = {
   id: string;
   userId: string;
+  workstationId: string;
 };
 
-export function BlueprintViewer({ id, userId }: Props) {
+export function BlueprintViewer({ id, userId, workstationId }: Props) {
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +42,7 @@ export function BlueprintViewer({ id, userId }: Props) {
       setError(null);
       try {
         const { data } = await axios.get<Metadata | { metadata: Metadata }>(
-          `/api/workstation/blueprint/${id}/metadata`,
+          `/api/workstation/blueprint/${workstationId}/${id}/metadata`,
         );
         if (!mounted) return;
         // assume metadata is directly returned or nested
@@ -58,7 +60,7 @@ export function BlueprintViewer({ id, userId }: Props) {
     return () => {
       mounted = false;
     };
-  }, [id]);
+  }, [id, workstationId]);
 
   if (loading) return <div className="p-6">Loading blueprint...</div>;
   if (error || !metadata)
@@ -89,7 +91,7 @@ export function BlueprintViewer({ id, userId }: Props) {
 
   return (
     <div className="flex h-screen w-full gap-4 overflow-hidden p-4">
-      <div className="flex min-w-0 flex-1 items-center justify-center rounded-md border bg-[#1a1a1a] p-4">
+      <div className="relative flex min-w-0 flex-1 items-center justify-center rounded-md border bg-[#1a1a1a] p-4">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           style={{
@@ -163,6 +165,18 @@ export function BlueprintViewer({ id, userId }: Props) {
             );
           })}
         </svg>
+
+        {/* Edit button in bottom left */}
+        <Button
+          onClick={() =>
+            router.push(`/app/blueprints/${workstationId}/${id}/${userId}/edit`)
+          }
+          className="absolute bottom-4 left-4"
+          size="sm"
+        >
+          <Edit className="mr-2 h-4 w-4" />
+          Edit
+        </Button>
       </div>
 
       <aside className="bg-card w-80 flex-shrink-0 space-y-4 overflow-y-auto rounded-md border p-4">
