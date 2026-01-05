@@ -1,0 +1,121 @@
+/* Professional TUI Styles for Hardware App */
+
+Screen {
+    background: #171717;
+    color: #f0fdf4;
+}
+
+Header {
+    background: #242323;
+    color: #f0fdf4;
+    text-style: bold;
+    height: 3;
+    padding: 1;
+}
+
+Footer {
+    background: #242323;
+    color: #a7f3d0;
+    text-align: center;
+    border-top: solid #4b5563;
+}
+
+Button {
+    background: #158c68;
+    color: #f0fdf4;
+    border: solid #16a34a;
+    padding: 1 2;
+    margin: 1;
+    text-align: center;
+    text-style: none;
+    min-width: 16;
+}
+
+Button:hover {
+    background: #16a34a;
+    border: solid #15803d;
+}
+
+Button:focus {
+    border: solid #22c55e;
+    outline: solid #22c55e;
+}
+
+.menu-title, .section-title {
+    text-style: bold;
+    color: #f0fdf4;
+    margin: 1 0 1 0;
+}
+
+Static {
+    color: #f0fdf4;
+    margin: 1 1;
+}
+
+Input {
+    background: #242323;
+    color: #f0fdf4;
+    border: solid #4b5563;
+    padding: 1 1;
+    margin: 1 1;
+}
+
+Input:focus {
+    border: solid #06b6d4;
+    outline: solid #06b6d4;
+}
+
+Select {
+    background: #242323;
+    color: #f0fdf4;
+    border: solid #4b5563;
+    padding: 1 1;
+    margin: 1 1;
+}
+
+Select:focus {
+    border: solid #06b6d4;
+    outline: solid #06b6d4;
+}
+
+/* Card styling for sections */
+.card {
+    background: #242323;
+    border: solid #4b5563;
+    padding: 1;
+    margin: 1;
+}
+
+.help-text {
+    color: #a7f3d0;
+    margin: 1 1;
+}
+
+.error-text {
+    color: #ef4444;
+    margin: 1 1;
+}
+
+.success-text {
+    color: #10b981;
+    margin: 1 1;
+}
+
+.input-label {
+    color: #f0fdf4;
+    text-style: bold;
+    margin: 1 1 0 1;
+}
+
+#menu_grid {
+    grid-size: 2;
+    grid-gutter: 2;
+    margin: 1;
+}
+
+/* Centered content for large screens */
+.center-container {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
