@@ -18,8 +18,7 @@ show_overall_progress() {
     # Step increments
     local venv_steps=10
     local activate_steps=5
-    local pyinstaller_steps=20
-    local deps_steps=15
+    local tools_deps_steps=35
     local build_steps=30
     local prepare_steps=10
     local cleanup_steps=10
@@ -53,31 +52,18 @@ show_overall_progress() {
 
     source build_venv/bin/activate
 
-    # Installing PyInstaller
-    for ((i=1; i<=pyinstaller_steps; i++)); do
+    # Installing tools and dependencies
+    for ((i=1; i<=tools_deps_steps; i++)); do
         current=$((current + 1))
         filled=$((current * bar_length / total_steps))
         empty=$((bar_length - filled))
         bar=$(printf '█%.0s' $(seq 1 $filled))
         spaces=$(printf ' %.0s' $(seq 1 $empty))
-        echo -ne "\r${BLUE}${bar}${spaces}${NC} ${current}% Complete (Installing PyInstaller...)                    "
+        echo -ne "\r${BLUE}${bar}${spaces}${NC} ${current}% Complete (Installing tools and dependencies...)                    "
         sleep 0.1
     done
 
-    pip install --quiet pyinstaller > /dev/null 2>&1
-
-    # Installing deps
-    for ((i=1; i<=deps_steps; i++)); do
-        current=$((current + 1))
-        filled=$((current * bar_length / total_steps))
-        empty=$((bar_length - filled))
-        bar=$(printf '█%.0s' $(seq 1 $filled))
-        spaces=$(printf ' %.0s' $(seq 1 $empty))
-        echo -ne "\r${BLUE}${bar}${spaces}${NC} ${current}% Complete (Installing dependencies...)                    "
-        sleep 0.05
-    done
-
-    pip install --quiet -r requirements.txt > /dev/null 2>&1
+    uv sync --group dev --quiet > /dev/null 2>&1
 
     # Building
     for ((i=1; i<=build_steps; i++)); do

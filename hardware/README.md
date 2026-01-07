@@ -2,6 +2,14 @@
 
 A futuristic Text User Interface (TUI) for controlling hardware operations.
 
+> ⚠️ **Build Tool Requirement**
+>
+> This repository does **not** support `pip install -r requirements.txt`.
+> All dependency management is handled via **`uv`** using `pyproject.toml` and `uv.lock`.
+>
+> Attempts to install dependencies without `uv` may fail or produce inconsistent environments.
+
+
 ## Project Structure
 
 ```

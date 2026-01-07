@@ -1,0 +1,14 @@
+[project]
+name = "hardware"
+version = "0.1.0"
+description = "JARVIS hardware part"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "textual>=7.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.17.0",
+]
