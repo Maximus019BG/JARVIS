@@ -9,6 +9,7 @@ from src.config import DEFAULT_THEME
 from src.screens.main_menu import MainMenu
 from src.screens.settings import SettingsScreen
 from src.screens.profile import ProfileScreen
+from src.screens.smart_mode import SmartModeScreen
 
 class HardwareApp(App):
     """Main app."""
@@ -19,6 +20,7 @@ class HardwareApp(App):
         "main": MainMenu,
         "settings": SettingsScreen,
         "profile": ProfileScreen,
+        "smart_mode": SmartModeScreen,
     }
 
     def __init__(self):

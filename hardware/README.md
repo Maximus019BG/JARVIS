@@ -34,6 +34,7 @@ hardware/
 ## Features
 
 - Main menu with buttons for Load Blueprint, Create Blueprint, Live Assistance, Settings, Smart Mode.
+- Smart Mode: Interactive chat interface with Llama 3 3B AI model for intelligent assistance.
 - Settings menu with:
   - Customizable theme (primary, secondary, background colors).
   - Hardcoded system stats display.
@@ -43,9 +44,19 @@ hardware/
 
 ## Installation
 
-1. Install Python 3.8+.
-2. Install dependencies: `pip install -r requirements.txt`
-3. Run the app: `python app.py`
+1. Install Python 3.13+.
+2. Install [uv](https://github.com/astral-sh/uv) for dependency management.
+3. Install dependencies: `uv sync`
+4. (Optional) Install Ollama for Smart Mode AI chat: Follow [Ollama installation](https://ollama.com/) and pull the model: `ollama pull llama3.2:3b`
+5. Run the app: `python app.py`
+
+## Code Quality
+
+Ensure code quality with Ruff linting and formatting:
+
+1. Install dev dependencies: `uv sync --group dev`
+2. Check linting: `ruff check .`
+3. Format code: `ruff format .`
 
 ## Building Executable
 
@@ -65,6 +76,12 @@ Navigate with keyboard arrows and Enter. Use Tab to switch between elements.
 
 To add more buttons, edit the `menu_items` list in `src/screens/main_menu.py`.
 
-To add more screens, create a new screen file in `src/screens/`, import it in `app.py`, and add to `HardwareApp.SCREENS`.
+To add more screens, use the generation script: `python generate_screen.py <screen_name>`, then import and add to `HardwareApp.SCREENS` in `app.py`.
+
+Alternatively, create a new screen file in `src/screens/`, import it in `app.py`, and add to `HardwareApp.SCREENS`.
 
 To add widgets, place in `src/widgets/`.
+
+## Development with Roo
+
+The Hardware Startup mode in Roo can assist with setting up, running, building, and extending the application. Use it for dependency management, code generation, and troubleshooting.

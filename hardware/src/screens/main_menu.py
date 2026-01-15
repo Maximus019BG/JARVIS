@@ -33,7 +33,7 @@ class MainMenu(Screen):
         await self.app.push_screen("settings")
 
     async def smart_mode(self):
-        self.app.notify("Smart Mode Enabled")
+        await self.app.push_screen("smart_mode")
 
     async def quit_app(self):
         self.app.exit()

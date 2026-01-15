@@ -152,3 +152,18 @@ Button.-danger:hover {
     color: #334155;
     margin: 0 2;
 }
+
+/* Chat messages */
+.user-message {
+    color: #38bdf8;
+    background: #1e293b;
+    padding: 1 2;
+    margin: 1 0;
+}
+
+.ai-message {
+    color: #34d399;
+    background: #0f172a;
+    padding: 1 2;
+    margin: 1 0;
+}
