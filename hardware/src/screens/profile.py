@@ -19,11 +19,11 @@ class ProfileScreen(Screen):
                 self.email_input = Input(placeholder="Enter your email", id="email")
                 yield self.email_input
 
-                yield Button("Save Profile", id="save_profile")
-                yield Button("Back to Settings", id="back_settings")
+                yield Button("💾 Save Profile", id="save_profile")
+                yield Button("⬅️ Back to Settings", id="back_settings")
         yield Footer()
 
-    async def on_button_pressed(self, event):
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save_profile":
             name = self.name_input.value
             email = self.email_input.value

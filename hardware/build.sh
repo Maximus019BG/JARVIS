@@ -65,6 +65,8 @@ show_overall_progress() {
 
     uv sync --group dev --quiet > /dev/null 2>&1
 
+    python -c "import sass; sass.compile(filename='styles.scss', output='styles.css')"
+
     # Building
     for ((i=1; i<=build_steps; i++)); do
         current=$((current + 1))

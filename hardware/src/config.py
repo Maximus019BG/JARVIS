@@ -1,7 +1,8 @@
-# Configuration constants
+"""Configuration constants."""
+from typing import Dict
 
-#TODO: Change Hardcoded stats for demo
-HARD_CODED_STATS = {
+# TODO: Change hardcoded stats for demo
+HARD_CODED_STATS: Dict[str, str] = {
     "CPU Usage": "45%",
     "Memory Usage": "60%",
     "Temperature": "50°C",
@@ -9,7 +10,7 @@ HARD_CODED_STATS = {
 }
 
 # Default theme colors - Professional green palette with dark backgrounds
-DEFAULT_THEME = {
+DEFAULT_THEME: Dict[str, str] = {
     "primary": "#158c68",      # Green
     "secondary": "#a7f3d0",    # Light green
     "background": "#171717",   # Very dark grey

@@ -11,34 +11,34 @@ class MainMenu(Screen):
             with Vertical(classes="card"):
                 yield Static("Select an option:", classes="menu-title")
                 with Grid(id="menu_grid"):
-                    yield Button("Load Blueprint", id="load_blueprint")
-                    yield Button("Create Blueprint", id="create_blueprint")
-                    yield Button("Live Assistance", id="live_assistance")
-                    yield Button("Settings", id="settings")
-                    yield Button("Smart Mode", id="smart_mode")
-                    yield Button("Quit", id="quit")
+                    yield Button("📂 Load Blueprint", id="load_blueprint")
+                    yield Button("➕ Create Blueprint", id="create_blueprint")
+                    yield Button("🎥 Live Assistance", id="live_assistance")
+                    yield Button("⚙️ Settings", id="settings")
+                    yield Button("🧠 Smart Mode", id="smart_mode")
+                    yield Button("🚪 Quit", id="quit")
         yield Footer()
 
-    async def load_blueprint(self):
+    async def load_blueprint(self) -> None:
         # Placeholder
         self.app.notify("Loading Blueprint...")
 
-    async def create_blueprint(self):
+    async def create_blueprint(self) -> None:
         self.app.notify("Creating Blueprint...")
 
-    async def live_assistance(self):
+    async def live_assistance(self) -> None:
         self.app.notify("Live Assistance Activated")
 
-    async def open_settings(self):
+    async def open_settings(self) -> None:
         await self.app.push_screen("settings")
 
-    async def smart_mode(self):
+    async def smart_mode(self) -> None:
         await self.app.push_screen("smart_mode")
 
-    async def quit_app(self):
+    async def quit_app(self) -> None:
         self.app.exit()
 
-    async def on_button_pressed(self, event):
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "load_blueprint":
             await self.load_blueprint()
         elif event.button.id == "create_blueprint":

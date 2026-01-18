@@ -1,12 +1,17 @@
 import re
+from typing import List
+
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Static, Button, Input
+
 from src.config import HARD_CODED_STATS
+
 
 def is_valid_hex_color(color: str) -> bool:
     """Validate hex color format (e.g., #2563eb or #0f8)."""
     return bool(re.match(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', color))
+
 
 class SettingsScreen(Screen):
     """Settings screen with professional card-based layout."""
@@ -33,7 +38,7 @@ class SettingsScreen(Screen):
                     self.bg_input = Input(value=self.app.custom_theme.get("background", "#171717"), placeholder="#171717", id="bg_color")
                     yield self.bg_input
 
-                    yield Button("Apply Theme", id="apply_theme")
+                    yield Button("🎨 Apply Theme", id="apply_theme")
 
                 # Stats and Profile sections - horizontal on large screens
                 with Horizontal():
@@ -44,11 +49,11 @@ class SettingsScreen(Screen):
 
                     with Vertical(classes="card"):
                         yield Static("Profile", classes="section-title")
-                        yield Button("Edit Profile", id="edit_profile")
-                        yield Button("Back to Main", id="back_main")
+                        yield Button("✏️ Edit Profile", id="edit_profile")
+                        yield Button("🏠 Back to Main", id="back_main")
         yield Footer()
 
-    async def on_button_pressed(self, event):
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "apply_theme":
             # Get values
             primary = self.primary_input.value or "#158c68"
@@ -56,7 +61,7 @@ class SettingsScreen(Screen):
             bg = self.bg_input.value or "#171717"
 
             # Validate hex if provided, else accept as color name
-            invalid = []
+            invalid: List[str] = []
             if primary.startswith('#') and not is_valid_hex_color(primary):
                 invalid.append("Primary")
             if secondary.startswith('#') and not is_valid_hex_color(secondary):
