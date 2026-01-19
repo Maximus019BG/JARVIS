@@ -5,7 +5,6 @@ description = "JARVIS hardware part"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "textual>=7.0.1",
     "ollama>=0.3.0",
     "aiohttp>=3.9.0",
     "jinja2>=3.0.0",
@@ -15,7 +14,8 @@ dependencies = [
 dev = [
     "pyinstaller>=6.17.0",
     "ruff>=0.1.0",
-    "libsass>=0.23.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
 
 [tool.ruff]
@@ -24,7 +24,7 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
-ignore = ["E203", "E501", "W503"]
+ignore = ["E203", "E501", "E402", "F401"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -1,6 +1,6 @@
-# JARVIS TUI App
+# JARVIS Hardware App
 
-A futuristic Text User Interface (TUI) for controlling hardware operations.
+A chat-driven hardware app using a natural language interface with AI and tools for controlling hardware operations.
 
 > ⚠️ **Build Tool Requirement**
 >
@@ -14,33 +14,34 @@ A futuristic Text User Interface (TUI) for controlling hardware operations.
 
 ```
 hardware/
-├── app.py              # Main entry point
-├── styles.css          # CSS styling
-├── requirements.txt    # Dependencies
+├── app.py              # Main entry point - chat handler
+├── pyproject.toml      # Project dependencies and configuration
+├── uv.lock             # Locked dependencies
 ├── README.md           # This file
-└── src/
-    ├── __init__.py
-    ├── config.py       # Constants like stats and theme
-    ├── screens/
-    │   ├── __init__.py
-    │   ├── main_menu.py
-    │   ├── settings.py
-    │   └── profile.py
-    └── widgets/
-        ├── __init__.py
-        └── menu_button.py
+├── build.sh            # Build script for executable
+├── core/               # Core modules
+│   ├── chat_handler.py # Handles chat interactions
+│   ├── tool_registry.py# Registry for tools
+│   └── ...
+├── tools/              # Available tools
+│   ├── help_tool.py
+│   ├── load_blueprint_tool.py
+│   └── ...
+├── data/               # Data storage
+│   └── blueprints/
+└── logging/            # Logging directory
 ```
 
 ## Features
 
-- Main menu with buttons for Load Blueprint, Create Blueprint, Live Assistance, Settings, Smart Mode.
-- Smart Mode: Interactive chat interface with Llama 3 3B AI model for intelligent assistance.
-- Settings menu with:
-  - Customizable theme (primary, secondary, background colors).
-  - Hardcoded system stats display.
-  - Profile submenu for editing name and email.
-- Modular design for easy addition of more buttons and menus.
-- Futuristic styling with neon colors and animations.
+- Natural language chat interface for hardware control.
+- Modular tool system for various operations:
+  - Help: Display available commands
+  - Load/Save Blueprints: Manage hardware blueprints
+  - Live Assistance: Real-time help
+  - Smart Mode: AI-powered assistance
+  - Theme and Profile management
+- Extensible architecture for adding new tools.
 
 ## Installation
 
@@ -70,17 +71,13 @@ Note: Requires PyInstaller. The build folder contains the output.
 
 ## Usage
 
-Navigate with keyboard arrows and Enter. Use Tab to switch between elements.
+Start the app with `python app.py` and interact via natural language commands. Type 'help' to see available tools.
 
 ## Extending
 
-To add more buttons, edit the `menu_items` list in `src/screens/main_menu.py`.
+To add new tools, create a new tool class in `tools/`, inheriting from the base tool class, and register it in `app.py`.
 
-To add more screens, use the generation script: `python generate_screen.py <screen_name>`, then import and add to `HardwareApp.SCREENS` in `app.py`.
-
-Alternatively, create a new screen file in `src/screens/`, import it in `app.py`, and add to `HardwareApp.SCREENS`.
-
-To add widgets, place in `src/widgets/`.
+See existing tools for examples.
 
 ## Development with Roo
 

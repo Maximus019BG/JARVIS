@@ -1,40 +1,50 @@
 #!/usr/bin/env python3
 """
-Futuristic TUI for Hardware App
-Using Textual library for rich terminal UI.
+Chat-driven Hardware App
+Replaces the TUI with a natural language interface using AI and tools.
 """
 
-from typing import Dict
+try:
+    from core.chat_handler import ChatHandler
+    from core.tool_registry import ToolRegistry
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Please ensure all dependencies are installed.")
+    exit(1)
+from tools.apply_theme_tool import ApplyThemeTool
+from tools.create_blueprint_tool import CreateBlueprintTool
+from tools.edit_profile_tool import EditProfileTool
+from tools.help_tool import HelpTool
+from tools.live_assistance_tool import LiveAssistanceTool
+from tools.load_blueprint_tool import LoadBlueprintTool
+from tools.quit_tool import QuitTool
+from tools.save_profile_tool import SaveProfileTool
+from tools.smart_mode_tool import SmartModeTool
+from tools.view_stats_tool import ViewStatsTool
 
-from textual.app import App
 
-from src.config import DEFAULT_THEME
-from src.screens.main_menu import MainMenu
-from src.screens.settings import SettingsScreen
-from src.screens.profile import ProfileScreen
-from src.screens.smart_mode import SmartModeScreen
+def main():
+    # Initialize tool registry
+    registry = ToolRegistry()
 
+    # Register tools
+    registry.register_tool(HelpTool(registry))
+    registry.register_tool(LoadBlueprintTool())
+    registry.register_tool(CreateBlueprintTool())
+    registry.register_tool(LiveAssistanceTool())
+    registry.register_tool(SmartModeTool())
+    registry.register_tool(ApplyThemeTool())
+    registry.register_tool(ViewStatsTool())
+    registry.register_tool(EditProfileTool())
+    registry.register_tool(SaveProfileTool())
+    registry.register_tool(QuitTool())
 
-class HardwareApp(App):
-    """Main app."""
+    # Initialize chat handler
+    chat_handler = ChatHandler(registry)
 
-    CSS_PATH = "styles.tcss"
+    # Start chat
+    chat_handler.start_chat()
 
-    SCREENS = {
-        "main": MainMenu,
-        "settings": SettingsScreen,
-        "profile": ProfileScreen,
-        "smart_mode": SmartModeScreen,
-    }
-
-    def __init__(self) -> None:
-        super().__init__()
-        # Custom theme dict for reference
-        self.custom_theme: Dict[str, str] = DEFAULT_THEME.copy()
-
-    def on_mount(self) -> None:
-        self.push_screen("main")
 
 if __name__ == "__main__":
-    app = HardwareApp()
-    app.run()
+    main()
