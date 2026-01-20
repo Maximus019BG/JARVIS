@@ -32,12 +32,8 @@ class TestChatHandler:
             "function": {
                 "name": "test_tool",
                 "description": "Test tool",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
         }
         registry.register_tool(mock_tool)
 
@@ -64,10 +60,7 @@ class TestChatHandler:
         """Test successful tool execution."""
         tool_call = {
             "id": "call_1",
-            "function": {
-                "name": "test_tool",
-                "arguments": "{}"
-            }
+            "function": {"name": "test_tool", "arguments": "{}"},
         }
         result = chat_handler.execute_tool_call(tool_call)
         assert result == "Tool executed"
@@ -76,10 +69,7 @@ class TestChatHandler:
         """Test tool execution with error."""
         tool_call = {
             "id": "call_1",
-            "function": {
-                "name": "nonexistent_tool",
-                "arguments": "{}"
-            }
+            "function": {"name": "nonexistent_tool", "arguments": "{}"},
         }
         result = chat_handler.execute_tool_call(tool_call)
         assert "Error executing tool" in result

@@ -27,12 +27,13 @@ class LoadBlueprintTool(BaseTool):
             return f"Blueprint '{blueprint_name}' not found."
 
         try:
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 data: Dict[str, Any] = json.load(f)
 
             # Apply theme if present
             if "theme" in data:
                 from config.config import current_theme
+
                 current_theme.update(data["theme"])
 
             # Profile could be handled similarly if there's a current_profile
@@ -47,7 +48,7 @@ class LoadBlueprintTool(BaseTool):
         schema["function"]["parameters"]["properties"] = {
             "blueprint_name": {
                 "type": "string",
-                "description": "The name of the blueprint to load"
+                "description": "The name of the blueprint to load",
             }
         }
         schema["function"]["parameters"]["required"] = ["blueprint_name"]

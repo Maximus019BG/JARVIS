@@ -21,9 +21,11 @@ class ViewStatsTool(BaseTool):
     def _get_cpu_usage(self) -> str:
         """Get CPU usage percentage."""
         try:
-            result = subprocess.run(['top', '-bn1'], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                ["top", "-bn1"], capture_output=True, text=True, timeout=10
+            )
             # Parse CPU usage from top output
-            match = re.search(r'%Cpu\(s\):\s+([\d.]+)', result.stdout)
+            match = re.search(r"%Cpu\(s\):\s+([\d.]+)", result.stdout)
             if match:
                 return f"{match.group(1)}%"
         except (subprocess.SubprocessError, subprocess.TimeoutExpired):
@@ -33,8 +35,8 @@ class ViewStatsTool(BaseTool):
     def _get_memory_usage(self) -> str:
         """Get memory usage."""
         try:
-            result = subprocess.run(['free', '-h'], capture_output=True, text=True)
-            lines = result.stdout.strip().split('\n')
+            result = subprocess.run(["free", "-h"], capture_output=True, text=True)
+            lines = result.stdout.strip().split("\n")
             if len(lines) >= 2:
                 mem_line = lines[1].split()
                 if len(mem_line) >= 7:
@@ -49,7 +51,7 @@ class ViewStatsTool(BaseTool):
         """Get system temperature."""
         try:
             # Try to read from thermal zones
-            with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
                 temp_milli = int(f.read().strip())
                 temp_c = temp_milli / 1000
                 return f"{temp_c:.1f}°C"
@@ -60,7 +62,7 @@ class ViewStatsTool(BaseTool):
     def _get_uptime(self) -> str:
         """Get system uptime."""
         try:
-            result = subprocess.run(['uptime', '-p'], capture_output=True, text=True)
+            result = subprocess.run(["uptime", "-p"], capture_output=True, text=True)
             return result.stdout.strip()
         except subprocess.SubprocessError:
             pass
@@ -79,7 +81,7 @@ class ViewStatsTool(BaseTool):
             "CPU Usage": self._get_cpu_usage(),
             "Memory Usage": self._get_memory_usage(),
             "Temperature": self._get_temperature(),
-            "Uptime": self._get_uptime()
+            "Uptime": self._get_uptime(),
         }
 
     def get_schema(self) -> Dict:

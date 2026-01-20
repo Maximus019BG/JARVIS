@@ -28,12 +28,10 @@ class TestToolRegistry:
                 "description": "Mock tool for testing",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "param1": {"type": "string"}
-                    },
-                    "required": ["param1"]
-                }
-            }
+                    "properties": {"param1": {"type": "string"}},
+                    "required": ["param1"],
+                },
+            },
         }
         return tool
 

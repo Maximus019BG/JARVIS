@@ -9,7 +9,7 @@ from core.data_utils import load_profile, save_profile
 
 def is_valid_email(email: str) -> bool:
     """Basic email validation."""
-    return bool(re.match(r'^[^@]+@[^@]+\.[^@]+$', email))
+    return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
 
 
 class EditProfileTool(BaseTool):
@@ -49,14 +49,8 @@ class EditProfileTool(BaseTool):
     def get_schema(self) -> Dict:
         schema = super().get_schema()
         schema["function"]["parameters"]["properties"] = {
-            "name": {
-                "type": "string",
-                "description": "User's name"
-            },
-            "email": {
-                "type": "string",
-                "description": "User's email address"
-            }
+            "name": {"type": "string", "description": "User's name"},
+            "email": {"type": "string", "description": "User's email address"},
         }
         schema["function"]["parameters"]["required"] = []
         return schema

@@ -7,7 +7,7 @@ DEFAULT_THEME: Dict[str, str] = {
     "secondary_color": "#6c757d",
     "background_color": "#ffffff",
     "text_color": "#000000",
-    "accent_color": "#28a745"
+    "accent_color": "#28a745",
 }
 
 current_theme = DEFAULT_THEME.copy()

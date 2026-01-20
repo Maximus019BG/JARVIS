@@ -1,10 +1,12 @@
 """Tool to create new blueprints."""
 
-import json
-import os
-from typing import Any, Dict
+from __future__ import annotations
 
-from core.base_tool import BaseTool
+import json
+from pathlib import Path
+from typing import Any
+
+from hardware.core.base_tool import BaseTool
 
 
 class CreateBlueprintTool(BaseTool):
@@ -18,49 +20,54 @@ class CreateBlueprintTool(BaseTool):
     def description(self) -> str:
         return "Creates a new blueprint with the given name and optional configuration."
 
-    def execute(self, blueprint_name: str = "", theme: Dict[str, str] = None, profile: Dict[str, str] = None) -> str:
-        if not blueprint_name:
+    def execute(
+        self,
+        blueprint_name: str = "",
+        theme: dict[str, str] | None = None,
+        profile: dict[str, str] | None = None,
+    ) -> str:
+        name = blueprint_name.strip()
+        if not name:
             return "Please specify a blueprint name to create."
 
-        # Use defaults if not provided
+        # Use defaults if not provided.
         if theme is None:
-            from config.config import DEFAULT_THEME
+            # Keep backwards compatibility with existing config module.
+            from hardware.config.config import DEFAULT_THEME
+
             theme = DEFAULT_THEME
         if profile is None:
             profile = {}
 
-        data: Dict[str, Any] = {
-            "theme": theme,
-            "profile": profile
-        }
+        data: dict[str, Any] = {"theme": theme, "profile": profile}
 
-        path = f"data/blueprints/{blueprint_name}.json"
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        path = Path("data") / "blueprints" / f"{name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            with open(path, 'w') as f:
-                json.dump(data, f, indent=4)
-            return f"Blueprint '{blueprint_name}' created successfully."
-        except Exception as e:
-            return f"Failed to create blueprint '{blueprint_name}': {str(e)}"
+            path.write_text(json.dumps(data, indent=4), encoding="utf-8")
+            return f"Blueprint '{name}' created successfully."
+        except Exception as exc:
+            return f"Failed to create blueprint '{name}': {exc}"
 
-    def get_schema(self) -> Dict:
-        schema = super().get_schema()
-        schema["function"]["parameters"]["properties"] = {
-            "blueprint_name": {
-                "type": "string",
-                "description": "The name of the blueprint to create"
+    def schema_parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "blueprint_name": {
+                    "type": "string",
+                    "description": "The name of the blueprint to create",
+                },
+                "theme": {
+                    "type": "object",
+                    "description": "Theme configuration as a dictionary of color values",
+                    "additionalProperties": {"type": "string"},
+                },
+                "profile": {
+                    "type": "object",
+                    "description": "Profile configuration as a dictionary",
+                    "additionalProperties": {"type": "string"},
+                },
             },
-            "theme": {
-                "type": "object",
-                "description": "Theme configuration as a dictionary of color values",
-                "additionalProperties": {"type": "string"}
-            },
-            "profile": {
-                "type": "object",
-                "description": "Profile configuration as a dictionary",
-                "additionalProperties": {"type": "string"}
-            }
+            "required": ["blueprint_name"],
         }
-        schema["function"]["parameters"]["required"] = ["blueprint_name"]
-        return schema

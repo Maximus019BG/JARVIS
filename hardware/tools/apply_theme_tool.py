@@ -21,7 +21,7 @@ DEFAULT_THEME = {
 
 def is_valid_hex_color(color: str) -> bool:
     """Validate hex color format (e.g., #2563eb or #0f8)."""
-    return bool(re.match(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$', color))
+    return bool(re.match(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$", color))
 
 
 class ApplyThemeTool(BaseTool):
@@ -35,7 +35,9 @@ class ApplyThemeTool(BaseTool):
     def description(self) -> str:
         return "Applies a new theme with specified colors."
 
-    def execute(self, primary: str = "", secondary: str = "", background: str = "") -> str:
+    def execute(
+        self, primary: str = "", secondary: str = "", background: str = ""
+    ) -> str:
         if not primary and not secondary and not background:
             return "Please specify at least one color to change."
 
@@ -44,11 +46,19 @@ class ApplyThemeTool(BaseTool):
 
         # Validate hex colors if provided
         invalid: List[str] = []
-        if primary and primary.startswith('#') and not is_valid_hex_color(primary):
+        if primary and primary.startswith("#") and not is_valid_hex_color(primary):
             invalid.append("Primary")
-        if secondary and secondary.startswith('#') and not is_valid_hex_color(secondary):
+        if (
+            secondary
+            and secondary.startswith("#")
+            and not is_valid_hex_color(secondary)
+        ):
             invalid.append("Secondary")
-        if background and background.startswith('#') and not is_valid_hex_color(background):
+        if (
+            background
+            and background.startswith("#")
+            and not is_valid_hex_color(background)
+        ):
             invalid.append("Background")
 
         if invalid:
@@ -78,16 +88,16 @@ class ApplyThemeTool(BaseTool):
         schema["function"]["parameters"]["properties"] = {
             "primary": {
                 "type": "string",
-                "description": "Primary color (hex like #2563eb or color name)"
+                "description": "Primary color (hex like #2563eb or color name)",
             },
             "secondary": {
                 "type": "string",
-                "description": "Secondary color (hex like #2563eb or color name)"
+                "description": "Secondary color (hex like #2563eb or color name)",
             },
             "background": {
                 "type": "string",
-                "description": "Background color (hex like #2563eb or color name)"
-            }
+                "description": "Background color (hex like #2563eb or color name)",
+            },
         }
         schema["function"]["parameters"]["required"] = []
         return schema
