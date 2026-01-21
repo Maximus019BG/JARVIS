@@ -1,21 +1,43 @@
 [project]
 name = "hardware"
-version = "0.1.0"
-description = "JARVIS hardware part"
+version = "0.2.0"
+description = "JARVIS hardware part - AI-powered chat agent with tool calling"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "ollama>=0.3.0",
-    "aiohttp>=3.9.0",
-    "jinja2>=3.0.0",
+    # LLM Providers
+    "ollama>=0.4.0",
+    "google-generativeai>=0.8.0",
+    # Async & Web
+    "aiohttp>=3.11.0",
+    "aiofiles>=24.1.0",
+    # TTS Engines
+    "pyttsx3>=2.98",
+    "gTTS>=2.5.0",
+    "pygame>=2.6.0",
+    # Configuration & Environment
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    # Templating & Utils
+    "jinja2>=3.1.0",
 ]
+
+[project.scripts]
+jarvis = "app:main"
+
+# For editable install to work, the package is just this directory
+# Running tests should use: python -m pytest
+# Running the app: python -m app
 
 [dependency-groups]
 dev = [
     "pyinstaller>=6.17.0",
-    "ruff>=0.1.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
+    "ruff>=0.8.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=6.0.0",
 ]
 
 [tool.ruff]

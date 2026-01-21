@@ -1,33 +1,82 @@
-"""Chat handler for managing user interactions and tool calls."""
+"""Chat handler for managing user interactions and tool calls.
+
+Supports:
+- Multiple LLM providers (Google AI, Ollama)
+- Tool calling with automatic execution
+- Text-to-Speech output
+- Conversation memory
+"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from hardware.app_logging.logger import get_logger
-from hardware.core.base_tool import ToolError
-from hardware.core.llm.llama_wrapper import LlamaWrapper
-from hardware.core.memory.conversation_memory import ConversationMemory
-from hardware.core.tool_registry import ToolNotFoundError, ToolRegistry
+from app_logging.logger import get_logger
+from core.base_tool import ToolError
+from core.memory.conversation_memory import ConversationMemory
+from core.tool_registry import ToolNotFoundError, ToolRegistry
+
+if TYPE_CHECKING:
+    from core.llm.provider_factory import LLMProvider
+    from core.tts.engine import TTSEngine
 
 logger = get_logger(__name__)
 
 
 class ChatHandler:
-    """Handles the chat interface and AI interactions."""
+    """Handles the chat interface and AI interactions.
 
-    def __init__(self, tool_registry: ToolRegistry, llm: Any | None = None) -> None:
+    Supports:
+    - Multiple LLM providers via dependency injection
+    - Text-to-Speech for response output
+    - Tool calling with the registered tool registry
+    """
+
+    def __init__(
+        self,
+        tool_registry: ToolRegistry,
+        llm: LLMProvider | None = None,
+        tts_engine: TTSEngine | None = None,
+        enable_tts: bool = True,
+    ) -> None:
         self.tool_registry = tool_registry
-        self.llm = llm or LlamaWrapper()
+        self._llm = llm
+        self._tts = tts_engine
+        self._enable_tts = enable_tts
         self.memory = ConversationMemory()
+
+    @property
+    def llm(self) -> LLMProvider:
+        """Lazy-load LLM provider."""
+        if self._llm is None:
+            from core.llm.provider_factory import LLMProviderFactory
+
+            self._llm = LLMProviderFactory.create_with_fallback()
+        return self._llm
+
+    @property
+    def tts(self) -> TTSEngine | None:
+        """Lazy-load TTS engine."""
+        if self._tts is None and self._enable_tts:
+            try:
+                from core.tts.engine import TTSEngineFactory
+
+                self._tts = TTSEngineFactory.create_with_fallback()
+            except Exception as e:
+                logger.warning("Failed to initialize TTS: %s", e)
+                self._enable_tts = False
+        return self._tts
 
     def start_chat(self) -> None:
         """Start the chat loop."""
-
         logger.info("Starting Hardware Control Chat")
         print("Welcome to Hardware Control Chat! Type 'quit' to exit.")
+
+        # Announce startup with TTS
+        self._speak_sync("Hardware Control Chat initialized. How can I help you?")
 
         while True:
             try:
@@ -41,6 +90,7 @@ class ChatHandler:
 
             if user_input.strip().lower() == "quit":
                 logger.info("User quit the chat")
+                self._speak_async("Goodbye!")
                 break
 
             try:
@@ -51,9 +101,39 @@ class ChatHandler:
 
             print(f"Assistant: {response}")
 
+            # Speak the response
+            self._speak_sync(response)
+
+    def _speak_sync(self, text: str) -> None:
+        """Trigger TTS synchronously."""
+        if not self._enable_tts or not self.tts:
+            return
+
+        try:
+            # Use synchronous speak if available
+            if hasattr(self.tts, 'speak_sync'):
+                self.tts.speak_sync(text)
+            else:
+                # Fallback to async (not recommended in sync context)
+                import asyncio
+                asyncio.run(self.tts.speak(text))
+        except Exception as e:
+            logger.debug("TTS failed: %s", e)
+
+    async def speak(self, text: str) -> None:
+        """Speak text using TTS engine.
+
+        Args:
+            text: Text to speak.
+        """
+        if self.tts and self._enable_tts:
+            try:
+                await self.tts.speak(text)
+            except Exception as e:
+                logger.warning("TTS speak failed: %s", e)
+
     def process_message(self, message: str) -> str:
         """Process user message and return response using AI with tool calling."""
-
         start_time = time.time()
         try:
             tools = self.tool_registry.get_tool_schemas()

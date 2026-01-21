@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
-from hardware.core.chat_handler import ChatHandler
-from hardware.core.tool_registry import ToolRegistry
-from hardware.tests.mock_llm import MockLlamaWrapper
-from hardware.tools.create_blueprint_tool import CreateBlueprintTool
-from hardware.tools.help_tool import HelpTool
+from core.chat_handler import ChatHandler
+from core.tool_registry import ToolRegistry
+from tests.mock_llm import MockLlamaWrapper
+from tools.create_blueprint_tool import CreateBlueprintTool
+from tools.help_tool import HelpTool
 
 
 def test_end_to_end() -> None:

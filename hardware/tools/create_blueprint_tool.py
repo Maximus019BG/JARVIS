@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from hardware.core.base_tool import BaseTool
+from core.base_tool import BaseTool
 
 
 class CreateBlueprintTool(BaseTool):
@@ -33,7 +33,7 @@ class CreateBlueprintTool(BaseTool):
         # Use defaults if not provided.
         if theme is None:
             # Keep backwards compatibility with existing config module.
-            from hardware.config.config import DEFAULT_THEME
+            from config.config import DEFAULT_THEME
 
             theme = DEFAULT_THEME
         if profile is None:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from hardware.core.base_tool import BaseTool
-from hardware.core.tool_registry import ToolRegistry
+from core.base_tool import BaseTool
+from core.tool_registry import ToolRegistry
 
 
 class HelpTool(BaseTool):

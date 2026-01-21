@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from hardware.core.base_tool import BaseTool
+from core.base_tool import BaseTool
 
 
 class ToolNotFoundError(KeyError):
