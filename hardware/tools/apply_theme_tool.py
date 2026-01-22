@@ -1,8 +1,11 @@
 """Tool to apply theme changes."""
 
-import re
-from typing import Dict, List
+from __future__ import annotations
 
+# Standard library imports
+import re
+
+# Local application imports
 from core.base_tool import BaseTool
 from core.data_utils import load_theme, save_theme
 
@@ -45,7 +48,7 @@ class ApplyThemeTool(BaseTool):
         current_theme = load_theme()
 
         # Validate hex colors if provided
-        invalid: List[str] = []
+        invalid: list[str] = []
         if primary and primary.startswith("#") and not is_valid_hex_color(primary):
             invalid.append("Primary")
         if (
@@ -83,7 +86,7 @@ class ApplyThemeTool(BaseTool):
 
         return f"Theme applied and saved: Primary {primary or 'unchanged'}, Secondary {secondary or 'unchanged'}, Background {background or 'unchanged'}."
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         schema = super().get_schema()
         schema["function"]["parameters"]["properties"] = {
             "primary": {

@@ -23,6 +23,14 @@ class HelpTool(BaseTool):
         return "Provides information about available tools and their usage."
 
     def execute(self, **kwargs: Any) -> str:
+        """Execute the help tool.
+
+        Args:
+            **kwargs: Unused parameters (kept for interface compatibility).
+
+        Returns:
+            A formatted string listing all available tools and their descriptions.
+        """
         tools = self.tool_registry.get_all_tools()
         lines = ["Available tools:"]
         for tool in tools:

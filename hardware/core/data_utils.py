@@ -1,8 +1,10 @@
 """Data persistence utilities for themes and profiles."""
 
+from __future__ import annotations
+
+# Standard library imports
 import json
 import os
-from typing import Any, Dict
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 THEME_FILE = os.path.join(DATA_DIR, "theme.json")
@@ -14,7 +16,7 @@ def ensure_data_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def load_theme() -> Dict[str, str]:
+def load_theme() -> dict[str, str]:
     """Load custom theme from file."""
     ensure_data_dir()
     if os.path.exists(THEME_FILE):
@@ -38,14 +40,14 @@ def load_theme() -> Dict[str, str]:
     return DEFAULT_THEME.copy()
 
 
-def save_theme(theme: Dict[str, str]) -> None:
+def save_theme(theme: dict[str, str]) -> None:
     """Save custom theme to file."""
     ensure_data_dir()
     with open(THEME_FILE, "w") as f:
         json.dump(theme, f, indent=2)
 
 
-def load_profile() -> Dict[str, str]:
+def load_profile() -> dict[str, str]:
     """Load user profile from file."""
     ensure_data_dir()
     if os.path.exists(PROFILE_FILE):
@@ -58,7 +60,7 @@ def load_profile() -> Dict[str, str]:
     return {"name": "", "email": ""}
 
 
-def save_profile(profile: Dict[str, str]) -> None:
+def save_profile(profile: dict[str, str]) -> None:
     """Save user profile to file."""
     ensure_data_dir()
     with open(PROFILE_FILE, "w") as f:

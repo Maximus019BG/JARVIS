@@ -1,7 +1,8 @@
 """Tool to quit the application."""
 
-from typing import Dict
+from __future__ import annotations
 
+# Local application imports
 from core.base_tool import BaseTool
 
 
@@ -17,7 +18,15 @@ class QuitTool(BaseTool):
         return "Exits the application."
 
     def execute(self, **kwargs) -> str:
+        """Execute the quit tool.
+
+        Args:
+            **kwargs: Unused parameters (kept for interface compatibility).
+
+        Returns:
+            A message indicating the application is exiting.
+        """
         return "Exiting application (stub)."
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         return super().get_schema()

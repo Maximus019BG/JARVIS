@@ -47,8 +47,14 @@ class CreateBlueprintTool(BaseTool):
         try:
             path.write_text(json.dumps(data, indent=4), encoding="utf-8")
             return f"Blueprint '{name}' created successfully."
+        except PermissionError as exc:
+            return f"Failed to create blueprint '{name}': Permission denied - {exc}"
+        except OSError as exc:
+            return f"Failed to create blueprint '{name}': File system error - {exc}"
+        except (TypeError, ValueError) as exc:
+            return f"Failed to create blueprint '{name}': Invalid data format - {exc}"
         except Exception as exc:
-            return f"Failed to create blueprint '{name}': {exc}"
+            return f"Failed to create blueprint '{name}': Unexpected error - {exc}"
 
     def schema_parameters(self) -> dict[str, Any]:
         return {

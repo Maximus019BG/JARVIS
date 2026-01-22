@@ -6,6 +6,7 @@ and Gemini's function calling format.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app_logging.logger import get_logger
@@ -202,7 +203,7 @@ class GoogleAIWrapper:
 
         return result
 
-    def chat_with_tools(
+    async def chat_with_tools(
         self,
         message: str,
         tools: list[dict[str, Any]],
@@ -228,14 +229,18 @@ class GoogleAIWrapper:
             # Create chat session
             chat = self.model.start_chat(history=history)
 
-            # Send message with tools (synchronous)
+            # Send message with tools (run in thread pool since SDK is sync)
+            loop = asyncio.get_event_loop()
             if gemini_tools:
-                response = chat.send_message(
-                    message,
-                    tools=gemini_tools,
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: chat.send_message(message, tools=gemini_tools),
                 )
             else:
-                response = chat.send_message(message)
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: chat.send_message(message),
+                )
 
             return self._parse_response(response)
 
@@ -243,7 +248,7 @@ class GoogleAIWrapper:
             logger.exception("Error in Google AI chat")
             raise GoogleAIError(f"Google AI request failed: {e}") from e
 
-    def continue_conversation(
+    async def continue_conversation(
         self,
         tool_results: list[dict[str, Any]],
         conversation_history: list[dict[str, Any]],
@@ -286,10 +291,11 @@ class GoogleAIWrapper:
 
             chat = self.model.start_chat(history=history)
 
-            # Send function responses (synchronous)
-            response = chat.send_message(
-                function_response_parts,
-                tools=gemini_tools,
+            # Send function responses (run in thread pool since SDK is sync)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: chat.send_message(function_response_parts, tools=gemini_tools),
             )
 
             # Extract text from response

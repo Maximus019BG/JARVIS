@@ -1,5 +1,6 @@
 """Tests for ChatHandler."""
 
+import asyncio
 from unittest.mock import Mock
 
 import pytest
@@ -47,13 +48,13 @@ class TestChatHandler:
 
     def test_process_message_no_tools(self, chat_handler):
         """Test processing message without tool calls."""
-        response = chat_handler.process_message("Hello")
+        response = asyncio.run(chat_handler.process_message("Hello"))
         assert response == "Mock response"
         assert len(chat_handler.memory.get_history()) == 2  # user + assistant
 
     def test_process_message_with_tools(self, chat_handler):
         """Test processing message with tool calls."""
-        response = chat_handler.process_message("Please help")
+        response = asyncio.run(chat_handler.process_message("Please help"))
         assert "Tool result processed" in response
 
     def test_execute_tool_call_success(self, chat_handler, tool_registry):

@@ -6,9 +6,11 @@ Uses pydantic-settings for type-safe configuration with environment variable sup
 from __future__ import annotations
 
 import os
+import re
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 from typing import Annotated
 
 from pydantic import Field, SecretStr, field_validator
@@ -103,6 +105,9 @@ class SecurityConfig(BaseSettings):
     max_file_size_mb: int = 10
     enable_audit_log: bool = True
     audit_log_path: str = "audit.log"
+    # Rate limiting configuration
+    rate_limit_max_requests: int = Field(default=100, alias="RATE_LIMIT_MAX_REQUESTS")
+    rate_limit_window_seconds: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
 
     @property
     def allowed_paths(self) -> list[str]:
@@ -148,6 +153,9 @@ class AppConfig(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     data_dir: Path = Path("./data")
+    # Conversation memory configuration
+    conversation_max_messages: int = Field(default=50, alias="CONVERSATION_MAX_MESSAGES")
+    conversation_recent_messages: int = Field(default=10, alias="CONVERSATION_RECENT_MESSAGES")
 
     # Sub-configurations
     ai: AIConfig = Field(default_factory=AIConfig)
@@ -168,13 +176,176 @@ def get_config() -> AppConfig:
     return AppConfig()
 
 
-# Legacy compatibility
-DEFAULT_THEME: dict[str, str] = {
-    "primary_color": "#007bff",
-    "secondary_color": "#6c757d",
-    "background_color": "#ffffff",
-    "text_color": "#000000",
-    "accent_color": "#28a745",
-}
+class ThemeManager:
+    """Thread-safe manager for theme state with validation.
 
-current_theme = DEFAULT_THEME.copy()
+    Provides controlled access to theme settings with validation
+    and thread-safe operations.
+    """
+
+    # Default theme values
+    DEFAULT_THEME: dict[str, str] = {
+        "primary_color": "#007bff",
+        "secondary_color": "#6c757d",
+        "background_color": "#ffffff",
+        "text_color": "#000000",
+        "accent_color": "#28a745",
+    }
+
+    # Valid hex color pattern
+    HEX_COLOR_PATTERN = re.compile(r"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$")
+
+    def __init__(self) -> None:
+        """Initialize the theme manager with default theme."""
+        self._theme: dict[str, str] = self.DEFAULT_THEME.copy()
+        self._lock = Lock()
+
+    def get_theme(self) -> dict[str, str]:
+        """Get a copy of the current theme.
+
+        Returns:
+            A copy of the current theme dictionary.
+        """
+        with self._lock:
+            return self._theme.copy()
+
+    def set_theme(self, theme: dict[str, str]) -> None:
+        """Set the theme with validation.
+
+        Args:
+            theme: Dictionary of theme settings to apply.
+
+        Raises:
+            ValueError: If any color value is invalid.
+        """
+        # Validate all color values
+        for key, value in theme.items():
+            if not self._is_valid_color(value):
+                raise ValueError(
+                    f"Invalid color value for '{key}': {value}. "
+                    "Must be a valid hex color (e.g., #007bff or #0f8)."
+                )
+
+        with self._lock:
+            # Update theme with validated values
+            self._theme.update(theme)
+
+            # Ensure all default keys are present
+            for key, default_value in self.DEFAULT_THEME.items():
+                if key not in self._theme:
+                    self._theme[key] = default_value
+
+    def update_theme(self, updates: dict[str, str]) -> None:
+        """Update specific theme values with validation.
+
+        Args:
+            updates: Dictionary of theme settings to update.
+
+        Raises:
+            ValueError: If any color value is invalid.
+        """
+        self.set_theme(updates)
+
+    def reset_theme(self) -> None:
+        """Reset theme to default values."""
+        with self._lock:
+            self._theme = self.DEFAULT_THEME.copy()
+
+    def get_color(self, key: str) -> str:
+        """Get a specific color value.
+
+        Args:
+            key: The color key to retrieve.
+
+        Returns:
+            The color value, or default if key not found.
+        """
+        with self._lock:
+            return self._theme.get(key, self.DEFAULT_THEME.get(key, "#000000"))
+
+    @classmethod
+    def _is_valid_color(cls, color: str) -> bool:
+        """Validate a color value.
+
+        Args:
+            color: The color string to validate.
+
+        Returns:
+            True if the color is valid, False otherwise.
+        """
+        if not isinstance(color, str):
+            return False
+        return bool(cls.HEX_COLOR_PATTERN.match(color))
+
+
+# Global theme manager instance
+_theme_manager: ThemeManager | None = None
+_theme_lock = Lock()
+
+
+def get_theme_manager() -> ThemeManager:
+    """Get the global theme manager instance (thread-safe singleton)."""
+    global _theme_manager
+    with _theme_lock:
+        if _theme_manager is None:
+            _theme_manager = ThemeManager()
+        return _theme_manager
+
+
+# Legacy compatibility - provide backward compatible access
+# These functions delegate to the ThemeManager for backward compatibility
+def get_current_theme() -> dict[str, str]:
+    """Get the current theme (legacy compatibility)."""
+    return get_theme_manager().get_theme()
+
+
+def set_current_theme(theme: dict[str, str]) -> None:
+    """Set the current theme (legacy compatibility)."""
+    get_theme_manager().set_theme(theme)
+
+
+# For backward compatibility, expose current_theme as a property-like object
+class _ThemeProxy:
+    """Proxy object for backward compatibility with current_theme global."""
+
+    def __init__(self) -> None:
+        self._manager = get_theme_manager()
+
+    def copy(self) -> dict[str, str]:
+        """Return a copy of the current theme."""
+        return self._manager.get_theme()
+
+    def update(self, updates: dict[str, str]) -> None:
+        """Update the theme with new values."""
+        self._manager.update_theme(updates)
+
+    def __getitem__(self, key: str) -> str:
+        """Get a theme value by key."""
+        return self._manager.get_color(key)
+
+    def __setitem__(self, key: str, value: str) -> None:
+        """Set a theme value by key."""
+        self._manager.update_theme({key: value})
+
+    def get(self, key: str, default: str | None = None) -> str:
+        """Get a theme value with default."""
+        try:
+            return self._manager.get_color(key)
+        except (KeyError, AttributeError):
+            return default or "#000000"
+
+    def keys(self) -> list[str]:
+        """Get all theme keys."""
+        return list(self._manager.get_theme().keys())
+
+    def values(self) -> list[str]:
+        """Get all theme values."""
+        return list(self._manager.get_theme().values())
+
+    def items(self) -> list[tuple[str, str]]:
+        """Get all theme items."""
+        return list(self._manager.get_theme().items())
+
+
+# Create the legacy-compatible proxy
+current_theme = _ThemeProxy()

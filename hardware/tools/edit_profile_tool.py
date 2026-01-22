@@ -1,15 +1,11 @@
 """Tool to edit user profile."""
 
-import re
-from typing import Dict
+from __future__ import annotations
 
+# Local application imports
 from core.base_tool import BaseTool
 from core.data_utils import load_profile, save_profile
-
-
-def is_valid_email(email: str) -> bool:
-    """Basic email validation."""
-    return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
+from core.utils import is_valid_email
 
 
 class EditProfileTool(BaseTool):
@@ -46,7 +42,7 @@ class EditProfileTool(BaseTool):
 
         return f"Profile updated and saved: Name '{name or 'unchanged'}', Email '{email or 'unchanged'}'."
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         schema = super().get_schema()
         schema["function"]["parameters"]["properties"] = {
             "name": {"type": "string", "description": "User's name"},

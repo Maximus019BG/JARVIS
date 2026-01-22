@@ -25,6 +25,24 @@ logger = get_logger(__name__)
 class PluginError(Exception):
     """Raised when plugin loading fails."""
 
+    def __init__(self, message: str, errors: list[tuple[str, str]] | None = None) -> None:
+        """Initialize the plugin error.
+
+        Args:
+            message: The error message.
+            errors: Optional list of (tool_name, error_message) tuples.
+        """
+        super().__init__(message)
+        self.errors = errors or []
+
+    def __str__(self) -> str:
+        """Return a detailed error message."""
+        if not self.errors:
+            return super().__str__()
+
+        error_details = "\n".join(f"  - {name}: {msg}" for name, msg in self.errors)
+        return f"{super().__str__()}\nFailed tools:\n{error_details}"
+
 
 class ExternalToolConnector:
     """Connector for loading and managing external tool plugins.
@@ -112,20 +130,49 @@ class ExternalToolConnector:
                 f"TOOLS must be a list or tuple: {path}"
             )
 
-        # Register tools
+        # Register tools, collecting any errors
         registered_names: list[str] = []
+        registration_errors: list[tuple[str, str]] = []
+
         for tool_class in tools_list:
             try:
                 tool_instance = self._instantiate_tool(tool_class)
                 self._register_tool(tool_instance)
                 registered_names.append(tool_instance.name)
             except Exception as e:
+                tool_name = getattr(tool_class, "__name__", str(tool_class))
+                error_msg = f"{type(e).__name__}: {e}"
+                registration_errors.append((tool_name, error_msg))
                 logger.error(
                     "Failed to register tool %s from %s: %s",
-                    tool_class,
+                    tool_name,
                     path,
                     e,
                 )
+
+        # If there were registration errors, raise a summary exception
+        if registration_errors:
+            # Rollback: unregister any tools that were successfully registered
+            for name in registered_names:
+                try:
+                    self.registry.unregister_tool(name)
+                    if name in self.connected_tools:
+                        del self.connected_tools[name]
+                except Exception as e:
+                    logger.warning("Failed to rollback tool %s: %s", name, e)
+
+            error = PluginError(
+                f"Failed to load plugin {path}: {len(registration_errors)} tool(s) failed to register",
+                registration_errors,
+            )
+            self.security.audit_log(
+                "plugin_loading_failed",
+                {
+                    "path": str(path),
+                    "errors": registration_errors,
+                },
+            )
+            raise error
 
         # Track loaded plugin
         self._loaded_plugins[str(path)] = plugin_module
@@ -232,14 +279,21 @@ class ExternalToolConnector:
         logger.info("Unloaded plugin: %s", path)
         return removed_names
 
-    def load_plugins_from_directory(self, directory: str | Path) -> dict[str, list[str]]:
+    def load_plugins_from_directory(
+        self, directory: str | Path, fail_fast: bool = False
+    ) -> dict[str, list[str]]:
         """Load all plugin files from a directory.
 
         Args:
             directory: Directory containing plugin files.
+            fail_fast: If True, stop on first error. If False, continue loading
+                      other plugins and collect all errors.
 
         Returns:
             Dict mapping plugin paths to lists of registered tool names.
+
+        Raises:
+            PluginError: If any plugins failed to load (with details about all failures).
         """
         dir_path = Path(directory)
 
@@ -247,6 +301,7 @@ class ExternalToolConnector:
             raise PluginError(f"Not a directory: {directory}")
 
         results: dict[str, list[str]] = {}
+        all_errors: list[tuple[str, str]] = []
 
         for plugin_file in dir_path.glob("*.py"):
             # Skip files starting with underscore
@@ -257,8 +312,20 @@ class ExternalToolConnector:
                 tools = self.connect_plugin(plugin_file)
                 results[str(plugin_file)] = tools
             except PluginError as e:
+                error_msg = f"{type(e).__name__}: {e}"
+                all_errors.append((str(plugin_file), error_msg))
                 logger.error("Failed to load plugin %s: %s", plugin_file, e)
                 results[str(plugin_file)] = []
+
+                if fail_fast:
+                    break
+
+        # If there were any errors and fail_fast is False, raise a summary
+        if all_errors and not fail_fast:
+            raise PluginError(
+                f"Failed to load {len(all_errors)} plugin(s) from {directory}",
+                all_errors,
+            )
 
         return results
 

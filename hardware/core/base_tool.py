@@ -52,7 +52,14 @@ class BaseTool(ABC):
 
     @abstractmethod
     def execute(self, **kwargs: Any) -> str:
-        """Execute the tool with given parameters."""
+        """Execute the tool with given parameters.
+
+        Args:
+            **kwargs: Tool-specific parameters as defined in the tool's schema.
+
+        Returns:
+            The result of the tool execution as a string.
+        """
 
     # ---- schema helpers ----
 

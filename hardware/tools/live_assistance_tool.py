@@ -1,7 +1,8 @@
 """Tool to activate live assistance mode."""
 
-from typing import Dict
+from __future__ import annotations
 
+# Local application imports
 from core.base_tool import BaseTool
 
 
@@ -17,7 +18,15 @@ class LiveAssistanceTool(BaseTool):
         return "Activates live assistance mode."
 
     def execute(self, **kwargs) -> str:
+        """Execute the live assistance tool.
+
+        Args:
+            **kwargs: Unused parameters (kept for interface compatibility).
+
+        Returns:
+            A message confirming live assistance mode activation.
+        """
         return "Live assistance mode activated. Real-time help and guidance is now available."
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         return super().get_schema()

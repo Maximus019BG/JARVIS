@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 from app_logging.logger import get_logger
 
@@ -39,6 +40,12 @@ class RateLimiter:
         max_requests: int = 100,
         window_seconds: int = 60,
     ) -> None:
+        """Initialize the rate limiter.
+
+        Args:
+            max_requests: Maximum number of requests allowed in the time window.
+            window_seconds: Time window in seconds for rate limiting.
+        """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self._requests: dict[str, list[float]] = defaultdict(list)
@@ -87,10 +94,18 @@ class SecurityManager:
     """
 
     def __init__(self, config: SecurityConfig | None = None) -> None:
+        """Initialize the security manager.
+
+        Args:
+            config: Security configuration. If None, loads from environment.
+        """
         from config.config import SecurityConfig
 
         self.config = config or SecurityConfig()
-        self.rate_limiter = RateLimiter()
+        self.rate_limiter = RateLimiter(
+            max_requests=self.config.rate_limit_max_requests,
+            window_seconds=self.config.rate_limit_window_seconds,
+        )
         self._audit_lock = Lock()
 
         # Resolve allowed and blocked paths to absolute paths
@@ -101,10 +116,38 @@ class SecurityManager:
             Path(p).resolve() for p in self.config.blocked_paths if p
         ]
 
+        # Load trusted public key for plugin signature verification
+        self._public_key = self._load_public_key()
+
         logger.info(
             "SecurityManager initialized with level: %s",
             self.config.level.value,
         )
+
+    def _load_public_key(self) -> Any:
+        """Load the trusted public key for plugin signature verification.
+
+        Returns:
+            The public key object or None if not configured.
+        """
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            from cryptography.hazmat.backends import default_backend
+
+            # Try to load from environment variable or file
+            public_key_path = os.getenv("PLUGIN_PUBLIC_KEY_PATH")
+            if public_key_path and Path(public_key_path).exists():
+                with open(public_key_path, "rb") as f:
+                    public_key = serialization.load_pem_public_key(
+                        f.read(), backend=default_backend()
+                    )
+                logger.info("Loaded public key from: %s", public_key_path)
+                return public_key
+        except Exception as e:
+            logger.warning("Failed to load public key: %s", e)
+
+        return None
 
     def validate_file_access(self, path: str | Path) -> Path:
         """Validate and resolve a file path for access.
@@ -118,17 +161,44 @@ class SecurityManager:
         Raises:
             SecurityError: If the path is not allowed.
         """
+        # Decode URL-encoded paths to catch encoded traversal attempts
+        if isinstance(path, str):
+            path = unquote(path)
+
         try:
-            # Resolve to absolute path
+            # Resolve to absolute canonical path (handles symlinks)
             resolved = Path(path).resolve()
         except Exception as e:
             raise SecurityError(f"Invalid path: {e}") from e
 
-        # Check for path traversal attempts
-        path_str = str(path)
-        if ".." in path_str or path_str.startswith("~"):
-            self.audit_log("path_traversal_attempt", {"path": path_str})
-            raise SecurityError("Path traversal not allowed")
+        # Check for path traversal attempts by comparing resolved path
+        # against allowed directories. This catches all forms of traversal
+        # including encoded variants and symlinks.
+        is_allowed = False
+        for allowed in self._allowed_paths:
+            try:
+                resolved.relative_to(allowed)
+                is_allowed = True
+                break
+            except ValueError:
+                continue
+
+        # If not in allowed paths, check if it's a traversal attempt
+        if not is_allowed and self._allowed_paths:
+            # Check if the original path contains suspicious patterns
+            path_str = str(path)
+            suspicious_patterns = ["..", "~", "%2e%2e", "%2E%2E", "%252e"]
+            if any(pattern in path_str for pattern in suspicious_patterns):
+                self.audit_log(
+                    "path_traversal_attempt",
+                    {"original_path": path_str, "resolved_path": str(resolved)},
+                )
+                raise SecurityError("Path traversal not allowed")
+
+            self.audit_log("unauthorized_path_access", {"path": str(resolved)})
+            raise SecurityError(
+                f"Path not in allowed directories: {resolved}"
+            )
 
         # Check blocked paths first
         for blocked in self._blocked_paths:
@@ -139,22 +209,6 @@ class SecurityManager:
             except ValueError:
                 # Not relative to blocked path, continue
                 pass
-
-        # Check if path is in allowed paths
-        is_allowed = False
-        for allowed in self._allowed_paths:
-            try:
-                resolved.relative_to(allowed)
-                is_allowed = True
-                break
-            except ValueError:
-                continue
-
-        if not is_allowed and self._allowed_paths:
-            self.audit_log("unauthorized_path_access", {"path": str(resolved)})
-            raise SecurityError(
-                f"Path not in allowed directories: {resolved}"
-            )
 
         return resolved
 
@@ -273,8 +327,8 @@ class SecurityManager:
     def verify_plugin_signature(self, plugin_path: str | Path) -> bool:
         """Verify the signature of a plugin file.
 
-        Note: This is a placeholder for actual signature verification.
-        In production, implement proper cryptographic signature verification.
+        Uses cryptographic signature verification with a trusted public key.
+        Plugins should be signed with the corresponding private key.
 
         Args:
             plugin_path: Path to the plugin file.
@@ -288,21 +342,78 @@ class SecurityManager:
             logger.warning("Plugin signature verification skipped (low security)")
             return True
 
-        # TODO: Implement actual signature verification
-        # For now, log and allow in medium security, deny in high
-        logger.warning(
-            "Plugin signature verification not fully implemented for: %s",
-            plugin_path,
-        )
+        # If no public key is configured, deny in HIGH security, warn in MEDIUM
+        if self._public_key is None:
+            logger.warning("No public key configured for plugin signature verification")
+            if self.config.level == SecurityLevel.HIGH:
+                self.audit_log(
+                    "plugin_verification_failed",
+                    {"path": str(plugin_path), "reason": "no_public_key"},
+                )
+                return False
+            # In MEDIUM security, allow with warning
+            logger.warning("Allowing plugin without signature verification (medium security)")
+            return True
 
-        if self.config.level == SecurityLevel.HIGH:
+        # Look for signature file alongside the plugin
+        plugin_file = Path(plugin_path)
+        signature_file = plugin_file.with_suffix(plugin_file.suffix + ".sig")
+
+        if not signature_file.exists():
+            logger.warning("No signature file found for plugin: %s", plugin_path)
+            if self.config.level == SecurityLevel.HIGH:
+                self.audit_log(
+                    "plugin_verification_failed",
+                    {"path": str(plugin_path), "reason": "no_signature_file"},
+                )
+                return False
+            return True
+
+        try:
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.asymmetric import padding
+            from cryptography.exceptions import InvalidSignature
+
+            # Read the plugin content and signature
+            with open(plugin_file, "rb") as f:
+                plugin_content = f.read()
+
+            with open(signature_file, "rb") as f:
+                signature = f.read()
+
+            # Verify the signature
+            self._public_key.verify(
+                signature,
+                plugin_content,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH,
+                ),
+                hashes.SHA256(),
+            )
+
+            logger.info("Plugin signature verified successfully: %s", plugin_path)
+            return True
+
+        except InvalidSignature:
+            logger.error("Invalid plugin signature: %s", plugin_path)
             self.audit_log(
                 "plugin_verification_failed",
-                {"path": str(plugin_path)},
+                {"path": str(plugin_path), "reason": "invalid_signature"},
             )
             return False
 
-        return True
+        except Exception as e:
+            logger.error("Error verifying plugin signature: %s", e)
+            if self.config.level == SecurityLevel.HIGH:
+                self.audit_log(
+                    "plugin_verification_failed",
+                    {"path": str(plugin_path), "reason": str(e)},
+                )
+                return False
+            # In MEDIUM security, allow with warning
+            logger.warning("Allowing plugin despite verification error (medium security)")
+            return True
 
 
 # Global security manager instance

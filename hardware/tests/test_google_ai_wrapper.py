@@ -163,7 +163,7 @@ class TestGoogleAIWrapperIntegration:
         from core.llm.google_ai_wrapper import GoogleAIWrapper
 
         wrapper = GoogleAIWrapper(api_key=api_key)
-        response = await wrapper.chat_with_tools_async(
+        response = await wrapper.chat_with_tools(
             "Say hello in one word",
             tools=[],
             conversation_history=[],

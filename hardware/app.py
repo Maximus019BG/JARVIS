@@ -20,9 +20,11 @@ Configuration via environment variables:
 
 from __future__ import annotations
 
-import sys
+# Standard library imports
 from pathlib import Path
+import sys
 
+# Local application imports
 from app_logging.logger import configure_logging, get_logger
 from config.config import get_config
 from core.chat_handler import ChatHandler

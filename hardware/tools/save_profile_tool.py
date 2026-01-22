@@ -1,15 +1,11 @@
 """Tool to save user profile."""
 
-import re
-from typing import Dict
+from __future__ import annotations
 
+# Local application imports
 from core.base_tool import BaseTool
 from core.data_utils import save_profile
-
-
-def is_valid_email(email: str) -> bool:
-    """Basic email validation."""
-    return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
+from core.utils import is_valid_email
 
 
 class SaveProfileTool(BaseTool):
@@ -39,7 +35,7 @@ class SaveProfileTool(BaseTool):
 
         return "Profile saved successfully."
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         schema = super().get_schema()
         schema["function"]["parameters"]["properties"] = {
             "name": {"type": "string", "description": "User's name"},

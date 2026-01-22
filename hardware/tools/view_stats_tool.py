@@ -1,9 +1,12 @@
 """Tool to view system statistics."""
 
+from __future__ import annotations
+
+# Standard library imports
 import re
 import subprocess
-from typing import Dict
 
+# Local application imports
 from core.base_tool import BaseTool
 
 
@@ -69,13 +72,21 @@ class ViewStatsTool(BaseTool):
         return "N/A"
 
     def execute(self, **kwargs) -> str:
+        """Execute the view stats tool.
+
+        Args:
+            **kwargs: Unused parameters (kept for interface compatibility).
+
+        Returns:
+            A formatted string displaying current system statistics.
+        """
         stats = self.get_stats_dict()
         result = "System Statistics:\n"
         for key, value in stats.items():
             result += f"- {key}: {value}\n"
         return result.strip()
 
-    def get_stats_dict(self) -> Dict[str, str]:
+    def get_stats_dict(self) -> dict[str, str]:
         """Get stats as dictionary."""
         return {
             "CPU Usage": self._get_cpu_usage(),
@@ -84,5 +95,5 @@ class ViewStatsTool(BaseTool):
             "Uptime": self._get_uptime(),
         }
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         return super().get_schema()

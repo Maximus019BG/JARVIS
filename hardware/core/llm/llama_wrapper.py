@@ -1,7 +1,10 @@
 """Wrapper for Llama 3.2 3B model using Ollama."""
 
+from __future__ import annotations
+
+# Standard library imports
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import ollama
@@ -23,12 +26,12 @@ class LlamaWrapper:
             )
         self.client = ollama.Client()
 
-    def chat_with_tools(
+    async def chat_with_tools(
         self,
         message: str,
-        tools: List[Dict[str, Any]],
-        conversation_history: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        tools: list[dict[str, Any]],
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Send a message to the LLM with tool capabilities and get response.
 
         Args:
@@ -39,17 +42,6 @@ class LlamaWrapper:
         Returns:
             Dict containing response and tool calls if any
         """
-        return asyncio.run(
-            self.chat_with_tools_async(message, tools, conversation_history)
-        )
-
-    async def chat_with_tools_async(
-        self,
-        message: str,
-        tools: List[Dict[str, Any]],
-        conversation_history: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
-        """Async version of chat_with_tools."""
         messages = conversation_history or []
 
         # Add current user message
@@ -62,11 +54,11 @@ class LlamaWrapper:
 
         return response
 
-    def continue_conversation(
+    async def continue_conversation(
         self,
-        tool_results: List[Dict[str, Any]],
-        conversation_history: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]],
+        tool_results: list[dict[str, Any]],
+        conversation_history: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
     ) -> str:
         """Continue conversation after tool execution.
 
@@ -78,17 +70,6 @@ class LlamaWrapper:
         Returns:
             Final response from LLM
         """
-        return asyncio.run(
-            self.continue_conversation_async(tool_results, conversation_history, tools)
-        )
-
-    async def continue_conversation_async(
-        self,
-        tool_results: List[Dict[str, Any]],
-        conversation_history: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]],
-    ) -> str:
-        """Async version of continue_conversation."""
         # Add tool results as tool messages
         for result in tool_results:
             conversation_history.append(

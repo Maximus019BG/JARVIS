@@ -94,10 +94,19 @@ class ChatHandler:
                 break
 
             try:
-                response = self.process_message(user_input)
-            except Exception:
-                logger.exception("Unhandled error while processing message")
-                response = "Error: unhandled exception while processing message."
+                response = asyncio.run(self.process_message(user_input))
+            except (ValueError, KeyError) as exc:
+                logger.warning("Data error while processing message: %s", exc)
+                response = f"Error: Invalid data format - {exc}"
+            except ConnectionError as exc:
+                logger.error("Connection error while processing message: %s", exc)
+                response = "Error: Unable to connect to AI service. Please check your connection."
+            except (TimeoutError, OSError) as exc:
+                logger.error("Timeout or OS error while processing message: %s", exc)
+                response = "Error: Request timed out. Please try again."
+            except Exception as exc:
+                logger.exception("Unexpected error while processing message")
+                response = "Error: An unexpected error occurred. Please try again."
 
             print(f"Assistant: {response}")
 
@@ -132,7 +141,7 @@ class ChatHandler:
             except Exception as e:
                 logger.warning("TTS speak failed: %s", e)
 
-    def process_message(self, message: str) -> str:
+    async def process_message(self, message: str) -> str:
         """Process user message and return response using AI with tool calling."""
         start_time = time.time()
         try:
@@ -141,7 +150,7 @@ class ChatHandler:
             self.memory.add_message("user", message)
             history = self.memory.get_history()
 
-            llm_response = self.llm.chat_with_tools(message, tools, history)
+            llm_response = await self.llm.chat_with_tools(message, tools, history)
             assistant_message = llm_response.get("message", {})
 
             tool_calls = assistant_message.get("tool_calls")
@@ -159,7 +168,7 @@ class ChatHandler:
                         {"content": result, "call_id": tool_call.get("id", "")}
                     )
 
-                final_response = self.llm.continue_conversation(
+                final_response = await self.llm.continue_conversation(
                     tool_results,
                     self.memory.get_history(),
                     tools,

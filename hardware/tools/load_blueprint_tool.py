@@ -1,9 +1,13 @@
 """Tool to load and apply blueprints."""
 
+from __future__ import annotations
+
+# Standard library imports
 import json
 import os
-from typing import Any, Dict
+from typing import Any
 
+# Local application imports
 from core.base_tool import BaseTool
 
 
@@ -28,7 +32,7 @@ class LoadBlueprintTool(BaseTool):
 
         try:
             with open(path, "r") as f:
-                data: Dict[str, Any] = json.load(f)
+                data: dict[str, Any] = json.load(f)
 
             # Apply theme if present
             if "theme" in data:
@@ -43,7 +47,7 @@ class LoadBlueprintTool(BaseTool):
         except Exception as e:
             return f"Failed to load blueprint '{blueprint_name}': {str(e)}"
 
-    def get_schema(self) -> Dict:
+    def get_schema(self) -> dict:
         schema = super().get_schema()
         schema["function"]["parameters"]["properties"] = {
             "blueprint_name": {
