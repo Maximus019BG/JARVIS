@@ -2,6 +2,7 @@
 
 Provides sandboxed code execution with:
 - Multi-language support (Python, Node.js)
+- Execute inline code or code from files
 - Timeout limits
 - Output capture
 - Error handling
@@ -24,19 +25,33 @@ from core.base_tool import BaseTool, ToolError
 logger = get_logger(__name__)
 
 
+# File extensions to language mapping
+EXTENSION_TO_LANGUAGE = {
+    ".py": "python",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".sh": "bash",
+    ".bash": "bash",
+}
+
+
 class ExecuteCodeTool(BaseTool):
     """Tool for executing Python and Node.js code.
 
     Runs code in a restricted environment with output capture.
     Supports Python (sandboxed) and Node.js (subprocess).
+    Can execute inline code or code from files.
     """
 
-    SUPPORTED_LANGUAGES = ["python", "javascript", "node", "js"]
+    SUPPORTED_LANGUAGES = ["python", "javascript", "node", "js", "typescript", "ts", "bash", "shell", "sh"]
 
     def __init__(
         self,
         timeout: int = 30,
         allowed_modules: list[str] | None = None,
+        allowed_paths: list[str] | None = None,
     ) -> None:
         self.timeout = timeout
         self.allowed_modules = allowed_modules or [
@@ -52,7 +67,11 @@ class ExecuteCodeTool(BaseTool):
             "string",
             "textwrap",
         ]
+        # Paths where file execution is allowed (default: current directory)
+        self.allowed_paths = [Path(p).resolve() for p in (allowed_paths or ["."])]
         self._node_available = shutil.which("node") is not None
+        self._ts_node_available = shutil.which("ts-node") is not None or shutil.which("npx") is not None
+        self._bash_available = shutil.which("bash") is not None
 
     @property
     def name(self) -> str:
@@ -60,11 +79,15 @@ class ExecuteCodeTool(BaseTool):
 
     @property
     def description(self) -> str:
-        langs = "Python and Node.js" if self._node_available else "Python"
+        langs = ["Python"]
+        if self._node_available:
+            langs.append("Node.js")
+        if self._bash_available:
+            langs.append("Bash")
         return (
-            f"Execute {langs} code and return the output. "
-            "Use for calculations, data processing, or testing code snippets. "
-            "Specify the language parameter for non-Python code."
+            f"Execute {', '.join(langs)} code and return the output. "
+            "Can run inline code or execute code from a file path. "
+            "Use for calculations, data processing, running scripts, or testing code snippets."
         )
 
     def schema_parameters(self) -> dict[str, Any]:
@@ -73,13 +96,22 @@ class ExecuteCodeTool(BaseTool):
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "Code to execute",
+                    "description": "Code to execute (inline code string)",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to a code file to execute (alternative to inline code)",
                 },
                 "language": {
                     "type": "string",
-                    "description": "Programming language: 'python', 'javascript' (or 'node', 'js')",
-                    "enum": ["python", "javascript", "node", "js"],
+                    "description": "Programming language: 'python', 'javascript', 'typescript', 'bash'. Auto-detected from file extension if not specified.",
+                    "enum": ["python", "javascript", "node", "js", "typescript", "ts", "bash", "shell", "sh"],
                     "default": "python",
+                },
+                "args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Command-line arguments to pass to the script (for file execution)",
                 },
                 "capture_output": {
                     "type": "boolean",
@@ -87,36 +119,343 @@ class ExecuteCodeTool(BaseTool):
                     "default": True,
                 },
             },
-            "required": ["code"],
+            "required": [],
         }
 
     def execute(
         self,
         code: str = "",
-        language: str = "python",
+        file_path: str = "",
+        language: str = "",
+        args: list[str] | None = None,
         capture_output: bool = True,
     ) -> str:
-        """Execute code in the specified language.
+        """Execute code from inline string or file.
 
         Args:
-            code: Code to run.
-            language: Programming language ('python', 'javascript', 'node', 'js').
+            code: Inline code to run.
+            file_path: Path to a code file to execute.
+            language: Programming language (auto-detected from file if not specified).
+            args: Command-line arguments for file execution.
             capture_output: Whether to capture stdout/stderr.
 
         Returns:
             Code output or error message.
         """
-        if not code.strip():
-            return "Please provide code to execute."
-
-        language = language.lower()
-
-        if language in ("javascript", "node", "js"):
-            return self._execute_javascript(code)
-        elif language == "python":
-            return self._execute_python(code, capture_output)
+        # Determine if we're executing a file or inline code
+        if file_path:
+            return self._execute_file(file_path, language, args or [])
+        elif code.strip():
+            language = language.lower() if language else "python"
+            
+            if language in ("javascript", "node", "js"):
+                return self._execute_javascript(code)
+            elif language in ("typescript", "ts"):
+                return self._execute_typescript(code)
+            elif language in ("bash", "shell", "sh"):
+                return self._execute_bash(code)
+            elif language == "python":
+                return self._execute_python(code, capture_output)
+            else:
+                return f"Unsupported language: {language}. Supported: {', '.join(self.SUPPORTED_LANGUAGES)}"
         else:
-            return f"Unsupported language: {language}. Supported: {', '.join(self.SUPPORTED_LANGUAGES)}"
+            return "Please provide either 'code' (inline code) or 'file_path' (path to a script file)."
+
+    def _is_path_allowed(self, file_path: Path) -> bool:
+        """Check if a file path is within allowed directories.
+        
+        Args:
+            file_path: Path to check.
+            
+        Returns:
+            True if path is allowed.
+        """
+        resolved = file_path.resolve()
+        for allowed in self.allowed_paths:
+            try:
+                resolved.relative_to(allowed)
+                return True
+            except ValueError:
+                continue
+        return False
+
+    def _execute_file(
+        self,
+        file_path: str,
+        language: str = "",
+        args: list[str] | None = None,
+    ) -> str:
+        """Execute code from a file.
+
+        Args:
+            file_path: Path to the code file.
+            language: Programming language (auto-detected if not specified).
+            args: Command-line arguments to pass.
+
+        Returns:
+            Execution output or error message.
+        """
+        path = Path(file_path)
+        
+        # Check if file exists
+        if not path.exists():
+            return f"File not found: {file_path}"
+        
+        if not path.is_file():
+            return f"Not a file: {file_path}"
+        
+        # Security check: verify path is in allowed directories
+        if not self._is_path_allowed(path):
+            return f"Access denied: {file_path} is not in an allowed directory"
+        
+        # Auto-detect language from extension if not specified
+        if not language:
+            ext = path.suffix.lower()
+            language = EXTENSION_TO_LANGUAGE.get(ext, "")
+            if not language:
+                return f"Could not auto-detect language for extension '{ext}'. Please specify the language parameter."
+        
+        language = language.lower()
+        args = args or []
+        
+        # Execute based on language
+        try:
+            if language == "python":
+                return self._execute_python_file(path, args)
+            elif language in ("javascript", "node", "js"):
+                return self._execute_javascript_file(path, args)
+            elif language in ("typescript", "ts"):
+                return self._execute_typescript_file(path, args)
+            elif language in ("bash", "shell", "sh"):
+                return self._execute_bash_file(path, args)
+            else:
+                return f"Unsupported language for file execution: {language}"
+        except Exception as e:
+            logger.error(f"File execution failed: {e}")
+            return f"Execution failed: {e}"
+
+    def _execute_python_file(self, path: Path, args: list[str]) -> str:
+        """Execute a Python file.
+        
+        Args:
+            path: Path to the Python file.
+            args: Command-line arguments.
+            
+        Returns:
+            Execution output.
+        """
+        try:
+            result = subprocess.run(
+                ["python3", str(path)] + args,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=path.parent,
+            )
+            return self._format_subprocess_result(result, f"Python file: {path.name}")
+        except subprocess.TimeoutExpired:
+            return f"Execution timed out after {self.timeout} seconds"
+        except Exception as e:
+            raise ToolError(f"Python file execution failed: {e}") from e
+
+    def _execute_javascript_file(self, path: Path, args: list[str]) -> str:
+        """Execute a JavaScript file with Node.js.
+        
+        Args:
+            path: Path to the JS file.
+            args: Command-line arguments.
+            
+        Returns:
+            Execution output.
+        """
+        if not self._node_available:
+            return "Node.js is not available. Install Node.js to execute JavaScript files."
+        
+        try:
+            result = subprocess.run(
+                ["node", str(path)] + args,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=path.parent,
+            )
+            return self._format_subprocess_result(result, f"JavaScript file: {path.name}")
+        except subprocess.TimeoutExpired:
+            return f"Execution timed out after {self.timeout} seconds"
+        except Exception as e:
+            raise ToolError(f"JavaScript file execution failed: {e}") from e
+
+    def _execute_typescript_file(self, path: Path, args: list[str]) -> str:
+        """Execute a TypeScript file.
+        
+        Args:
+            path: Path to the TS file.
+            args: Command-line arguments.
+            
+        Returns:
+            Execution output.
+        """
+        # Try ts-node first, then npx ts-node
+        if shutil.which("ts-node"):
+            cmd = ["ts-node", str(path)] + args
+        elif shutil.which("npx"):
+            cmd = ["npx", "ts-node", str(path)] + args
+        else:
+            return "TypeScript execution requires ts-node. Install with: npm install -g ts-node typescript"
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=path.parent,
+            )
+            return self._format_subprocess_result(result, f"TypeScript file: {path.name}")
+        except subprocess.TimeoutExpired:
+            return f"Execution timed out after {self.timeout} seconds"
+        except Exception as e:
+            raise ToolError(f"TypeScript file execution failed: {e}") from e
+
+    def _execute_bash_file(self, path: Path, args: list[str]) -> str:
+        """Execute a Bash script.
+        
+        Args:
+            path: Path to the script.
+            args: Command-line arguments.
+            
+        Returns:
+            Execution output.
+        """
+        if not self._bash_available:
+            return "Bash is not available on this system."
+        
+        try:
+            result = subprocess.run(
+                ["bash", str(path)] + args,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=path.parent,
+            )
+            return self._format_subprocess_result(result, f"Bash script: {path.name}")
+        except subprocess.TimeoutExpired:
+            return f"Execution timed out after {self.timeout} seconds"
+        except Exception as e:
+            raise ToolError(f"Bash script execution failed: {e}") from e
+
+    def _format_subprocess_result(self, result: subprocess.CompletedProcess, context: str = "") -> str:
+        """Format subprocess result into readable output.
+        
+        Args:
+            result: Subprocess result.
+            context: Description of what was executed.
+            
+        Returns:
+            Formatted output string.
+        """
+        output_parts = []
+        
+        if context:
+            output_parts.append(f"**{context}**")
+        
+        if result.stdout:
+            output_parts.append(f"**Output:**\n```\n{result.stdout.strip()}\n```")
+        
+        if result.stderr:
+            label = "Errors" if result.returncode != 0 else "Warnings"
+            output_parts.append(f"**{label}:**\n```\n{result.stderr.strip()}\n```")
+        
+        if result.returncode != 0:
+            output_parts.append(f"**Exit code:** {result.returncode}")
+        
+        if not output_parts or (not result.stdout and not result.stderr):
+            output_parts.append("✓ Executed successfully (no output)")
+        
+        return "\n\n".join(output_parts)
+
+    def _execute_typescript(self, code: str) -> str:
+        """Execute TypeScript code using ts-node.
+
+        Args:
+            code: TypeScript code to run.
+
+        Returns:
+            Code output or error message.
+        """
+        if not self._ts_node_available:
+            return "TypeScript execution requires ts-node. Install with: npm install -g ts-node typescript"
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".ts",
+                delete=False,
+                encoding="utf-8",
+            ) as f:
+                f.write(code)
+                temp_file = f.name
+
+            try:
+                if shutil.which("ts-node"):
+                    cmd = ["ts-node", temp_file]
+                else:
+                    cmd = ["npx", "ts-node", temp_file]
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                )
+                return self._format_subprocess_result(result)
+            finally:
+                Path(temp_file).unlink(missing_ok=True)
+
+        except subprocess.TimeoutExpired:
+            return f"Execution timed out after {self.timeout} seconds"
+        except Exception as e:
+            raise ToolError(f"TypeScript execution failed: {e}") from e
+
+    def _execute_bash(self, code: str) -> str:
+        """Execute Bash code.
+
+        Args:
+            code: Bash code to run.
+
+        Returns:
+            Code output or error message.
+        """
+        if not self._bash_available:
+            return "Bash is not available on this system."
+
+        # Basic safety checks for bash
+        dangerous_patterns = [
+            "rm -rf /",
+            "rm -rf ~",
+            ":(){ :|:& };:",  # Fork bomb
+            "> /dev/sda",
+            "mkfs.",
+            "dd if=",
+            "chmod 777 /",
+        ]
+
+        for pattern in dangerous_patterns:
+            if pattern in code:
+                return f"Code contains restricted operation: {pattern}"
+
+        try:
+            result = subprocess.run(
+                ["bash", "-c", code],
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+            return self._format_subprocess_result(result)
+        except subprocess.TimeoutExpired:
+            return f"Execution timed out after {self.timeout} seconds"
+        except Exception as e:
+            raise ToolError(f"Bash execution failed: {e}") from e
 
     def _execute_javascript(self, code: str) -> str:
         """Execute JavaScript code using Node.js.
