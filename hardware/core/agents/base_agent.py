@@ -28,6 +28,8 @@ class AgentRole(str, Enum):
     PLANNER = "planner"
     BLUEPRINT = "blueprint"
     CRITIC = "critic"
+    RESEARCHER = "researcher"
+    MEMORY = "memory"
 
 
 @dataclass

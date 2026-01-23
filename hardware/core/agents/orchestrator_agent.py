@@ -60,6 +60,8 @@ class OrchestratorAgent(BaseAgent):
    - PLANNER: For creating step-by-step plans and strategies
    - BLUEPRINT: For designing parts, buildings, or system architectures (creates .jarvis files)
    - CRITIC: For reviewing, critiquing, and suggesting improvements
+   - RESEARCHER: For gathering information, web searches, and fact-checking
+   - MEMORY: For storing, retrieving, and managing context and knowledge
 
 4. SYNTHESIZE: Combine results from all agents into a coherent response
 
@@ -73,7 +75,7 @@ When analyzing a task, respond with a structured breakdown:
 Be precise and methodical. Think step by step.
 If a task is simple and doesn't need delegation, handle it directly.
 
-Available agents: CODER, PLANNER, BLUEPRINT, CRITIC"""
+Available agents: CODER, PLANNER, BLUEPRINT, CRITIC, RESEARCHER, MEMORY"""
 
     def register_agent(self, agent: BaseAgent) -> None:
         """Register a specialized agent for delegation.
@@ -116,6 +118,8 @@ Respond with:
    - PLANNER: planning and strategy
    - BLUEPRINT: design and architecture
    - CRITIC: review and improvement
+   - RESEARCHER: information gathering and research
+   - MEMORY: storing and retrieving context
 
 Format your response as:
 OBJECTIVE: [objective]
@@ -146,6 +150,8 @@ SUBTASKS:
                             "PLANNER": AgentRole.PLANNER,
                             "BLUEPRINT": AgentRole.BLUEPRINT,
                             "CRITIC": AgentRole.CRITIC,
+                            "RESEARCHER": AgentRole.RESEARCHER,
+                            "MEMORY": AgentRole.MEMORY,
                         }
 
                         if agent_name in role_map:

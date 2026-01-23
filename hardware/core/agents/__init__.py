@@ -6,6 +6,8 @@ This module provides a multi-agent system with specialized agents:
 - PlannerAgent: Creates plans and strategies
 - BlueprintAgent: Designs parts and buildings (.jarvis files)
 - CriticAgent: Reviews and critiques work for improvements
+- ResearchAgent: Gathers and synthesizes information
+- MemoryAgent: Manages context and knowledge persistence
 """
 
 from core.agents.base_agent import (
@@ -29,6 +31,12 @@ from core.agents.critic_agent import (
     CritiqueType,
     Severity,
 )
+from core.agents.memory_agent import (
+    Memory,
+    MemoryAgent,
+    MemoryPriority,
+    MemoryType,
+)
 from core.agents.orchestrator_agent import (
     OrchestratorAgent,
     TaskBreakdown,
@@ -38,6 +46,12 @@ from core.agents.planner_agent import (
     PlannerAgent,
     PlanStep,
     PlanType,
+)
+from core.agents.research_agent import (
+    ResearchAgent,
+    ResearchResult,
+    ResearchSource,
+    ResearchType,
 )
 
 __all__ = [
@@ -68,6 +82,16 @@ __all__ = [
     "CritiqueReport",
     "CritiqueType",
     "Severity",
+    # Research
+    "ResearchAgent",
+    "ResearchResult",
+    "ResearchSource",
+    "ResearchType",
+    # Memory
+    "MemoryAgent",
+    "Memory",
+    "MemoryType",
+    "MemoryPriority",
 ]
 
 
@@ -94,10 +118,14 @@ def create_agent_team(model_name: str | None = None) -> OrchestratorAgent:
     planner = PlannerAgent(model_name=model_name)
     blueprint = BlueprintAgent(model_name=model_name)
     critic = CriticAgent(model_name=model_name)
+    researcher = ResearchAgent(model_name=model_name)
+    memory = MemoryAgent(model_name=model_name)
 
     orchestrator.register_agent(coder)
     orchestrator.register_agent(planner)
     orchestrator.register_agent(blueprint)
     orchestrator.register_agent(critic)
+    orchestrator.register_agent(researcher)
+    orchestrator.register_agent(memory)
 
     return orchestrator
