@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
-"""Chat-driven Hardware App.
+"""JARVIS - AI-Powered Hardware Assistant.
 
-Entry point that wires [`hardware.core.chat_handler.ChatHandler`](hardware/core/chat_handler.py)
-with [`hardware.core.tool_registry.ToolRegistry`](hardware/core/tool_registry.py) and the
-tools under [`hardware.tools`](hardware/tools/__init__.py).
+A chat-driven application that uses a multi-agent system to handle complex tasks.
 
-Supports:
-- Google AI (Gemini) and Ollama LLM providers
+Features:
+- Multi-agent orchestration (Coder, Planner, Blueprint, Critic, Researcher, Memory)
+- Parallel task execution with dependency management
+- Advanced memory system (semantic search, episodic memory, conversation history)
+- Tool calling for file operations, blueprints, and more
 - Text-to-Speech output
-- File access tools with security
-- External plugin loading
+- Google AI (Gemini) and Ollama LLM providers
 
 Configuration via environment variables:
-- AI_PROVIDER: google | ollama (default: google)
-- GOOGLE_AI_API_KEY: Your Google AI Studio API key
-- TTS_ENGINE: pyttsx3 | gtts | disabled (default: pyttsx3)
+- AI_PROVIDER: google | ollama (default: ollama)
+- OLLAMA_MODEL: Model name for Ollama (default: llama3.2:3b)
+- TTS_ENGINE: pyttsx3 | gtts | disabled (default: disabled)
 - See .env.example for full configuration options
 """
 
 from __future__ import annotations
 
 # Standard library imports
+import asyncio
 from pathlib import Path
 import sys
+from typing import TYPE_CHECKING
 
 # Local application imports
 from app_logging.logger import configure_logging, get_logger
@@ -44,6 +46,12 @@ from tools.save_profile_tool import SaveProfileTool
 from tools.smart_mode_tool import SmartModeTool
 from tools.view_stats_tool import ViewStatsTool
 from tools.write_file_tool import WriteFileTool
+
+# Import agent tools
+from tools import AGENT_TOOLS
+
+if TYPE_CHECKING:
+    from core.agents import OrchestratorAgent
 
 
 def setup_security() -> SecurityManager:
@@ -100,6 +108,16 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     # File access tools (with security)
     registry.register_tool(ReadFileTool(security_manager))
     registry.register_tool(WriteFileTool(security_manager))
+    
+    # Agent tools (code execution, web search, memory, etc.)
+    for tool in AGENT_TOOLS:
+        try:
+            registry.register_tool(tool)
+        except Exception as e:
+            logger = get_logger(__name__)
+            logger.warning(f"Failed to register tool {tool.name}: {e}")
+    registry.register_tool(ReadFileTool(security_manager))
+    registry.register_tool(WriteFileTool(security_manager))
 
 
 def load_external_plugins(registry: ToolRegistry, security_manager: SecurityManager) -> None:
@@ -121,14 +139,51 @@ def load_external_plugins(registry: ToolRegistry, security_manager: SecurityMana
         print(f"Warning: Failed to load plugins: {e}")
 
 
+def setup_agents(model_name: str | None = None) -> OrchestratorAgent:
+    """Set up the multi-agent system.
+    
+    Args:
+        model_name: Ollama model to use for agents.
+        
+    Returns:
+        Configured OrchestratorAgent with all specialized agents.
+    """
+    from core.agents import create_agent_team
+    
+    orchestrator = create_agent_team(model_name)
+    return orchestrator
+
+
+def setup_advanced_memory() -> None:
+    """Set up the advanced memory system.
+    
+    Returns:
+        Configured UnifiedMemoryManager.
+    """
+    from core.memory import UnifiedMemoryManager
+    
+    memory_manager = UnifiedMemoryManager(
+        storage_path="data/memory",
+        max_conversation_messages=200,
+        max_semantic_memories=10000,
+        max_episodes=5000,
+    )
+    
+    return memory_manager
+
+
 def main() -> None:
-    """Main entry point for the hardware app."""
+    """Main entry point for JARVIS."""
     configure_logging()
     logger = get_logger(__name__)
 
     # Load configuration
     config = get_config()
     logger.info("Starting %s", config.app_name)
+    
+    print("\n" + "=" * 60)
+    print("  🤖 JARVIS - AI-Powered Hardware Assistant")
+    print("=" * 60)
 
     # Setup security
     security_manager = setup_security()
@@ -159,6 +214,28 @@ def main() -> None:
 
     # Load external plugins
     load_external_plugins(registry, security_manager)
+    
+    # Setup multi-agent system
+    try:
+        model_name = config.ai.ollama_model if hasattr(config.ai, 'ollama_model') else None
+        orchestrator = setup_agents(model_name)
+        agent_names = orchestrator.get_registered_agents()
+        logger.info("Agent system initialized with %d agents", len(agent_names))
+        print(f"  ✓ Agents: {', '.join(agent_names)}")
+    except Exception as e:
+        logger.warning("Failed to initialize agent system: %s", e)
+        orchestrator = None
+        print("  ⚠ Agent system not available")
+    
+    # Setup advanced memory
+    try:
+        memory_manager = setup_advanced_memory()
+        logger.info("Advanced memory system initialized")
+        print("  ✓ Advanced memory system active")
+    except Exception as e:
+        logger.warning("Failed to initialize advanced memory: %s", e)
+        memory_manager = None
+        print("  ⚠ Using basic memory")
 
     # Create chat handler and start
     enable_tts = config.tts.engine.value != "disabled"
@@ -167,7 +244,11 @@ def main() -> None:
         llm=llm,
         tts_engine=tts,
         enable_tts=enable_tts,
+        orchestrator=orchestrator,
+        memory_manager=memory_manager,
     )
+    
+    print("=" * 60 + "\n")
 
     logger.info("Starting chat")
     chat_handler.start_chat()

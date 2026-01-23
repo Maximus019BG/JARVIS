@@ -39,6 +39,8 @@ from core.agents.memory_agent import (
 )
 from core.agents.orchestrator_agent import (
     OrchestratorAgent,
+    Subtask,
+    SubtaskStatus,
     TaskBreakdown,
 )
 from core.agents.planner_agent import (
@@ -63,6 +65,8 @@ __all__ = [
     # Orchestrator
     "OrchestratorAgent",
     "TaskBreakdown",
+    "Subtask",
+    "SubtaskStatus",
     # Coder
     "CoderAgent",
     # Planner

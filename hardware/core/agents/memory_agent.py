@@ -6,6 +6,13 @@ The memory agent specializes in:
 - Long-term knowledge persistence
 - Semantic search over memories
 - Context summarization
+- Episodic memory tracking
+- Memory consolidation and insights
+
+Supports two modes:
+1. Basic mode: Simple in-memory storage with JSON persistence
+2. Advanced mode: Uses UnifiedMemoryManager for semantic search,
+   episodic memory, and intelligent consolidation
 """
 
 from __future__ import annotations
@@ -16,10 +23,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from app_logging.logger import get_logger
 from core.agents.base_agent import AgentResponse, AgentRole, BaseAgent
+
+if TYPE_CHECKING:
+    from core.memory import UnifiedMemoryManager
 
 logger = get_logger(__name__)
 
@@ -93,6 +103,10 @@ class MemoryAgent(BaseAgent):
 
     Handles storing, retrieving, and summarizing information
     to maintain context across conversations and sessions.
+    
+    Can operate in two modes:
+    - Basic: Simple dict-based storage with JSON persistence
+    - Advanced: Uses UnifiedMemoryManager for semantic search and episodic memory
     """
 
     def __init__(
@@ -101,10 +115,37 @@ class MemoryAgent(BaseAgent):
         temperature: float = 0.3,
         memory_file: str = "data/memory_store.json",
         max_short_term: int = 50,
+        use_advanced_memory: bool = False,
+        advanced_memory_path: str = "data/advanced_memory",
     ):
+        """Initialize the MemoryAgent.
+        
+        Args:
+            model_name: LLM model to use.
+            temperature: LLM temperature.
+            memory_file: Path for basic memory storage.
+            max_short_term: Max items in short-term memory.
+            use_advanced_memory: If True, use UnifiedMemoryManager.
+            advanced_memory_path: Path for advanced memory storage.
+        """
         super().__init__(model_name=model_name, temperature=temperature)
         self.memory_file = Path(memory_file)
         self.memory_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Advanced memory mode
+        self._use_advanced = use_advanced_memory
+        self._unified_memory: UnifiedMemoryManager | None = None
+        
+        if use_advanced_memory:
+            try:
+                from core.memory import UnifiedMemoryManager
+                self._unified_memory = UnifiedMemoryManager(
+                    storage_path=advanced_memory_path,
+                )
+                logger.info("Using advanced UnifiedMemoryManager")
+            except ImportError as e:
+                logger.warning(f"Could not load UnifiedMemoryManager: {e}")
+                self._use_advanced = False
 
         # Short-term memory (recent items)
         self._short_term: deque[Memory] = deque(maxlen=max_short_term)
@@ -514,4 +555,288 @@ Provide:
         self._long_term.clear()
         self._tag_index.clear()
         self._save_memories()
+        
+        if self._unified_memory:
+            self._unified_memory.clear_conversation()
+            self._unified_memory.clear_working_memory()
+            
         logger.warning("Cleared all memories")
+
+    # ==================== Advanced Memory Methods ====================
+
+    def semantic_search(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Perform semantic search across memories.
+        
+        Requires advanced memory mode to be enabled.
+        
+        Args:
+            query: Search query.
+            limit: Maximum results.
+            
+        Returns:
+            List of search results with relevance scores.
+        """
+        if not self._unified_memory:
+            # Fall back to basic search
+            memories = self.recall(query, limit=limit)
+            return [
+                {
+                    "content": m.content,
+                    "relevance": 0.5,
+                    "source": "basic",
+                    "tags": m.tags,
+                }
+                for m in memories
+            ]
+        
+        results = self._unified_memory.recall(
+            query,
+            include_semantic=True,
+            include_episodic=True,
+            include_conversation=False,
+            limit=limit,
+        )
+        
+        return [
+            {
+                "content": r.content,
+                "relevance": r.relevance,
+                "source": r.source,
+                "timestamp": r.timestamp.isoformat(),
+                "metadata": r.metadata,
+            }
+            for r in results
+        ]
+
+    def get_context_for_prompt(self, max_tokens: int = 1000) -> str:
+        """Get context formatted for LLM prompts.
+        
+        Args:
+            max_tokens: Approximate max tokens.
+            
+        Returns:
+            Formatted context string.
+        """
+        if self._unified_memory:
+            return self._unified_memory.get_context_for_prompt(max_tokens)
+        
+        # Basic fallback
+        context_parts = []
+        for memory in list(self._short_term)[-5:]:
+            context_parts.append(f"- {memory.content[:100]}")
+        
+        return "[Recent Context]\n" + "\n".join(context_parts)
+
+    def start_session(
+        self,
+        name: str = "",
+        goals: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Start a new memory session.
+        
+        Args:
+            name: Session name.
+            goals: Session goals.
+            
+        Returns:
+            Session info dict.
+        """
+        if self._unified_memory:
+            session = self._unified_memory.start_session(name, goals)
+            return {
+                "id": session.id,
+                "name": session.name,
+                "started_at": session.started_at.isoformat(),
+                "goals": session.goals,
+            }
+        
+        # Basic mode just clears short-term
+        self.clear_short_term()
+        return {
+            "id": "basic_session",
+            "name": name,
+            "started_at": datetime.now().isoformat(),
+            "goals": goals or [],
+        }
+
+    def end_session(
+        self,
+        summary: str = "",
+        outcomes: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """End the current session.
+        
+        Args:
+            summary: Session summary.
+            outcomes: What was achieved.
+            
+        Returns:
+            Session info dict.
+        """
+        if self._unified_memory:
+            session = self._unified_memory.end_session(summary, outcomes)
+            if session:
+                return {
+                    "id": session.id,
+                    "name": session.name,
+                    "duration": str(session.ended_at - session.started_at) if session.ended_at else None,
+                    "outcomes": session.outcomes,
+                }
+        
+        return {"status": "session_ended"}
+
+    def record_event(
+        self,
+        description: str,
+        event_type: str = "custom",
+        success: bool | None = None,
+        importance: float = 0.5,
+    ) -> dict[str, Any]:
+        """Record an event/episode in memory.
+        
+        Args:
+            description: What happened.
+            event_type: Type of event.
+            success: Was it successful.
+            importance: Importance (0.0-1.0).
+            
+        Returns:
+            Event info dict.
+        """
+        if self._unified_memory:
+            from core.memory import EventType
+            
+            try:
+                etype = EventType(event_type)
+            except ValueError:
+                etype = EventType.CUSTOM
+            
+            episode = self._unified_memory.record_event(
+                description=description,
+                event_type=etype,
+                success=success,
+                importance=importance,
+            )
+            
+            return {
+                "id": episode.id,
+                "description": episode.description,
+                "type": episode.event_type.value,
+                "timestamp": episode.timestamp.isoformat(),
+            }
+        
+        # Basic mode stores as memory
+        memory = self.store(
+            content=description,
+            memory_type=MemoryType.CONTEXT,
+            priority=MemoryPriority.MEDIUM,
+            tags=["event", event_type],
+        )
+        
+        return {
+            "id": memory.id,
+            "description": description,
+            "type": event_type,
+            "timestamp": memory.created_at,
+        }
+
+    def reflect(self) -> str:
+        """Generate a reflection on recent memories.
+        
+        Returns:
+            Reflection text.
+        """
+        if self._unified_memory:
+            return self._unified_memory.reflect()
+        
+        # Basic reflection
+        stats = self.get_stats()
+        return f"""## Memory Reflection
+- Short-term memories: {stats['short_term_count']}
+- Long-term memories: {stats['long_term_count']}
+- Total tags: {stats['total_tags']}
+"""
+
+    def get_insights(self) -> list[str]:
+        """Get insights from memory patterns.
+        
+        Returns:
+            List of insight strings.
+        """
+        if self._unified_memory:
+            return self._unified_memory.get_insights()
+        
+        # Basic insights
+        insights = []
+        
+        if len(self._long_term) > 100:
+            insights.append(f"📚 Large memory store: {len(self._long_term)} memories")
+        
+        if self._tag_index:
+            top_tags = sorted(
+                self._tag_index.items(),
+                key=lambda x: len(x[1]),
+                reverse=True,
+            )[:5]
+            if top_tags:
+                insights.append(
+                    f"🏷️ Top tags: {', '.join(t for t, _ in top_tags)}"
+                )
+        
+        return insights
+
+    def consolidate(self) -> dict[str, int]:
+        """Consolidate and clean up memories.
+        
+        Returns:
+            Stats about consolidation.
+        """
+        if self._unified_memory:
+            return self._unified_memory.consolidate()
+        
+        # Basic consolidation: remove old low-priority memories
+        to_remove = []
+        for mem_id, memory in self._long_term.items():
+            if memory.priority == MemoryPriority.LOW and memory.access_count < 2:
+                to_remove.append(mem_id)
+        
+        for mem_id in to_remove:
+            self.forget(mem_id)
+        
+        return {"removed": len(to_remove), "consolidated": 0}
+
+    def export_all(self, export_path: str) -> dict[str, int]:
+        """Export all memories to files.
+        
+        Args:
+            export_path: Directory to export to.
+            
+        Returns:
+            Count of exported items.
+        """
+        if self._unified_memory:
+            return self._unified_memory.export_all(export_path)
+        
+        # Basic export
+        export_dir = Path(export_path)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        
+        data = {
+            "memories": [m.to_dict() for m in self._long_term.values()],
+            "exported_at": datetime.now().isoformat(),
+        }
+        
+        (export_dir / "memories.json").write_text(
+            json.dumps(data, indent=2), encoding="utf-8"
+        )
+        
+        return {"memories": len(self._long_term)}
+
+    @property
+    def is_advanced_mode(self) -> bool:
+        """Check if using advanced memory mode."""
+        return self._use_advanced and self._unified_memory is not None
