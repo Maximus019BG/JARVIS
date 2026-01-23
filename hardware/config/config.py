@@ -20,7 +20,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AIProvider(str, Enum):
     """Supported AI providers."""
 
-    GOOGLE = "google"
     OLLAMA = "ollama"
 
 
@@ -50,26 +49,11 @@ class AIConfig(BaseSettings):
         extra="ignore",
     )
 
-    provider: AIProvider = AIProvider.GOOGLE
-    google_api_key: SecretStr | None = Field(default=None, alias="GOOGLE_AI_API_KEY")
-    google_model: str = "gemini-2.0-flash"
+    provider: AIProvider = AIProvider.OLLAMA
     ollama_model: str = "llama3.2:3b"
     ollama_host: str = "http://localhost:11434"
     max_tokens: int = 4096
     temperature: float = 0.7
-
-    @field_validator("google_api_key", mode="before")
-    @classmethod
-    def load_google_key_from_env(cls, v: str | None) -> str | None:
-        """Load Google API key from environment if not set."""
-        return v or os.getenv("GOOGLE_AI_API_KEY")
-
-    def validate_provider(self) -> None:
-        """Validate that required API keys are present for the chosen provider."""
-        if self.provider == AIProvider.GOOGLE and not self.google_api_key:
-            raise ValueError(
-                "GOOGLE_AI_API_KEY environment variable required for Google AI provider"
-            )
 
 
 class TTSConfig(BaseSettings):

@@ -60,40 +60,10 @@ class LLMProviderFactory:
 
         provider_type = config.provider
 
-        if provider_type == AIProvider.GOOGLE:
-            return LLMProviderFactory._create_google_provider(config)
-        elif provider_type == AIProvider.OLLAMA:
+        if provider_type == AIProvider.OLLAMA:
             return LLMProviderFactory._create_ollama_provider(config)
         else:
             raise ValueError(f"Unknown AI provider: {provider_type}")
-
-    @staticmethod
-    def _create_google_provider(config: AIConfig) -> LLMProvider:
-        """Create Google AI provider."""
-        from core.llm.google_ai_wrapper import (
-            GOOGLE_AI_AVAILABLE,
-            GoogleAIWrapper,
-        )
-
-        if not GOOGLE_AI_AVAILABLE:
-            logger.warning(
-                "Google AI SDK not available, falling back to Ollama"
-            )
-            return LLMProviderFactory._create_ollama_provider(config)
-
-        if not config.google_api_key:
-            logger.warning(
-                "Google API key not configured, falling back to Ollama"
-            )
-            return LLMProviderFactory._create_ollama_provider(config)
-
-        api_key = config.google_api_key.get_secret_value()
-        return GoogleAIWrapper(
-            api_key=api_key,
-            model_name=config.google_model,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-        )
 
     @staticmethod
     def _create_ollama_provider(config: AIConfig) -> LLMProvider:
@@ -131,15 +101,5 @@ class LLMProviderFactory:
         try:
             return LLMProviderFactory.create(primary_config)
         except Exception as e:
-            logger.warning("Primary provider failed: %s, trying fallback", e)
-
-            # Try fallback to Ollama if Google was primary
-            if primary_config.provider == AIProvider.GOOGLE:
-                try:
-                    fallback_config = AIConfig(provider=AIProvider.OLLAMA)
-                    return LLMProviderFactory.create(fallback_config)
-                except Exception as fallback_error:
-                    logger.error("Fallback provider also failed: %s", fallback_error)
-                    raise
-
+            logger.error("Provider creation failed: %s", e)
             raise
