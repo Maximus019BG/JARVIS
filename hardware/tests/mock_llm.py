@@ -49,13 +49,7 @@ class MockLlamaWrapper:
         tools: list[dict[str, Any]],
     ) -> str:
         """Mock continue conversation."""
-        return f"Tool result processed: {tool_results[0]['content'] if tool_results else 'No results'}"
-
-        self,
-        tool_results: list[dict[str, Any]],
-        conversation_history: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-    ) -> str:
-        """Mock continue conversation."""
         await asyncio.sleep(0.01)
-        return f"Tool result processed: {tool_results[0]['content'] if tool_results else 'No results'}"
+        return (
+            f"Tool result processed: {tool_results[0]['content'] if tool_results else 'No results'}"
+        )

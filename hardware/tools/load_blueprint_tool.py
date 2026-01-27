@@ -4,11 +4,12 @@ from __future__ import annotations
 
 # Standard library imports
 import json
-import os
+from pathlib import Path
 from typing import Any
 
 # Local application imports
 from core.base_tool import BaseTool
+from core.security import get_security_manager
 
 
 class LoadBlueprintTool(BaseTool):
@@ -26,12 +27,24 @@ class LoadBlueprintTool(BaseTool):
         if not blueprint_name:
             return "Please specify a blueprint name to load."
 
-        path = f"data/blueprints/{blueprint_name}.json"
-        if not os.path.exists(path):
+        # Security: prevent path traversal by constructing a path with Path APIs,
+        # resolving it to a canonical absolute path, and validating it against
+        # SecurityManager allow/block rules.
+        base_dir = Path("data/blueprints")
+        candidate = (base_dir / f"{blueprint_name}.json")
+
+        security = get_security_manager()
+        try:
+            resolved = candidate.resolve()
+            resolved = security.validate_file_access(resolved)
+        except Exception as e:
+            return f"Blueprint '{blueprint_name}' not found."
+
+        if not resolved.exists():
             return f"Blueprint '{blueprint_name}' not found."
 
         try:
-            with open(path, "r") as f:
+            with resolved.open("r", encoding="utf-8") as f:
                 data: dict[str, Any] = json.load(f)
 
             # Apply theme if present

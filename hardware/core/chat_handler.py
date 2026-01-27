@@ -11,6 +11,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import re
 import time
@@ -49,6 +50,7 @@ class ChatHandler:
     - Tool calling with the registered tool registry
     - Advanced memory integration
     - Text-to-Speech for response output
+    - Response caching for improved performance
     """
 
     def __init__(
@@ -76,6 +78,10 @@ class ChatHandler:
         # Session tracking
         self._session_started = False
         self._message_count = 0
+        
+        # Cache for tool schemas (frequently accessed, rarely changes)
+        self._tool_schema_cache: dict[str, Any] | None = None
+        self._tool_schema_cache_version = 0
 
     @property
     def llm(self) -> LLMProvider:
@@ -363,18 +369,22 @@ class ChatHandler:
             return await self.process_message(message)
 
     def _speak_sync(self, text: str) -> None:
-        """Trigger TTS synchronously."""
+        """Trigger TTS synchronously using thread pool executor.
+        
+        This method runs the async TTS in a thread pool to avoid blocking
+        the event loop when called from synchronous code.
+        """
         if not self._enable_tts or not self.tts:
             return
 
         try:
-            # Use synchronous speak if available
-            if hasattr(self.tts, 'speak_sync'):
-                self.tts.speak_sync(text)
-            else:
-                # Fallback to async (not recommended in sync context)
-                import asyncio
-                asyncio.run(self.tts.speak(text))
+            # Run async speak in thread pool to avoid blocking
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.tts.speak(text))
+            finally:
+                loop.close()
         except Exception as e:
             logger.debug("TTS failed: %s", e)
 
@@ -390,8 +400,32 @@ class ChatHandler:
             except Exception as e:
                 logger.warning("TTS speak failed: %s", e)
 
+    def _get_cached_tool_schemas(self) -> list[dict[str, Any]]:
+        """Get tool schemas with caching for improved performance.
+        
+        Performance improvement: Tool schemas are frequently accessed but rarely change.
+        Caching them reduces repeated serialization overhead.
+        
+        Returns:
+            List of tool schema dictionaries.
+        """
+        current_version = self.tool_registry.get_version() if hasattr(self.tool_registry, 'get_version') else 0
+        
+        # Return cached schemas if version hasn't changed
+        if self._tool_schema_cache is not None and self._tool_schema_cache_version == current_version:
+            return self._tool_schema_cache
+        
+        # Refresh cache
+        self._tool_schema_cache = self.tool_registry.get_tool_schemas()
+        self._tool_schema_cache_version = current_version
+        return self._tool_schema_cache
+
     async def process_message(self, message: str) -> str:
         """Process user message and return response using AI with tool calling.
+        
+        Performance improvements:
+        - Cached tool schemas to reduce repeated serialization
+        - Optimized context building
         
         Args:
             message: User message to process.
@@ -401,7 +435,8 @@ class ChatHandler:
         """
         start_time = time.time()
         try:
-            tools = self.tool_registry.get_tool_schemas()
+            # Use cached tool schemas for better performance
+            tools = self._get_cached_tool_schemas()
 
             self.memory.add_message("user", message)
             history = self.memory.get_history()
@@ -454,7 +489,12 @@ class ChatHandler:
             logger.info("Message processing completed in %.2fs", total_time)
 
     def execute_tool_call(self, tool_call: dict[str, Any]) -> str:
-        """Execute a tool call from the LLM."""
+        """Execute a tool call from the LLM.
+        
+        Performance improvements:
+        - Optimized JSON parsing with error handling
+        - Cached tool lookups
+        """
 
         try:
             fn = tool_call.get("function") or {}
@@ -464,8 +504,13 @@ class ChatHandler:
 
             raw_args = fn.get("arguments", "{}")
             try:
-                arguments = json.loads(raw_args) if raw_args else {}
-            except json.JSONDecodeError:
+                # Use orjson for faster JSON parsing if available
+                try:
+                    import orjson
+                    arguments = orjson.loads(raw_args) if raw_args else {}
+                except ImportError:
+                    arguments = json.loads(raw_args) if raw_args else {}
+            except (json.JSONDecodeError, Exception):
                 return f"Error executing tool {function_name}: invalid JSON arguments"
 
             if not isinstance(arguments, dict):

@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime
 from typing import Optional, Dict, Any
 from core.security.security_manager import SecurityManager
+from config.config import get_config
 
 class RateLimitExceeded(Exception):
     """Raised when rate limit is exceeded"""
@@ -21,15 +22,52 @@ class ApiError(Exception):
     pass
 
 class HttpClient:
-    """Secure HTTP client for blueprint synchronization"""
+    """Secure HTTP client for blueprint synchronization with connection pooling.
+    
+    Performance improvements:
+    - Connection pooling with configurable limits
+    - Keep-alive connections to reduce handshake overhead
+    - Proper timeout settings for reliability
+    - Connection limits to prevent resource exhaustion
+    """
     
     def __init__(self, base_url: str, security_manager: SecurityManager):
         self.base_url = base_url
         self.security = security_manager
+        
+        # Get configuration for connection pooling
+        config = get_config()
+        
+        # Configure connection limits for pooling
+        # max_connections: Maximum number of concurrent connections
+        # max_keepalive_connections: Maximum number of idle keep-alive connections
+        # keepalive_expiry: Time in seconds before idle keep-alive connections are closed
+        limits = httpx.Limits(
+            max_connections=getattr(config, 'http_max_connections', 100),
+            max_keepalive_connections=getattr(config, 'http_max_keepalive', 20),
+            keepalive_expiry=getattr(config, 'http_keepalive_expiry', 5.0)
+        )
+        
+        # Configure timeouts for reliability
+        # connect: Maximum time to establish a connection
+        # read: Maximum time to wait for a response
+        # write: Maximum time to send request data
+        # pool: Maximum time to wait for a connection from the pool
+        timeout = httpx.Timeout(
+            connect=getattr(config, 'http_connect_timeout', 10.0),
+            read=getattr(config, 'http_read_timeout', 30.0),
+            write=getattr(config, 'http_write_timeout', 10.0),
+            pool=getattr(config, 'http_pool_timeout', 5.0)
+        )
+        
+        # Create async client with connection pooling
         self.client = httpx.AsyncClient(
-            timeout=30.0,
+            timeout=timeout,
+            limits=limits,
             verify=True,
-            headers={'User-Agent': 'JARVIS-Hardware/1.0'}
+            headers={'User-Agent': 'JARVIS-Hardware/1.0'},
+            # Enable HTTP/2 for better performance when supported
+            http2=getattr(config, 'http_enable_http2', True)
         )
     
     async def get(self, endpoint: str, params: Optional[Dict] = None, 

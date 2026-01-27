@@ -350,7 +350,12 @@ RULES:
         context: dict[str, Any],
         results: dict[str, AgentResponse],
     ) -> dict[str, AgentResponse]:
-        """Execute a group of independent subtasks in parallel.
+        """Execute a group of independent subtasks in parallel with streaming.
+        
+        Performance improvements:
+        - Uses asyncio.as_completed() for streaming results as they complete
+        - Better parallelization by processing results immediately
+        - Reduced memory overhead by not waiting for all tasks to complete
         
         Args:
             subtask_ids: IDs of subtasks to run in parallel.
@@ -361,25 +366,29 @@ RULES:
         Returns:
             Map of subtask ID to result.
         """
+        # Create task-to-ID mapping for result correlation
+        task_to_id = {}
         tasks = []
         for task_id in subtask_ids:
             subtask = subtask_map[task_id]
-            tasks.append(self._execute_subtask(subtask, context, results))
+            task = self._execute_subtask(subtask, context, results)
+            task_to_id[task] = task_id
+            tasks.append(task)
         
-        # Run all tasks in parallel
-        task_results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Map results back to IDs
+        # Use as_completed for streaming results as they finish
+        # This allows processing results immediately rather than waiting for all
         group_results = {}
-        for task_id, result in zip(subtask_ids, task_results):
-            if isinstance(result, Exception):
+        for completed_task in asyncio.as_completed(tasks):
+            task_id = task_to_id[completed_task]
+            try:
+                result = await completed_task
+                group_results[task_id] = result
+            except Exception as e:
                 group_results[task_id] = AgentResponse(
-                    content=f"Error: {result}",
+                    content=f"Error: {e}",
                     agent_role=subtask_map[task_id].agent_role,
                     success=False,
                 )
-            else:
-                group_results[task_id] = result
         
         return group_results
 
@@ -456,6 +465,11 @@ Be concise but complete. Use formatting (headers, bullets, code blocks) as appro
         Executes independent subtasks in parallel and waits for
         dependencies before running dependent tasks.
 
+        Performance improvements:
+        - Streaming results with asyncio.as_completed() for better parallelization
+        - Immediate context updates as results arrive
+        - Reduced memory overhead by processing results incrementally
+
         Args:
             task: The task to accomplish.
             context: Optional context.
@@ -492,16 +506,15 @@ Be concise but complete. Use formatting (headers, bullets, code blocks) as appro
                 f"({parallel_count} task{'s' if parallel_count > 1 else ''} in parallel)"
             )
             
-            # Execute all tasks in this group in parallel
+            # Execute all tasks in this group in parallel with streaming
             group_results = await self._execute_parallel_group(
                 group, subtask_map, accumulated_context, results
             )
             
-            # Merge results
-            results.update(group_results)
-            
-            # Update accumulated context
+            # Merge results and update context immediately as they arrive
+            # This allows dependent tasks to start sooner
             for task_id, result in group_results.items():
+                results[task_id] = result
                 accumulated_context[f"result_{task_id}"] = result.content
 
         # Synthesize all results

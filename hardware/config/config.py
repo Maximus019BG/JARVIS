@@ -124,6 +124,24 @@ class ThemeConfig(BaseSettings):
     accent_color: str = "#28a745"
 
 
+class SyncApiConfig(BaseSettings):
+    """Sync API configuration.
+
+    Centralizes server URLs to avoid hardcoding them throughout tools.
+    Environment variable support:
+      - SYNC_API_BASE_URL
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="SYNC_API_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    base_url: str = Field(default="https://api.jarvis.example.com", alias="BASE_URL")
+
+
 class AppConfig(BaseSettings):
     """Main application configuration aggregating all sub-configs."""
 
@@ -140,12 +158,26 @@ class AppConfig(BaseSettings):
     # Conversation memory configuration
     conversation_max_messages: int = Field(default=50, alias="CONVERSATION_MAX_MESSAGES")
     conversation_recent_messages: int = Field(default=10, alias="CONVERSATION_RECENT_MESSAGES")
+    
+    # HTTP client connection pooling configuration
+    http_max_connections: int = Field(default=100, alias="HTTP_MAX_CONNECTIONS")
+    http_max_keepalive: int = Field(default=20, alias="HTTP_MAX_KEEPALIVE")
+    http_keepalive_expiry: float = Field(default=5.0, alias="HTTP_KEEPALIVE_EXPIRY")
+    http_connect_timeout: float = Field(default=10.0, alias="HTTP_CONNECT_TIMEOUT")
+    http_read_timeout: float = Field(default=30.0, alias="HTTP_READ_TIMEOUT")
+    http_write_timeout: float = Field(default=10.0, alias="HTTP_WRITE_TIMEOUT")
+    http_pool_timeout: float = Field(default=5.0, alias="HTTP_POOL_TIMEOUT")
+    http_enable_http2: bool = Field(default=True, alias="HTTP_ENABLE_HTTP2")
+    
+    # Path validation cache configuration
+    path_validation_cache_size: int = Field(default=128, alias="PATH_VALIDATION_CACHE_SIZE")
 
     # Sub-configurations
     ai: AIConfig = Field(default_factory=AIConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     theme: ThemeConfig = Field(default_factory=ThemeConfig)
+    sync_api: SyncApiConfig = Field(default_factory=SyncApiConfig)
 
     def validate_all(self) -> None:
         """Validate all configuration settings."""

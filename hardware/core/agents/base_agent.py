@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from app_logging.logger import get_logger
 from core.llm.provider_factory import LLMProviderFactory
+from config.config import get_config
 
 if TYPE_CHECKING:
     from core.llm.provider_factory import LLMProvider
@@ -74,6 +75,11 @@ class BaseAgent(ABC):
         self.temperature = temperature
         self._llm: LLMProvider | None = None
         self._conversation_history: list[dict[str, Any]] = []
+        
+        # Load conversation history limits from config
+        config = get_config()
+        self._max_history_size = getattr(config, 'conversation_max_messages', 50)
+        self._recent_messages_count = getattr(config, 'conversation_recent_messages', 10)
 
     @property
     def llm(self) -> LLMProvider:
@@ -136,6 +142,49 @@ class BaseAgent(ABC):
 
         return messages
 
+    def _prune_conversation_history(self) -> None:
+        """Prune conversation history to prevent unbounded growth.
+        
+        Performance improvement: Keeps conversation history bounded to prevent
+        memory issues and reduce token usage in subsequent requests.
+        
+        Strategy:
+        1. Keep the most recent N messages (configurable)
+        2. Summarize older messages if they exist
+        3. Replace older messages with a summary to preserve context
+        """
+        if len(self._conversation_history) <= self._max_history_size:
+            return
+        
+        # Calculate how many messages to keep as recent
+        recent_count = min(self._recent_messages_count, self._max_history_size)
+        
+        # Get older messages that need to be summarized
+        older_messages = self._conversation_history[:-recent_count]
+        
+        if older_messages:
+            # Create a summary of older messages
+            summary_parts = []
+            for msg in older_messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                # Truncate long content for summary
+                if len(content) > 100:
+                    content = content[:97] + "..."
+                summary_parts.append(f"{role}: {content}")
+            
+            summary = "[Previous conversation summary: " + " | ".join(summary_parts) + "]"
+            
+            # Replace older messages with a single summary message
+            self._conversation_history = [
+                {"role": "system", "content": summary}
+            ] + self._conversation_history[-recent_count:]
+            
+            logger.debug(
+                f"[{self.name}] Pruned conversation history: "
+                f"{len(older_messages)} messages summarized"
+            )
+    
     async def process(
         self,
         task: str,
@@ -165,6 +214,9 @@ class BaseAgent(ABC):
             # Store in history
             self._conversation_history.append({"role": "user", "content": task})
             self._conversation_history.append({"role": "assistant", "content": content})
+            
+            # Prune conversation history to prevent unbounded growth
+            self._prune_conversation_history()
 
             logger.info(f"[{self.name}] Processed task successfully")
 
@@ -191,3 +243,20 @@ class BaseAgent(ABC):
     def get_history(self) -> list[dict[str, Any]]:
         """Get the conversation history."""
         return self._conversation_history.copy()
+    
+    def get_history_size(self) -> int:
+        """Get the current size of the conversation history."""
+        return len(self._conversation_history)
+    
+    def set_history_limit(self, max_size: int, recent_count: int) -> None:
+        """Set the conversation history limits.
+        
+        Args:
+            max_size: Maximum number of messages to keep in history.
+            recent_count: Number of recent messages to keep without summarizing.
+        """
+        self._max_history_size = max_size
+        self._recent_messages_count = recent_count
+        logger.info(
+            f"[{self.name}] History limits updated: max={max_size}, recent={recent_count}"
+        )

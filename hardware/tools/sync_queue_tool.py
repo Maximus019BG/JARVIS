@@ -1,4 +1,5 @@
 from typing import Dict, Any
+from config.config import get_config
 from core.sync.sync_manager import SyncManager
 from core.sync.offline_queue import OfflineQueue
 from core.network.http_client import HttpClient
@@ -14,9 +15,12 @@ class SyncQueueTool(BaseTool):
     def __init__(self):
         super().__init__()
         self.security = SecurityManager()
+
+        # Security: base URL is now configured via environment/config, not hardcoded.
+        cfg = get_config()
         self.http_client = HttpClient(
-            base_url='https://api.jarvis.example.com',
-            security_manager=self.security
+            base_url=cfg.sync_api.base_url,
+            security_manager=self.security,
         )
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()

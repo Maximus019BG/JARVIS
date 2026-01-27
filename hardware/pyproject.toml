@@ -21,8 +21,12 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     # Security
     "cryptography>=43.0.0",
+    # Math & Vector Operations
+    "numpy>=2.0.0",
     # Templating & Utils
     "jinja2>=3.1.0",
+    # Performance
+    "orjson>=3.10.0",
 ]
 
 [project.scripts]

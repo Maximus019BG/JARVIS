@@ -9,6 +9,7 @@ Provides controlled shell command execution with:
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 from typing import Any
@@ -145,58 +146,63 @@ class ShellCommandTool(BaseTool):
             "required": ["command"],
         }
 
-    def _is_command_allowed(self, command: str) -> tuple[bool, str]:
-        """Check if a command is allowed.
+    def _parse_and_validate_command(self, command: str) -> tuple[list[str], str | None]:
+        """Parse + validate a command into argv.
 
-        Args:
-            command: The command to check.
+        Security rationale:
+        - We never pass user input to a shell (no `shell=True`).
+        - We parse using `shlex.split()` to avoid ad-hoc string checks.
+        - We enforce a whitelist-only model: the executable (argv[0]) must be allowed.
+        - We explicitly reject shell metacharacters / expansions that could be abused if a
+          command like `sh`/`cmd` ever slipped into the allowlist.
 
         Returns:
-            Tuple of (is_allowed, reason).
+            (argv, error). If error is not None, argv will be empty.
         """
         try:
-            # Parse the command
-            parts = shlex.split(command)
-            if not parts:
-                return False, "Empty command"
-
-            base_command = parts[0].split("/")[-1]  # Get basename
-
-            # Check blocked list first
-            if base_command in self.BLOCKED_COMMANDS:
-                return False, f"Command '{base_command}' is blocked for security reasons"
-
-            # Check allowed list
-            if base_command not in self.ALLOWED_COMMANDS:
-                return False, f"Command '{base_command}' is not in the allowed list"
-
-            # Check for dangerous patterns in arguments
-            dangerous_patterns = [
-                "$(", "`", "&&", "||", ";", "|", ">", "<", ">>", "<<",
-                "/dev/", "/proc/", "/sys/", "/etc/passwd", "/etc/shadow",
-            ]
-
-            for pattern in dangerous_patterns:
-                if pattern in command:
-                    # Allow pipes for safe commands
-                    if pattern == "|":
-                        # Validate piped command too
-                        pipe_parts = command.split("|")
-                        for part in pipe_parts[1:]:
-                            part = part.strip()
-                            if part:
-                                sub_parts = shlex.split(part)
-                                if sub_parts:
-                                    sub_cmd = sub_parts[0].split("/")[-1]
-                                    if sub_cmd not in self.ALLOWED_COMMANDS:
-                                        return False, f"Piped command '{sub_cmd}' not allowed"
-                        continue
-                    return False, f"Pattern '{pattern}' is not allowed"
-
-            return True, "Command allowed"
-
+            parts = shlex.split(command, posix=os.name != "nt")
         except ValueError as e:
-            return False, f"Invalid command syntax: {e}"
+            return [], f"Invalid command syntax: {e}"
+
+        if not parts:
+            return [], "Empty command"
+
+        base_command = os.path.basename(parts[0])
+
+        # Blocked list first
+        if base_command in self.BLOCKED_COMMANDS:
+            return [], f"Command '{base_command}' is blocked for security reasons"
+
+        # Whitelist-only
+        if base_command not in self.ALLOWED_COMMANDS:
+            return [], f"Command '{base_command}' is not in the allowed list"
+
+        # Reject common shell injection primitives (even though we don't use a shell)
+        # to reduce risk from future allowlist changes and to keep behavior consistent.
+        raw = command
+        forbidden_substrings = [
+            "`",  # command substitution
+            "$(",  # command substitution
+            "${",  # variable expansion / indirect expansion patterns
+            "&&",
+            "||",
+            ";",
+            "\n",
+            "\r",
+        ]
+        if any(tok in raw for tok in forbidden_substrings):
+            return [], "Command contains forbidden shell control/expansion tokens"
+
+        # We do not support pipelines/redirection in the tool; those require a shell.
+        if any(tok in raw for tok in ["|", ">", "<"]):
+            return [], "Pipes/redirection are not supported for security reasons"
+
+        # Optional: block obviously sensitive absolute paths in args (defense-in-depth).
+        sensitive_paths = ["/dev/", "/proc/", "/sys/", "/etc/passwd", "/etc/shadow"]
+        if any(p in raw for p in sensitive_paths):
+            return [], "Command references a sensitive system path"
+
+        return parts, None
 
     def execute(
         self,
@@ -215,11 +221,12 @@ class ShellCommandTool(BaseTool):
         if not command.strip():
             return "Please provide a command to execute."
 
-        # Check if command is allowed
-        allowed, reason = self._is_command_allowed(command)
-        if not allowed:
-            logger.warning(f"Blocked command: {command} - {reason}")
-            return f"Command not allowed: {reason}"
+        # Parse and validate into argv. We intentionally do not support shell features
+        # (pipes, redirects, command substitution) to eliminate command injection.
+        argv, error = self._parse_and_validate_command(command)
+        if error:
+            logger.warning(f"Blocked command: {command} - {error}")
+            return f"Command not allowed: {error}"
 
         # Validate working directory if provided
         if working_dir:
@@ -228,9 +235,10 @@ class ShellCommandTool(BaseTool):
                 return f"Working directory not allowed: {validation.reason}"
 
         try:
+            # Never use `shell=True`. Use argv list invocation.
             result = subprocess.run(
-                command,
-                shell=True,
+                argv,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
