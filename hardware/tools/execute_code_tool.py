@@ -11,7 +11,10 @@ Provides sandboxed code execution with:
 from __future__ import annotations
 
 import ast
+import asyncio
+import hashlib
 import io
+import os
 import re
 import shlex
 import shutil
@@ -19,11 +22,13 @@ import subprocess
 import tempfile
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app_logging.logger import get_logger
 from core.base_tool import BaseTool, ToolError
+from core.llm.provider_factory import LLMProviderFactory
 
 logger = get_logger(__name__)
 
@@ -44,102 +49,357 @@ EXTENSION_TO_LANGUAGE = {
 # SECURITY: AST-based Python code analyzer for sandbox bypass prevention
 # ============================================================================
 
+@dataclass(frozen=True)
+class SecurityAnalysisResult:
+    """Result of a security analysis."""
+
+    verdict: str  # "safe" | "dangerous" | "unknown"
+    reason: str
+
+
 class PythonASTSecurityAnalyzer(ast.NodeVisitor):
-    """AST-based security analyzer for Python code.
-    
-    Detects dangerous operations that could bypass sandbox restrictions:
-    - Direct imports of dangerous modules
-    - Use of __import__, eval, exec
-    - File operations (open, file)
-    - Attribute access to dangerous builtins
-    - Indirect access through getattr, setattr, hasattr
-    - Code execution through compile, exec, eval
+    """Hybrid security analyzer for Python code.
+
+    New approach:
+    1) Fast pre-checks for obviously malicious intent (block immediately)
+    2) AST feature extraction (what dangerous capabilities are requested)
+    3) AI-based decision for ambiguous code (allows legit `os`, `open`, etc.)
+    4) Hash-based cache to avoid repeated LLM calls
+
+    Notes:
+    - This does *not* remove the runtime sandbox restrictions in [`ExecuteCodeTool._execute_python()`](hardware/tools/execute_code_tool.py:772).
+      It only improves the *classification* so benign usage patterns aren't auto-blocked.
+    - If AI analysis fails (provider unavailable / timeout / exception), we fall back to conservative blocking
+      only when the pre-check indicates obvious maliciousness; otherwise we mark as unknown and allow the
+      existing sandbox to enforce runtime restrictions.
     """
-    
-    # Dangerous modules that should not be imported
-    DANGEROUS_MODULES = {
-        "os", "subprocess", "sys", "shutil", "pathlib", "tempfile",
-        "pickle", "marshal", "ctypes", "importlib", "builtins",
-        "socket", "http", "urllib", "ftplib", "smtplib", "telnetlib",
-        "ssl", "hashlib", "secrets", "random", "uuid",
-    }
-    
-    # Dangerous builtins and functions
-    DANGEROUS_BUILTINS = {
-        "__import__", "eval", "exec", "compile", "open", "file",
-        "input", "breakpoint", "exit", "quit", "globals", "locals",
-        "vars", "dir", "help", "memoryview", "bytearray",
-    }
-    
-    # Dangerous attributes that could be accessed
-    DANGEROUS_ATTRIBUTES = {
-        "__import__", "__builtins__", "__globals__", "__code__",
-        "__dict__", "__class__", "__bases__", "__subclasses__",
-        "__mro__", "__init__", "__getattribute__", "__setattr__",
-    }
-    
-    def __init__(self, allowed_modules: set[str] | None = None):
+
+    # Quick denylist for code that is almost always malicious in this environment.
+    # Keep this small and high-confidence to avoid false positives.
+    QUICK_DENY_PATTERNS: tuple[re.Pattern[str], ...] = (
+        re.compile(r"\\brm\\s+-rf\\b", re.IGNORECASE),
+        re.compile(r"\\bmkfs\\.", re.IGNORECASE),
+        re.compile(r"\\bdd\\s+if=", re.IGNORECASE),
+        re.compile(r"\\bshutdown\\b", re.IGNORECASE),
+        re.compile(r"\\breboot\\b", re.IGNORECASE),
+        re.compile(r"\\bos\\.system\\s*\\(", re.IGNORECASE),
+        re.compile(r"\\bsubprocess\\.(run|popen|call|check_output)\\s*\\(", re.IGNORECASE),
+        re.compile(r"\\beval\\s*\\(", re.IGNORECASE),
+        re.compile(r"\\bexec\\s*\\(", re.IGNORECASE),
+        re.compile(r"__subclasses__\\s*\\(", re.IGNORECASE),
+        re.compile(r"__globals__", re.IGNORECASE),
+        re.compile(r"__builtins__", re.IGNORECASE),
+    )
+
+    # Protected targets for file modifications (project + configs + critical system files).
+    # This is used only as a *validation* step; we can't intercept actual OS writes, but we
+    # can block code that clearly intends to modify protected paths.
+    PROTECTED_SYSTEM_PATH_TOKENS: tuple[str, ...] = (
+        "/etc/",
+        "/proc/",
+        "/sys/",
+        "C:\\Windows\\",
+        "C:\\Program Files",
+        "C:\\Program Files (x86)",
+    )
+
+    PROTECTED_CONFIG_FILENAMES: tuple[str, ...] = (
+        ".env",
+        ".env.local",
+        "pyproject.toml",
+        "uv.lock",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "requirements.txt",
+        "poetry.lock",
+        "docker-compose.yml",
+        "Dockerfile",
+        "Makefile",
+        "next.config.js",
+        "tsconfig.json",
+        "eslint.config.js",
+        "prettier.config.js",
+    )
+
+    def __init__(
+        self,
+        allowed_modules: set[str] | None = None,
+        project_root: Path | None = None,
+        ai_timeout_seconds: float = 2.5,
+        enable_ai: bool = True,
+        cache_max_entries: int = 512,
+    ):
         self.violations: list[str] = []
         self.allowed_modules = allowed_modules or set()
-    
+        self.project_root = (project_root or Path.cwd()).resolve()
+        self.ai_timeout_seconds = ai_timeout_seconds
+        self.enable_ai = enable_ai
+
+        # Simple in-memory LRU-ish cache using dict insertion order.
+        # Key: sha256(code + allowed_modules + analyzer_version)
+        self._cache_max_entries = cache_max_entries
+        self._analysis_cache: dict[str, SecurityAnalysisResult] = {}
+
+        # These are filled during AST walk
+        self._imports: set[str] = set()
+        self._calls: set[str] = set()
+        self._string_literals: list[str] = []
+
+    # -------------------------
+    # AST feature extraction
+    # -------------------------
+
     def visit_Import(self, node: ast.Import) -> None:
-        """Check for dangerous module imports."""
         for alias in node.names:
-            module_name = alias.name.split(".")[0]  # Check top-level module
-            if module_name in self.DANGEROUS_MODULES and module_name not in self.allowed_modules:
-                self.violations.append(f"Import of dangerous module: {alias.name}")
+            self._imports.add(alias.name.split(".")[0])
         self.generic_visit(node)
-    
+
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        """Check for dangerous from imports."""
         if node.module:
-            module_name = node.module.split(".")[0]
-            if module_name in self.DANGEROUS_MODULES and module_name not in self.allowed_modules:
-                self.violations.append(f"Import from dangerous module: {node.module}")
+            self._imports.add(node.module.split(".")[0])
         self.generic_visit(node)
-    
+
     def visit_Call(self, node: ast.Call) -> None:
-        """Check for dangerous function calls."""
-        # Check for direct calls to dangerous builtins
+        name = None
         if isinstance(node.func, ast.Name):
-            if node.func.id in self.DANGEROUS_BUILTINS:
-                self.violations.append(f"Call to dangerous builtin: {node.func.id}")
-        
-        # Check for getattr/setattr/hasattr with dangerous attributes
-        if isinstance(node.func, ast.Name) and node.func.id in {"getattr", "setattr", "hasattr"}:
-            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
-                attr_name = node.args[1].value
-                if attr_name in self.DANGEROUS_ATTRIBUTES:
-                    self.violations.append(f"Access to dangerous attribute via {node.func.id}: {attr_name}")
-        
-        # Check for indirect __import__ calls
-        if isinstance(node.func, ast.Name) and node.func.id == "__import__":
-            self.violations.append("Direct call to __import__")
-        
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            # e.g. os.system, subprocess.run
+            root = None
+            if isinstance(node.func.value, ast.Name):
+                root = node.func.value.id
+            if root:
+                name = f"{root}.{node.func.attr}"
+        if name:
+            self._calls.add(name)
         self.generic_visit(node)
-    
-    def visit_Attribute(self, node: ast.Attribute) -> None:
-        """Check for dangerous attribute access."""
-        if node.attr in self.DANGEROUS_ATTRIBUTES:
-            self.violations.append(f"Access to dangerous attribute: {node.attr}")
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str) and node.value:
+            # Limit literal collection to keep prompts tiny
+            if len(self._string_literals) < 30:
+                self._string_literals.append(node.value)
         self.generic_visit(node)
-    
-    def visit_Name(self, node: ast.Name) -> None:
-        """Check for references to dangerous builtins."""
-        if node.id in self.DANGEROUS_BUILTINS:
-            self.violations.append(f"Reference to dangerous builtin: {node.id}")
-        self.generic_visit(node)
-    
+
+    # -------------------------
+    # Fast checks / protection
+    # -------------------------
+
+    def _hash_key(self, code: str) -> str:
+        version = "v2-ai-hybrid"
+        allowed = ",".join(sorted(self.allowed_modules))
+        payload = f"{version}\\n{allowed}\\n{code}".encode("utf-8", errors="ignore")
+        return hashlib.sha256(payload).hexdigest()
+
+    def _cache_get(self, key: str) -> SecurityAnalysisResult | None:
+        res = self._analysis_cache.get(key)
+        if res is None:
+            return None
+        # refresh LRU
+        self._analysis_cache.pop(key, None)
+        self._analysis_cache[key] = res
+        return res
+
+    def _cache_set(self, key: str, res: SecurityAnalysisResult) -> None:
+        self._analysis_cache[key] = res
+        if len(self._analysis_cache) > self._cache_max_entries:
+            # pop oldest
+            self._analysis_cache.pop(next(iter(self._analysis_cache)))
+
+    def _quick_precheck(self, code: str) -> list[str]:
+        normalized = code
+        violations: list[str] = []
+        for pat in self.QUICK_DENY_PATTERNS:
+            if pat.search(normalized):
+                violations.append(f"Obvious dangerous pattern: {pat.pattern}")
+        return violations
+
+    def _is_protected_path(self, raw: str) -> bool:
+        if not raw:
+            return False
+
+        # Normalize common path forms
+        s = raw.strip().strip("\"'")
+        s_norm = s.replace("\\\\", "/")
+
+        # System locations
+        for token in self.PROTECTED_SYSTEM_PATH_TOKENS:
+            if token.replace("\\\\", "/") in s_norm:
+                return True
+
+        # Config filenames anywhere
+        base = Path(s).name
+        if base in self.PROTECTED_CONFIG_FILENAMES:
+            return True
+
+        # Project source protection: any *.py under project root
+        try:
+            p = Path(s)
+            if not p.is_absolute():
+                p = (self.project_root / p).resolve()
+            else:
+                p = p.resolve()
+
+            if p.suffix.lower() == ".py":
+                try:
+                    p.relative_to(self.project_root)
+                    return True
+                except ValueError:
+                    pass
+        except Exception:
+            # If path can't be resolved, don't treat it as protected here.
+            return False
+
+        return False
+
+    def _file_operation_violations(self) -> list[str]:
+        """Detect obvious attempts to modify protected files via string literals.
+
+        This is a best-effort check; attackers can obfuscate paths.
+        """
+        writey_calls = {
+            "open",
+            "pathlib.Path.write_text",
+            "pathlib.Path.write_bytes",
+            "os.remove",
+            "os.unlink",
+            "os.rmdir",
+            "shutil.rmtree",
+            "shutil.move",
+            "shutil.copy",
+            "shutil.copyfile",
+            "subprocess.run",
+            "subprocess.Popen",
+            "os.system",
+        }
+
+        if not (self._calls & writey_calls) and not any("open" in c for c in self._calls):
+            return []
+
+        violations: list[str] = []
+        for lit in self._string_literals:
+            if self._is_protected_path(lit):
+                violations.append(f"Attempted access to protected path: {lit!r}")
+        return violations
+
+    # -------------------------
+    # AI analysis
+    # -------------------------
+
+    async def _ai_security_verdict(self, code: str) -> SecurityAnalysisResult:
+        """Ask the configured LLM to classify code as safe/dangerous.
+
+        The prompt is intentionally lightweight for speed.
+        """
+        provider = LLMProviderFactory.create_with_fallback()
+
+        # Keep payload small; include only features + full code (bounded)
+        code_snippet = code if len(code) <= 4000 else code[:4000] + "\n# ... truncated ..."
+
+        features = {
+            "imports": sorted(self._imports),
+            "calls": sorted(self._calls)[:30],
+            "string_literals_sample": self._string_literals[:10],
+        }
+
+        prompt = (
+            "You are a security classifier for a sandboxed Python execution tool. "
+            "Decide if the user's code is malicious or safe. "
+            "Allowed: normal scripting, reading simple files, using os/pathlib for path manipulation. "
+            "Dangerous: attempts to execute shell commands, spawn processes, modify project source/config, "
+            "exfiltrate data over network, escalate privileges, or evade sandbox (dunder/introspection).\n\n"
+            "Return ONLY one line, exactly: SAFE or DANGEROUS.\n\n"
+            f"FEATURES: {features}\n\n"
+            f"CODE:\n```python\n{code_snippet}\n```\n"
+        )
+
+        try:
+            resp = await asyncio.wait_for(
+                provider.chat_with_tools(prompt, tools=[], conversation_history=None),
+                timeout=self.ai_timeout_seconds,
+            )
+            content = ""
+            if isinstance(resp, dict):
+                content = (
+                    resp.get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
+            verdict = content.splitlines()[0].strip().upper() if content else ""
+            if verdict == "SAFE":
+                return SecurityAnalysisResult("safe", "AI classified as SAFE")
+            if verdict == "DANGEROUS":
+                return SecurityAnalysisResult("dangerous", "AI classified as DANGEROUS")
+            return SecurityAnalysisResult("unknown", f"AI returned unexpected output: {content!r}")
+        except asyncio.TimeoutError:
+            return SecurityAnalysisResult("unknown", "AI analysis timed out")
+        except Exception as e:
+            return SecurityAnalysisResult("unknown", f"AI analysis failed: {type(e).__name__}: {e}")
+
+    # -------------------------
+    # Public API
+    # -------------------------
+
     def analyze(self, code: str) -> list[str]:
-        """Analyze code and return list of security violations."""
+        """Analyze code and return list of security violations.
+
+        Contract preserved: returns list of human-readable violation strings.
+        """
         self.violations = []
+
+        cache_key = self._hash_key(code)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            if cached.verdict == "dangerous":
+                return [cached.reason]
+            return []
+
+        # 1) Quick pre-check
+        pre = self._quick_precheck(code)
+        if pre:
+            res = SecurityAnalysisResult("dangerous", "; ".join(pre))
+            self._cache_set(cache_key, res)
+            return pre
+
+        # 2) AST parse + feature extraction
+        self._imports = set()
+        self._calls = set()
+        self._string_literals = []
         try:
             tree = ast.parse(code)
             self.visit(tree)
         except SyntaxError:
-            # Syntax errors will be caught during execution
-            pass
-        return self.violations
+            # Syntax errors are handled during execution; for security, proceed with best-effort.
+            tree = None
+
+        # 3) File protection check (best-effort)
+        fp = self._file_operation_violations()
+        if fp:
+            res = SecurityAnalysisResult("dangerous", "; ".join(fp))
+            self._cache_set(cache_key, res)
+            return fp
+
+        # 4) AI analysis for ambiguous cases (optional)
+        if self.enable_ai:
+            try:
+                verdict = asyncio.run(self._ai_security_verdict(code))
+            except RuntimeError:
+                # If we're already in an event loop, fall back to sync-safe path.
+                verdict = SecurityAnalysisResult("unknown", "AI analysis skipped (event loop already running)")
+
+            if verdict.verdict == "dangerous":
+                self._cache_set(cache_key, verdict)
+                return [verdict.reason]
+
+            # SAFE/UNKNOWN => allow execution; runtime sandbox still applies.
+            self._cache_set(cache_key, verdict)
+            return []
+
+        # AI disabled
+        self._cache_set(cache_key, SecurityAnalysisResult("unknown", "AI analysis disabled"))
+        return []
 
 
 # ============================================================================
@@ -780,12 +1040,18 @@ class ExecuteCodeTool(BaseTool):
             Code output or error message.
         """
 
-        # SECURITY: Use AST-based security analyzer for Python code
-        # This detects dangerous operations that could bypass sandbox restrictions
-        analyzer = PythonASTSecurityAnalyzer(allowed_modules=set(self.allowed_modules))
+        # SECURITY: Hybrid analyzer (fast pre-check + AST feature extraction + AI verdict + cache).
+        # This reduces false positives vs. the old denylist-style AST scanner by allowing legitimate
+        # use of modules like `os`/`pathlib` when intent is benign.
+        analyzer = PythonASTSecurityAnalyzer(
+            allowed_modules=set(self.allowed_modules),
+            project_root=Path(".").resolve(),
+            ai_timeout_seconds=2.5,
+            enable_ai=True,
+        )
         violations = analyzer.analyze(code)
         if violations:
-            return f"Security violation detected:\n" + "\n".join(f"  - {v}" for v in violations)
+            return "Security violation detected:\n" + "\n".join(f"  - {v}" for v in violations)
 
         # SECURITY: Create restricted globals with whitelist-only approach
         # Only include safe builtins - removed dangerous ones like __import__, getattr, setattr, hasattr
