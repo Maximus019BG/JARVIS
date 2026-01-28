@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from core.chat_handler import ChatHandler
 from core.tool_registry import ToolRegistry
 from tests.mock_llm import MockLlamaWrapper
@@ -22,11 +24,11 @@ def test_end_to_end() -> None:
     chat_handler = ChatHandler(registry, llm=mock_llm)
 
     # Test basic conversation
-    response = chat_handler.process_message("Hello")
+    response = asyncio.run(chat_handler.process_message("Hello"))
     assert "Mock response" in response
 
     # Test tool calling
-    response = chat_handler.process_message("Please help")
+    response = asyncio.run(chat_handler.process_message("Please help"))
     assert "Tool result processed" in response
 
     # Test conversation memory

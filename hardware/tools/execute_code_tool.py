@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 from core.llm.provider_factory import LLMProviderFactory
 
 logger = get_logger(__name__)
@@ -642,7 +642,7 @@ class ExecuteCodeTool(BaseTool):
         language: str = "",
         args: list[str] | None = None,
         capture_output: bool = True,
-    ) -> str:
+    ) -> ToolResult:
         """Execute code from inline string or file.
 
         Args:
@@ -653,26 +653,45 @@ class ExecuteCodeTool(BaseTool):
             capture_output: Whether to capture stdout/stderr.
 
         Returns:
-            Code output or error message.
+            A structured [`ToolResult`](hardware/core/base_tool.py:1).
         """
         # Determine if we're executing a file or inline code
         if file_path:
-            return self._execute_file(file_path, language, args or [])
-        elif code.strip():
+            out = self._execute_file(file_path, language, args or [])
+            return ToolResult.ok_result(out)
+        if code.strip():
             language = language.lower() if language else "python"
-            
+
             if language in ("javascript", "node", "js"):
-                return self._execute_javascript(code)
-            elif language in ("typescript", "ts"):
-                return self._execute_typescript(code)
-            elif language in ("bash", "shell", "sh"):
-                return self._execute_bash(code)
-            elif language == "python":
-                return self._execute_python(code, capture_output)
-            else:
-                return f"Unsupported language: {language}. Supported: {', '.join(self.SUPPORTED_LANGUAGES)}"
-        else:
-            return "Please provide either 'code' (inline code) or 'file_path' (path to a script file)."
+                out = self._execute_javascript(code)
+                return ToolResult.ok_result(out)
+            if language in ("typescript", "ts"):
+                out = self._execute_typescript(code)
+                return ToolResult.ok_result(out)
+            if language in ("bash", "shell", "sh"):
+                out = self._execute_bash(code)
+                # Security violations return a human message; treat as failure.
+                if out.startswith("Security violation detected:"):
+                    return ToolResult.fail(out, error_type="SecurityViolation")
+                return ToolResult.ok_result(out)
+            if language == "python":
+                out = self._execute_python(code, capture_output)
+                if out.startswith("Security violation detected:"):
+                    return ToolResult.fail(out, error_type="SecurityViolation")
+                # Execution errors are returned as strings; treat as failure.
+                if out.startswith("Execution error:"):
+                    return ToolResult.fail(out, error_type="ExecutionError")
+                return ToolResult.ok_result(out)
+
+            return ToolResult.fail(
+                f"Unsupported language: {language}. Supported: {', '.join(self.SUPPORTED_LANGUAGES)}",
+                error_type="ValidationError",
+            )
+
+        return ToolResult.fail(
+            "Please provide either 'code' (inline code) or 'file_path' (path to a script file).",
+            error_type="ValidationError",
+        )
 
     def _is_path_allowed(self, file_path: Path) -> bool:
         """Check if a file path is within allowed directories.
@@ -1194,17 +1213,17 @@ class AnalyzeCodeTool(BaseTool):
             "required": ["code"],
         }
 
-    def execute(self, code: str = "") -> str:
+    def execute(self, code: str = "") -> ToolResult:
         """Analyze code structure.
 
         Args:
             code: Python code to analyze.
 
         Returns:
-            Analysis results.
+            A structured [`ToolResult`](hardware/core/base_tool.py:1).
         """
         if not code.strip():
-            return "Please provide code to analyze."
+            return ToolResult.fail("Please provide code to analyze.", error_type="ValidationError")
 
         try:
             import ast
@@ -1279,10 +1298,10 @@ class AnalyzeCodeTool(BaseTool):
                 result.append("")
 
             logger.info(f"Analyzed code ({len(code)} chars)")
-            return "\n".join(result)
+            return ToolResult.ok_result("\n".join(result))
 
         except SyntaxError as e:
-            return f"Syntax error in code: {e}"
+            return ToolResult.fail(f"Syntax error in code: {e}", error_type="SyntaxError")
         except Exception as e:
             logger.error(f"Code analysis failed: {e}")
             raise ToolError(f"Analysis failed: {e}") from e

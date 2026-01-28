@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 from core.tool_registry import ToolRegistry
 
 
@@ -22,17 +22,11 @@ class HelpTool(BaseTool):
     def description(self) -> str:
         return "Provides information about available tools and their usage."
 
-    def execute(self, **kwargs: Any) -> str:
-        """Execute the help tool.
+    def execute(self, **kwargs: Any) -> ToolResult:
+        """Execute the help tool."""
 
-        Args:
-            **kwargs: Unused parameters (kept for interface compatibility).
-
-        Returns:
-            A formatted string listing all available tools and their descriptions.
-        """
         tools = self.tool_registry.get_all_tools()
         lines = ["Available tools:"]
         for tool in tools:
             lines.append(f"- {tool.name}: {tool.description}")
-        return "\n".join(lines) + "\n"
+        return ToolResult.ok_result("\n".join(lines) + "\n")

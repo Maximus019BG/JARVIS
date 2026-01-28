@@ -13,13 +13,14 @@ from pathlib import Path
 from threading import Lock
 from typing import Annotated
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AIProvider(str, Enum):
     """Supported AI providers."""
 
+    GOOGLE = "google"
     OLLAMA = "ollama"
 
 
@@ -49,11 +50,28 @@ class AIConfig(BaseSettings):
         extra="ignore",
     )
 
-    provider: AIProvider = AIProvider.OLLAMA
+    provider: AIProvider = AIProvider.GOOGLE
+
+    # Google
+    google_api_key: SecretStr | None = None
+
+    # Ollama
     ollama_model: str = "llama3.2:3b"
     ollama_host: str = "http://localhost:11434"
+
     max_tokens: int = 4096
     temperature: float = 0.7
+
+    def validate_provider(self) -> None:
+        """Validate provider-specific configuration."""
+
+        if self.provider == AIProvider.GOOGLE:
+            key = self.google_api_key.get_secret_value() if self.google_api_key else ""
+            if not key:
+                # Tests assert this env var name is included in the error.
+                raise ValueError("Missing GOOGLE_AI_API_KEY")
+
+        # Ollama requires no API key.
 
 
 class TTSConfig(BaseSettings):

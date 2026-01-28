@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Local application imports
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 
 
 class QuitTool(BaseTool):
@@ -17,16 +17,10 @@ class QuitTool(BaseTool):
     def description(self) -> str:
         return "Exits the application."
 
-    def execute(self, **kwargs) -> str:
-        """Execute the quit tool.
+    def execute(self, **kwargs) -> ToolResult:
+        """Execute the quit tool."""
 
-        Args:
-            **kwargs: Unused parameters (kept for interface compatibility).
-
-        Returns:
-            A message indicating the application is exiting.
-        """
-        return "Exiting application (stub)."
+        return ToolResult.ok_result("Exiting application (stub).")
 
     def get_schema(self) -> dict:
         return super().get_schema()

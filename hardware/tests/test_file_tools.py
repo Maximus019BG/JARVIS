@@ -64,7 +64,8 @@ class TestReadFileTool:
         test_file.write_text("Hello, World!")
 
         result = tool.execute(path=str(test_file))
-        assert result == "Hello, World!"
+        assert result.ok is True
+        assert result.content == "Hello, World!"
 
     def test_read_file_not_found(self, tool, temp_dir):
         """Test reading non-existent file."""
@@ -82,7 +83,8 @@ class TestReadFileTool:
         test_file.write_text("Hello, UTF-16!", encoding="utf-16")
 
         result = tool.execute(path=str(test_file), encoding="utf-16")
-        assert "Hello" in result
+        assert result.ok is True
+        assert "Hello" in result.content
 
     def test_read_file_with_max_lines(self, tool, temp_dir):
         """Test reading with line limit."""
@@ -90,9 +92,10 @@ class TestReadFileTool:
         test_file.write_text("\n".join([f"Line {i}" for i in range(100)]))
 
         result = tool.execute(path=str(test_file), max_lines=5)
-        assert "Line 0" in result
-        assert "Line 4" in result
-        assert "truncated" in result
+        assert result.ok is True
+        assert "Line 0" in result.content
+        assert "Line 4" in result.content
+        assert "truncated" in result.content
 
     def test_read_file_blocked_path(self, tool):
         """Test reading from blocked path fails."""
@@ -131,7 +134,8 @@ class TestWriteFileTool:
 
         result = tool.execute(path=str(test_file), content="Hello, World!")
 
-        assert "Successfully wrote" in result
+        assert result.ok is True
+        assert "successfully wrote" in result.content.lower()
         assert test_file.read_text() == "Hello, World!"
 
     def test_write_file_creates_directories(self, tool, temp_dir):
@@ -154,7 +158,8 @@ class TestWriteFileTool:
             create_backup=True,
         )
 
-        assert "backup" in result
+        assert result.ok is True
+        assert "backup" in result.content.lower()
         assert test_file.read_text() == "New content"
         # Check backup exists
         backup_files = list(temp_dir.glob("*.backup"))

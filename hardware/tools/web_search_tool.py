@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 
 logger = get_logger(__name__)
 
@@ -79,7 +79,7 @@ class WebSearchTool(BaseTool):
         query: str = "",
         max_results: int | None = None,
         region: str = "wt-wt",
-    ) -> str:
+    ) -> ToolResult:
         """Execute web search.
 
         Args:
@@ -91,12 +91,12 @@ class WebSearchTool(BaseTool):
             Formatted search results.
         """
         if not query.strip():
-            return "Please provide a search query."
+            return ToolResult.fail("Please provide a search query.", error_type="ValidationError")
 
         if not self._search_available:
-            return (
-                "Web search is not available. "
-                "Install duckduckgo-search: pip install duckduckgo-search"
+            return ToolResult.fail(
+                "Web search is not available. Install duckduckgo-search: pip install duckduckgo-search",
+                error_type="DependencyMissing",
             )
 
         max_results = max_results or self.max_results
@@ -108,7 +108,7 @@ class WebSearchTool(BaseTool):
                 results = list(ddgs.text(query, region=region, max_results=max_results))
 
             if not results:
-                return f"No results found for: {query}"
+                return ToolResult.ok_result(f"No results found for: {query}")
 
             # Format results
             formatted = [f"## Search Results for: {query}\n"]
@@ -118,7 +118,7 @@ class WebSearchTool(BaseTool):
                 formatted.append(f"{result.get('body', 'No description')}\n")
 
             logger.info(f"Web search for '{query}' returned {len(results)} results")
-            return "\n".join(formatted)
+            return ToolResult.ok_result("\n".join(formatted))
 
         except Exception as e:
             logger.error(f"Web search failed: {e}")
@@ -163,7 +163,7 @@ class FetchWebpageTool(BaseTool):
         self,
         url: str = "",
         extract_links: bool = False,
-    ) -> str:
+    ) -> ToolResult:
         """Fetch webpage content.
 
         Args:
@@ -174,7 +174,7 @@ class FetchWebpageTool(BaseTool):
             Page content as text.
         """
         if not url.strip():
-            return "Please provide a URL."
+            return ToolResult.fail("Please provide a URL.", error_type="ValidationError")
 
         try:
             import urllib.request
@@ -237,7 +237,7 @@ class FetchWebpageTool(BaseTool):
                     result += f"- {link}\n"
 
             logger.info(f"Fetched webpage: {url}")
-            return result
+            return ToolResult.ok_result(result)
 
         except Exception as e:
             logger.error(f"Failed to fetch webpage: {e}")

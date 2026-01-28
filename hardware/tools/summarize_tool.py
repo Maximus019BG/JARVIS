@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 
 logger = get_logger(__name__)
 
@@ -75,7 +75,7 @@ class SummarizeTool(BaseTool):
         length: str = "short",
         focus: str = "",
         format: str = "prose",
-    ) -> str:
+    ) -> ToolResult:
         """Execute summarization.
 
         Args:
@@ -88,11 +88,11 @@ class SummarizeTool(BaseTool):
             Summary of the text.
         """
         if not text.strip():
-            return "Please provide text to summarize."
+            return ToolResult.fail("Please provide text to summarize.", error_type="ValidationError")
 
         # For very short text, no need to summarize
         if len(text) < 200:
-            return f"Text is already brief:\n{text}"
+            return ToolResult.ok_result(f"Text is already brief:\n{text}")
 
         length_instructions = {
             "brief": "Summarize in 1-2 sentences only.",
@@ -142,10 +142,10 @@ Instructions:
 
             summary = response.get("message", {}).get("content", "")
             if not summary:
-                return "Failed to generate summary."
+                return ToolResult.fail("Failed to generate summary.", error_type="LLMError")
 
             logger.info(f"Summarized {len(text)} chars to {len(summary)} chars")
-            return summary
+            return ToolResult.ok_result(summary)
 
         except Exception as e:
             logger.error(f"Summarization failed: {e}")
@@ -203,7 +203,7 @@ class ExtractKeyPointsTool(BaseTool):
         text: str = "",
         max_points: int = 10,
         category: str = "",
-    ) -> str:
+    ) -> ToolResult:
         """Extract key points from text.
 
         Args:
@@ -215,7 +215,7 @@ class ExtractKeyPointsTool(BaseTool):
             List of key points.
         """
         if not text.strip():
-            return "Please provide text to analyze."
+            return ToolResult.fail("Please provide text to analyze.", error_type="ValidationError")
 
         prompt = f"""Extract the {max_points} most important key points from this text:
 
@@ -252,10 +252,10 @@ Format as a numbered list. Each point should be:
 
             result = response.get("message", {}).get("content", "")
             if not result:
-                return "Failed to extract key points."
+                return ToolResult.fail("Failed to extract key points.", error_type="LLMError")
 
             logger.info(f"Extracted key points from {len(text)} chars")
-            return result
+            return ToolResult.ok_result(result)
 
         except Exception as e:
             logger.error(f"Key point extraction failed: {e}")

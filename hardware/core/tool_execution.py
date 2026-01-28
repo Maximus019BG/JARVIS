@@ -1,15 +1,14 @@
 """Tool-call parsing and execution helpers.
 
 This module exists to keep `ChatHandler` focused on coordination.
-Behavior is intentionally kept compatible with prior `ChatHandler.execute_tool_call`.
 
-Enhancements (behavior-compatible):
-- Internal structured result object for logging/metrics.
+Critique #7 migration (breaking/clean):
+- Tools now return [`ToolResult`](hardware/core/base_tool.py:1) (no raw strings).
+- [`ToolCallExecutor.execute_tool_call()`](hardware/core/tool_execution.py:1) returns `ToolResult`.
+
+Enhancements:
 - Optional argument validation against a tool's JSON schema.
 - Optional execution timeouts.
-
-Public surface remains unchanged:
-- [`ToolCallExecutor.execute_tool_call()`](hardware/core/tool_execution.py:1) still returns a string.
 """
 
 from __future__ import annotations
@@ -22,21 +21,13 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Callable
 
 from app_logging.logger import get_logger
-from core.base_tool import ToolError
+from core.base_tool import ToolError, ToolResult
 from core.tool_registry import ToolNotFoundError, ToolRegistry
 
 logger = get_logger(__name__)
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class _ToolExecutionResult:
-    ok: bool
-    tool: str
-    call_id: str | None
-    content: str
-    error_type: str | None = None
-    error_details: dict[str, Any] | None = None
-    duration_ms: int | None = None
+# NOTE: legacy `_ToolExecutionResult` removed in favor of `ToolResult`.
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -232,22 +223,22 @@ class ToolCallExecutor:
             float(default_timeout) if default_timeout and default_timeout > 0 else None
         )
 
-    def execute_tool_call(self, tool_call: dict[str, Any]) -> str:
+    def execute_tool_call(self, tool_call: dict[str, Any]) -> ToolResult:
         """Execute a tool call from the LLM.
 
         Args:
             tool_call: Tool call payload, e.g. {"function": {"name": str, "arguments": str}}.
 
         Returns:
-            Tool result string or a behavior-compatible error string.
+            Structured [`ToolResult`](hardware/core/base_tool.py:1).
         """
 
         started = time.time()
         function_name: str | None = None
         call_id: str | None = None
 
-        def finalize(result: _ToolExecutionResult) -> str:
-            # Logging only; do not change return strings.
+        def finalize(result: ToolResult) -> ToolResult:
+            # Logging only; never allow logging failures to affect behavior.
             try:
                 self._logger.debug(
                     "Tool call result: %s",
@@ -260,9 +251,8 @@ class ToolCallExecutor:
                     },
                 )
             except Exception:
-                # Never allow logging failures to affect behavior.
                 pass
-            return result.content
+            return result
 
         try:
             fn = tool_call.get("function") or {}
@@ -271,11 +261,10 @@ class ToolCallExecutor:
             if not function_name:
                 duration_ms = int((time.time() - started) * 1000)
                 return finalize(
-                    _ToolExecutionResult(
-                        ok=False,
-                        tool="",
+                    ToolResult.fail(
+                        "Error executing tool: missing function name",
+                        tool=None,
                         call_id=call_id,
-                        content="Error executing tool: missing function name",
                         error_type="MissingFunctionName",
                         duration_ms=duration_ms,
                     )
@@ -287,11 +276,10 @@ class ToolCallExecutor:
             except (json.JSONDecodeError, Exception):
                 duration_ms = int((time.time() - started) * 1000)
                 return finalize(
-                    _ToolExecutionResult(
-                        ok=False,
+                    ToolResult.fail(
+                        f"Error executing tool {function_name}: invalid JSON arguments",
                         tool=function_name,
                         call_id=call_id,
-                        content=f"Error executing tool {function_name}: invalid JSON arguments",
                         error_type="InvalidJSONArguments",
                         duration_ms=duration_ms,
                     )
@@ -300,11 +288,10 @@ class ToolCallExecutor:
             if not isinstance(arguments, dict):
                 duration_ms = int((time.time() - started) * 1000)
                 return finalize(
-                    _ToolExecutionResult(
-                        ok=False,
+                    ToolResult.fail(
+                        f"Error executing tool {function_name}: arguments must be an object",
                         tool=function_name,
                         call_id=call_id,
-                        content=f"Error executing tool {function_name}: arguments must be an object",
                         error_type="ArgumentsNotObject",
                         duration_ms=duration_ms,
                     )
@@ -321,13 +308,10 @@ class ToolCallExecutor:
                         duration_ms = int((time.time() - started) * 1000)
                         msg = "; ".join(validation_errors)
                         return finalize(
-                            _ToolExecutionResult(
-                                ok=False,
+                            ToolResult.fail(
+                                f"Error executing tool {function_name}: validation failed: {msg}",
                                 tool=function_name,
                                 call_id=call_id,
-                                content=(
-                                    f"Error executing tool {function_name}: validation failed: {msg}"
-                                ),
                                 error_type="ValidationError",
                                 error_details={"errors": validation_errors},
                                 duration_ms=duration_ms,
@@ -337,7 +321,6 @@ class ToolCallExecutor:
             timeout_seconds = _timeout_seconds_for_tool(tool, self._default_timeout_seconds)
 
             def invoke() -> Any:
-                # Keep baseline calling convention: execute(**kwargs)
                 return tool.execute(**arguments)
 
             if timeout_seconds is not None:
@@ -346,13 +329,10 @@ class ToolCallExecutor:
                 except FutureTimeoutError:
                     duration_ms = int((time.time() - started) * 1000)
                     return finalize(
-                        _ToolExecutionResult(
-                            ok=False,
+                        ToolResult.fail(
+                            f"Error executing tool {function_name}: timed out after {timeout_seconds}s",
                             tool=function_name,
                             call_id=call_id,
-                            content=(
-                                f"Error executing tool {function_name}: timed out after {timeout_seconds}s"
-                            ),
                             error_type="Timeout",
                             error_details={"timeout_seconds": timeout_seconds},
                             duration_ms=duration_ms,
@@ -361,26 +341,42 @@ class ToolCallExecutor:
             else:
                 result = invoke()
 
-            # Preserve existing behavior: tool returns a string.
             duration_ms = int((time.time() - started) * 1000)
-            return finalize(
-                _ToolExecutionResult(
-                    ok=True,
-                    tool=function_name,
-                    call_id=call_id,
-                    content=str(result),
-                    duration_ms=duration_ms,
+
+            if not isinstance(result, ToolResult):
+                return finalize(
+                    ToolResult.fail(
+                        (
+                            f"Error executing tool {function_name}: invalid return type "
+                            f"{type(result).__name__}; expected ToolResult"
+                        ),
+                        tool=function_name,
+                        call_id=call_id,
+                        error_type="InvalidToolReturnType",
+                        error_details={"returned_type": type(result).__name__},
+                        duration_ms=duration_ms,
+                    )
                 )
-            )
+
+            # Fill in any missing metadata.
+            if result.tool is None or result.call_id is None or result.duration_ms is None:
+                merged = dataclasses.replace(
+                    result,
+                    tool=result.tool or function_name,
+                    call_id=result.call_id or call_id,
+                    duration_ms=result.duration_ms or duration_ms,
+                )
+                return finalize(merged)
+
+            return finalize(result)
 
         except ToolNotFoundError:
             duration_ms = int((time.time() - started) * 1000)
             return finalize(
-                _ToolExecutionResult(
-                    ok=False,
-                    tool=function_name or "",
+                ToolResult.fail(
+                    f"Error executing tool {function_name}: unknown tool",
+                    tool=function_name,
                     call_id=call_id,
-                    content=f"Error executing tool {function_name}: unknown tool",
                     error_type="ToolNotFound",
                     duration_ms=duration_ms,
                 )
@@ -388,25 +384,22 @@ class ToolCallExecutor:
         except ToolError as exc:
             duration_ms = int((time.time() - started) * 1000)
             return finalize(
-                _ToolExecutionResult(
-                    ok=False,
-                    tool=function_name or "",
+                ToolResult.fail(
+                    f"Error executing tool {function_name}: {exc}",
+                    tool=function_name,
                     call_id=call_id,
-                    content=f"Error executing tool {function_name}: {exc}",
                     error_type="ToolError",
                     error_details={"message": str(exc)},
                     duration_ms=duration_ms,
                 )
             )
         except TypeError as exc:
-            # Most common failure: unexpected kwargs.
             duration_ms = int((time.time() - started) * 1000)
             return finalize(
-                _ToolExecutionResult(
-                    ok=False,
-                    tool=function_name or "",
+                ToolResult.fail(
+                    f"Error executing tool {function_name}: {exc}",
+                    tool=function_name,
                     call_id=call_id,
-                    content=f"Error executing tool {function_name}: {exc}",
                     error_type="TypeError",
                     error_details={"message": str(exc)},
                     duration_ms=duration_ms,
@@ -416,11 +409,10 @@ class ToolCallExecutor:
             self._logger.exception("Unexpected tool execution error")
             duration_ms = int((time.time() - started) * 1000)
             return finalize(
-                _ToolExecutionResult(
-                    ok=False,
-                    tool=function_name or "",
+                ToolResult.fail(
+                    f"Error executing tool {function_name}: {exc}",
+                    tool=function_name,
                     call_id=call_id,
-                    content=f"Error executing tool {function_name}: {exc}",
                     error_type="Exception",
                     error_details={"message": str(exc)},
                     duration_ms=duration_ms,

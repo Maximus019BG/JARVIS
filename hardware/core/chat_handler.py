@@ -17,6 +17,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from app_logging.logger import get_logger
+from core.base_tool import ToolResult
 from core.memory.conversation_memory import ConversationMemory
 from core.tool_registry import ToolRegistry
 
@@ -400,7 +401,11 @@ class ChatHandler:
                 for tool_call in tool_calls:
                     result = self.execute_tool_call(tool_call)
                     tool_results.append(
-                        {"content": result, "call_id": tool_call.get("id", "")}
+                        {
+                            "tool_call_id": tool_call.get("id", ""),
+                            "content": result.to_message_content(),
+                            "raw": result.to_dict(),
+                        }
                     )
 
                 final_response = await self.llm.continue_conversation(
@@ -425,6 +430,7 @@ class ChatHandler:
             total_time = time.time() - start_time
             logger.info("Message processing completed in %.2fs", total_time)
 
-    def execute_tool_call(self, tool_call: dict[str, Any]) -> str:
+    def execute_tool_call(self, tool_call: dict[str, Any]) -> ToolResult:
         """Execute a tool call from the LLM."""
+
         return self._tool_executor.execute_tool_call(tool_call)

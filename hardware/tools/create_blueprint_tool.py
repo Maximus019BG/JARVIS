@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 
 
 class CreateBlueprintTool(BaseTool):
@@ -25,17 +25,20 @@ class CreateBlueprintTool(BaseTool):
         blueprint_name: str = "",
         theme: dict[str, str] | None = None,
         profile: dict[str, str] | None = None,
-    ) -> str:
+    ) -> ToolResult:
         name = blueprint_name.strip()
         if not name:
-            return "Please specify a blueprint name to create."
+            return ToolResult.fail(
+                "Please specify a blueprint name to create.",
+                error_type="ValidationError",
+            )
 
         # Use defaults if not provided.
         if theme is None:
             # Keep backwards compatibility with existing config module.
-            from config.config import DEFAULT_THEME
+            from config.config import ThemeManager
 
-            theme = DEFAULT_THEME
+            theme = ThemeManager.DEFAULT_THEME
         if profile is None:
             profile = {}
 
@@ -46,15 +49,27 @@ class CreateBlueprintTool(BaseTool):
 
         try:
             path.write_text(json.dumps(data, indent=4), encoding="utf-8")
-            return f"Blueprint '{name}' created successfully."
+            return ToolResult.ok_result(f"Blueprint '{name}' created successfully.")
         except PermissionError as exc:
-            return f"Failed to create blueprint '{name}': Permission denied - {exc}"
+            return ToolResult.fail(
+                f"Failed to create blueprint '{name}': Permission denied - {exc}",
+                error_type="AccessDenied",
+            )
         except OSError as exc:
-            return f"Failed to create blueprint '{name}': File system error - {exc}"
+            return ToolResult.fail(
+                f"Failed to create blueprint '{name}': File system error - {exc}",
+                error_type="OSError",
+            )
         except (TypeError, ValueError) as exc:
-            return f"Failed to create blueprint '{name}': Invalid data format - {exc}"
+            return ToolResult.fail(
+                f"Failed to create blueprint '{name}': Invalid data format - {exc}",
+                error_type="ValidationError",
+            )
         except Exception as exc:
-            return f"Failed to create blueprint '{name}': Unexpected error - {exc}"
+            return ToolResult.fail(
+                f"Failed to create blueprint '{name}': Unexpected error - {exc}",
+                error_type="Exception",
+            )
 
     def schema_parameters(self) -> dict[str, Any]:
         return {

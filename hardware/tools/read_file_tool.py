@@ -16,7 +16,7 @@ from typing import Any
 
 # Local application imports
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 from core.security import SecurityManager, get_security_manager
 
 logger = get_logger(__name__)
@@ -72,7 +72,7 @@ class ReadFileTool(BaseTool):
         encoding: str = "utf-8",
         max_lines: int | None = None,
         **kwargs: Any,
-    ) -> str:
+    ) -> ToolResult:
         """Read the contents of a file.
 
         Args:
@@ -114,7 +114,7 @@ class ReadFileTool(BaseTool):
             )
 
             logger.info("Read file: %s (%d chars)", resolved_path, len(content))
-            return content
+            return ToolResult.ok_result(content)
 
         except ToolError:
             raise

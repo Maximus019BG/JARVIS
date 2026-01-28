@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 # Local application imports
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 from core.security import get_security_manager
 
 
@@ -23,9 +23,12 @@ class LoadBlueprintTool(BaseTool):
     def description(self) -> str:
         return "Loads and applies a specified blueprint."
 
-    def execute(self, blueprint_name: str = "") -> str:
+    def execute(self, blueprint_name: str = "") -> ToolResult:
         if not blueprint_name:
-            return "Please specify a blueprint name to load."
+            return ToolResult.fail(
+                "Please specify a blueprint name to load.",
+                error_type="ValidationError",
+            )
 
         # Security: prevent path traversal by constructing a path with Path APIs,
         # resolving it to a canonical absolute path, and validating it against
@@ -38,10 +41,16 @@ class LoadBlueprintTool(BaseTool):
             resolved = candidate.resolve()
             resolved = security.validate_file_access(resolved)
         except Exception as e:
-            return f"Blueprint '{blueprint_name}' not found."
+            return ToolResult.fail(
+                f"Blueprint '{blueprint_name}' not found.",
+                error_type="NotFound",
+            )
 
         if not resolved.exists():
-            return f"Blueprint '{blueprint_name}' not found."
+            return ToolResult.fail(
+                f"Blueprint '{blueprint_name}' not found.",
+                error_type="NotFound",
+            )
 
         try:
             with resolved.open("r", encoding="utf-8") as f:
@@ -56,9 +65,14 @@ class LoadBlueprintTool(BaseTool):
             # Profile could be handled similarly if there's a current_profile
             # For now, just load it
 
-            return f"Blueprint '{blueprint_name}' loaded and applied successfully."
+            return ToolResult.ok_result(
+                f"Blueprint '{blueprint_name}' loaded and applied successfully."
+            )
         except Exception as e:
-            return f"Failed to load blueprint '{blueprint_name}': {str(e)}"
+            return ToolResult.fail(
+                f"Failed to load blueprint '{blueprint_name}': {str(e)}",
+                error_type="Exception",
+            )
 
     def get_schema(self) -> dict:
         schema = super().get_schema()

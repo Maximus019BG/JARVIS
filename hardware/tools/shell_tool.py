@@ -15,7 +15,7 @@ import subprocess
 from typing import Any
 
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 from core.security import get_security_manager
 
 logger = get_logger(__name__)
@@ -208,7 +208,7 @@ class ShellCommandTool(BaseTool):
         self,
         command: str = "",
         working_dir: str | None = None,
-    ) -> str:
+    ) -> ToolResult:
         """Execute shell command.
 
         Args:
@@ -219,20 +219,23 @@ class ShellCommandTool(BaseTool):
             Command output.
         """
         if not command.strip():
-            return "Please provide a command to execute."
+            return ToolResult.fail("Please provide a command to execute.", error_type="ValidationError")
 
         # Parse and validate into argv. We intentionally do not support shell features
         # (pipes, redirects, command substitution) to eliminate command injection.
         argv, error = self._parse_and_validate_command(command)
         if error:
             logger.warning(f"Blocked command: {command} - {error}")
-            return f"Command not allowed: {error}"
+            return ToolResult.fail(f"Command not allowed: {error}", error_type="ValidationError")
 
         # Validate working directory if provided
         if working_dir:
             validation = self._security.validate_path(working_dir)
             if not validation.is_allowed:
-                return f"Working directory not allowed: {validation.reason}"
+                return ToolResult.fail(
+                    f"Working directory not allowed: {validation.reason}",
+                    error_type="AccessDenied",
+                )
 
         try:
             # Never use `shell=True`. Use argv list invocation.
@@ -266,11 +269,14 @@ class ShellCommandTool(BaseTool):
                 output_parts.append("Command executed successfully (no output)")
 
             logger.info(f"Executed command: {command}")
-            return "\n\n".join(output_parts)
+            return ToolResult.ok_result("\n\n".join(output_parts))
 
         except subprocess.TimeoutExpired:
             logger.warning(f"Command timed out: {command}")
-            return f"Command timed out after {self.timeout} seconds"
+            return ToolResult.fail(
+                f"Command timed out after {self.timeout} seconds",
+                error_type="Timeout",
+            )
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             raise ToolError(f"Command failed: {e}") from e
@@ -318,7 +324,7 @@ class ListDirectoryTool(BaseTool):
         path: str = ".",
         show_hidden: bool = False,
         detailed: bool = False,
-    ) -> str:
+    ) -> ToolResult:
         """List directory contents.
 
         Args:
@@ -337,13 +343,16 @@ class ListDirectoryTool(BaseTool):
             # Validate path
             validation = self._security.validate_path(str(dir_path))
             if not validation.is_allowed:
-                return f"Access denied: {validation.reason}"
+                return ToolResult.fail(
+                    f"Access denied: {validation.reason}",
+                    error_type="AccessDenied",
+                )
 
             if not dir_path.exists():
-                return f"Directory not found: {path}"
+                return ToolResult.fail(f"Directory not found: {path}", error_type="NotFound")
 
             if not dir_path.is_dir():
-                return f"Not a directory: {path}"
+                return ToolResult.fail(f"Not a directory: {path}", error_type="ValidationError")
 
             entries = []
             for entry in sorted(dir_path.iterdir()):
@@ -372,13 +381,13 @@ class ListDirectoryTool(BaseTool):
                         entries.append(f"📄 {name}")
 
             if not entries:
-                return f"Directory is empty: {path}"
+                return ToolResult.ok_result(f"Directory is empty: {path}")
 
             header = f"## Contents of: {dir_path}\n"
-            return header + "\n".join(entries)
+            return ToolResult.ok_result(header + "\n".join(entries))
 
         except PermissionError:
-            return f"Permission denied: {path}"
+            return ToolResult.fail(f"Permission denied: {path}", error_type="AccessDenied")
         except Exception as e:
             logger.error(f"Failed to list directory: {e}")
             raise ToolError(f"Failed to list directory: {e}") from e

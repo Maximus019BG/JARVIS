@@ -63,7 +63,8 @@ class LlamaWrapper:
         """Continue conversation after tool execution.
 
         Args:
-            tool_results: List of tool call results with call_id
+            tool_results: List of tool call results.
+                Each entry must include `tool_call_id` and `content`.
             conversation_history: Full conversation history
             tools: Available tools
 
@@ -76,7 +77,7 @@ class LlamaWrapper:
                 {
                     "role": "tool",
                     "content": result["content"],
-                    "tool_call_id": result["call_id"],
+                    "tool_call_id": result["tool_call_id"],
                 }
             )
 

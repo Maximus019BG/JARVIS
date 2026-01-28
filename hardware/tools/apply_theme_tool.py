@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 
 # Local application imports
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 from core.data_utils import load_theme, save_theme
 
 DEFAULT_THEME = {
@@ -40,9 +40,12 @@ class ApplyThemeTool(BaseTool):
 
     def execute(
         self, primary: str = "", secondary: str = "", background: str = ""
-    ) -> str:
+    ) -> ToolResult:
         if not primary and not secondary and not background:
-            return "Please specify at least one color to change."
+            return ToolResult.fail(
+                "Please specify at least one color to change.",
+                error_type="ValidationError",
+            )
 
         # Load current theme
         current_theme = load_theme()
@@ -65,7 +68,10 @@ class ApplyThemeTool(BaseTool):
             invalid.append("Background")
 
         if invalid:
-            return f"Invalid hex colors for: {', '.join(invalid)}. Use format like #2563eb or color names."
+            return ToolResult.fail(
+                f"Invalid hex colors for: {', '.join(invalid)}. Use format like #2563eb or color names.",
+                error_type="ValidationError",
+            )
 
         # Update theme
         updated_theme = current_theme.copy()
@@ -84,7 +90,9 @@ class ApplyThemeTool(BaseTool):
         # Save theme
         save_theme(updated_theme)
 
-        return f"Theme applied and saved: Primary {primary or 'unchanged'}, Secondary {secondary or 'unchanged'}, Background {background or 'unchanged'}."
+        return ToolResult.ok_result(
+            f"Theme applied and saved: Primary {primary or 'unchanged'}, Secondary {secondary or 'unchanged'}, Background {background or 'unchanged'}."
+        )
 
     def get_schema(self) -> dict:
         schema = super().get_schema()

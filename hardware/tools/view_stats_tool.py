@@ -7,7 +7,7 @@ import re
 import subprocess
 
 # Local application imports
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 
 
 class ViewStatsTool(BaseTool):
@@ -71,20 +71,14 @@ class ViewStatsTool(BaseTool):
             pass
         return "N/A"
 
-    def execute(self, **kwargs) -> str:
-        """Execute the view stats tool.
+    def execute(self, **kwargs) -> ToolResult:
+        """Execute the view stats tool."""
 
-        Args:
-            **kwargs: Unused parameters (kept for interface compatibility).
-
-        Returns:
-            A formatted string displaying current system statistics.
-        """
         stats = self.get_stats_dict()
         result = "System Statistics:\n"
         for key, value in stats.items():
             result += f"- {key}: {value}\n"
-        return result.strip()
+        return ToolResult.ok_result(result.strip())
 
     def get_stats_dict(self) -> dict[str, str]:
         """Get stats as dictionary."""

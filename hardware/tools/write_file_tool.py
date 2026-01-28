@@ -17,7 +17,7 @@ from typing import Any
 
 # Local application imports
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 from core.security import SecurityManager, get_security_manager
 
 logger = get_logger(__name__)
@@ -90,7 +90,7 @@ class WriteFileTool(BaseTool):
         create_backup: bool = True,
         append: bool = False,
         **kwargs: Any,
-    ) -> str:
+    ) -> ToolResult:
         """Write content to a file.
 
         Args:
@@ -141,7 +141,7 @@ class WriteFileTool(BaseTool):
                 msg += f" (backup: {backup_path.name})"
 
             logger.info("Wrote file: %s (%d chars)", resolved_path, len(content))
-            return msg
+            return ToolResult.ok_result(msg)
 
         except ToolError:
             raise

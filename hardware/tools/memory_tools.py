@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from app_logging.logger import get_logger
-from core.base_tool import BaseTool, ToolError
+from core.base_tool import BaseTool, ToolError, ToolResult
 
 logger = get_logger(__name__)
 
@@ -73,7 +73,7 @@ class RememberTool(BaseTool):
         tags: list[str] | None = None,
         priority: str = "medium",
         memory_type: str = "fact",
-    ) -> str:
+    ) -> ToolResult:
         """Store information in memory.
 
         Args:
@@ -86,7 +86,10 @@ class RememberTool(BaseTool):
             Confirmation message.
         """
         if not content.strip():
-            return "Please provide content to remember."
+            return ToolResult.fail(
+                "Please provide content to remember.",
+                error_type="ValidationError",
+            )
 
         try:
             from core.agents.memory_agent import MemoryPriority, MemoryType
@@ -117,7 +120,9 @@ class RememberTool(BaseTool):
             )
 
             logger.info(f"Stored memory: {memory.id}")
-            return f"Remembered: '{content[:50]}...' (ID: {memory.id}, Tags: {tags or []})"
+            return ToolResult.ok_result(
+                f"Remembered: '{content[:50]}...' (ID: {memory.id}, Tags: {tags or []})"
+            )
 
         except Exception as e:
             logger.error(f"Failed to store memory: {e}")
@@ -182,7 +187,7 @@ class RecallTool(BaseTool):
         tags: list[str] | None = None,
         memory_type: str | None = None,
         limit: int = 5,
-    ) -> str:
+    ) -> ToolResult:
         """Retrieve memories.
 
         Args:
@@ -195,7 +200,10 @@ class RecallTool(BaseTool):
             Found memories.
         """
         if not query.strip():
-            return "Please provide a search query."
+            return ToolResult.fail(
+                "Please provide a search query.",
+                error_type="ValidationError",
+            )
 
         try:
             from core.agents.memory_agent import MemoryType
@@ -221,7 +229,7 @@ class RecallTool(BaseTool):
             )
 
             if not memories:
-                return f"No memories found matching: {query}"
+                return ToolResult.ok_result(f"No memories found matching: {query}")
 
             result = [f"## Found {len(memories)} memories:\n"]
             for mem in memories:
@@ -232,7 +240,7 @@ class RecallTool(BaseTool):
                 result.append("")
 
             logger.info(f"Recalled {len(memories)} memories for: {query}")
-            return "\n".join(result)
+            return ToolResult.ok_result("\n".join(result))
 
         except Exception as e:
             logger.error(f"Failed to recall memories: {e}")
@@ -273,7 +281,7 @@ class ForgetTool(BaseTool):
             "required": ["memory_id"],
         }
 
-    def execute(self, memory_id: str = "") -> str:
+    def execute(self, memory_id: str = "") -> ToolResult:
         """Forget a memory.
 
         Args:
@@ -283,7 +291,7 @@ class ForgetTool(BaseTool):
             Confirmation message.
         """
         if not memory_id.strip():
-            return "Please provide a memory ID."
+            return ToolResult.fail("Please provide a memory ID.", error_type="ValidationError")
 
         try:
             agent = self._get_memory_agent()
@@ -291,9 +299,9 @@ class ForgetTool(BaseTool):
 
             if success:
                 logger.info(f"Forgot memory: {memory_id}")
-                return f"Forgot memory: {memory_id}"
+                return ToolResult.ok_result(f"Forgot memory: {memory_id}")
             else:
-                return f"Memory not found: {memory_id}"
+                return ToolResult.fail(f"Memory not found: {memory_id}", error_type="NotFound")
 
         except Exception as e:
             logger.error(f"Failed to forget memory: {e}")
@@ -329,7 +337,7 @@ class MemoryStatsTool(BaseTool):
             "required": [],
         }
 
-    def execute(self) -> str:
+    def execute(self) -> ToolResult:
         """Get memory statistics.
 
         Returns:
@@ -359,7 +367,7 @@ class MemoryStatsTool(BaseTool):
                 if count > 0:
                     result.append(f"  - {priority}: {count}")
 
-            return "\n".join(result)
+            return ToolResult.ok_result("\n".join(result))
 
         except Exception as e:
             logger.error(f"Failed to get memory stats: {e}")

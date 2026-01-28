@@ -1,18 +1,27 @@
-from typing import Dict, Any, Literal
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Literal
+
 from config.config import get_config
-from core.sync.sync_manager import SyncManager
+from core.base_tool import BaseTool, ToolResult
 from core.network.http_client import HttpClient
 from core.security.security_manager import SecurityManager
-from core.base_tool import BaseTool
+from core.sync.sync_manager import SyncManager
+
 
 class ResolveConflictTool(BaseTool):
-    """Chat tool for resolving blueprint conflicts"""
-    
-    name = "resolve_conflict"
-    description = "Resolve a sync conflict for a blueprint. Requires blueprint_id and resolution (server/local/merge)"
-    
+    """Chat tool for resolving blueprint conflicts."""
+
+    @property
+    def name(self) -> str:
+        return "resolve_conflict"
+
+    @property
+    def description(self) -> str:
+        return "Resolve a sync conflict for a blueprint. Requires blueprint_id and resolution (server/local/merge)"
+
     def __init__(self):
-        super().__init__()
         self.security = SecurityManager()
 
         # Security: base URL is now configured via environment/config, not hardcoded.
@@ -24,30 +33,54 @@ class ResolveConflictTool(BaseTool):
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()
         self.sync_manager = SyncManager(self.http_client, self.device_token, self.device_id)
-    
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute conflict resolution"""
-        blueprint_id = params.get('blueprint_id')
-        resolution = params.get('resolution')
-        
+
+    def schema_parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "blueprint_id": {
+                    "type": "string",
+                    "description": "Blueprint id with a sync conflict",
+                },
+                "resolution": {
+                    "type": "string",
+                    "description": "Conflict resolution strategy",
+                    "enum": ["server", "local", "merge"],
+                },
+            },
+            "required": ["blueprint_id", "resolution"],
+        }
+
+    def execute(
+        self,
+        blueprint_id: str = "",
+        resolution: Literal["server", "local", "merge"] | str = "",
+        **_: Any,
+    ) -> ToolResult:
         if not blueprint_id:
-            return {"success": False, "message": "blueprint_id is required"}
-        
-        if resolution not in ['server', 'local', 'merge']:
-            return {"success": False, "message": "resolution must be 'server', 'local', or 'merge'"}
-        
+            return ToolResult.fail("blueprint_id is required", error_type="ValidationError")
+
+        if resolution not in ("server", "local", "merge"):
+            return ToolResult.fail(
+                "resolution must be 'server', 'local', or 'merge'",
+                error_type="ValidationError",
+            )
+
+        async def _run() -> dict[str, Any]:
+            return await self.sync_manager.resolve_conflict(blueprint_id, str(resolution))
+
         try:
-            result = await self.sync_manager.resolve_conflict(blueprint_id, resolution)
-            
-            return {
-                "success": True,
-                "message": f"Resolved conflict for blueprint: {result['blueprintId']}",
-                "blueprintId": result['blueprintId'],
-                "version": result['version']
-            }
-        
+            result = asyncio.run(_run())
+            content = (
+                f"Resolved conflict for blueprint: {result.get('blueprintId')}\n"
+                f"version: {result.get('version')}"
+            )
+            return ToolResult.ok_result(
+                content,
+                blueprintId=result.get("blueprintId"),
+                version=result.get("version"),
+            )
+        except RuntimeError as e:
+            return ToolResult.fail(f"Resolution failed: {e}", error_type="RuntimeError")
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Resolution failed: {str(e)}"
-            }
+            return ToolResult.fail(f"Resolution failed: {e}", error_type="Exception")

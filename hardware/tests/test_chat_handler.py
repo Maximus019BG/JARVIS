@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from core.base_tool import ToolResult
 from core.chat_handler import ChatHandler
 from core.tool_registry import ToolRegistry
 from tests.mock_llm import MockLlamaWrapper
@@ -29,7 +30,7 @@ class TestChatHandler:
         new_tool = Mock()
         new_tool.name = "another_tool"
         new_tool.description = "Another tool"
-        new_tool.execute.return_value = "ok"
+        new_tool.execute.return_value = ToolResult.ok_result("ok")
         new_tool.get_schema.return_value = {
             "type": "function",
             "function": {
@@ -59,7 +60,7 @@ class TestChatHandler:
         mock_tool = Mock()
         mock_tool.name = "test_tool"
         mock_tool.description = "Test tool"
-        mock_tool.execute.return_value = "Tool executed"
+        mock_tool.execute.return_value = ToolResult.ok_result("Tool executed")
         mock_tool.get_schema.return_value = {
             "type": "function",
             "function": {
@@ -96,7 +97,8 @@ class TestChatHandler:
             "function": {"name": "test_tool", "arguments": "{}"},
         }
         result = chat_handler.execute_tool_call(tool_call)
-        assert result == "Tool executed"
+        assert result.ok is True
+        assert result.content == "Tool executed"
 
     def test_execute_tool_call_error(self, chat_handler):
         """Test tool execution with error."""
@@ -105,4 +107,6 @@ class TestChatHandler:
             "function": {"name": "nonexistent_tool", "arguments": "{}"},
         }
         result = chat_handler.execute_tool_call(tool_call)
-        assert "Error executing tool" in result
+        assert result.ok is False
+        assert "Error executing tool" in result.content
+        assert result.error_type == "ToolNotFound"

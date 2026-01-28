@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Local application imports
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 from core.data_utils import load_profile, save_profile
 from core.utils import is_valid_email
 
@@ -19,16 +19,22 @@ class EditProfileTool(BaseTool):
     def description(self) -> str:
         return "Updates user profile information."
 
-    def execute(self, name: str = "", email: str = "") -> str:
+    def execute(self, name: str = "", email: str = "") -> ToolResult:
         if not name and not email:
-            return "Please provide name or email to update."
+            return ToolResult.fail(
+                "Please provide name or email to update.",
+                error_type="ValidationError",
+            )
 
         # Load current profile
         current_profile = load_profile()
 
         # Validate email if provided
         if email and not is_valid_email(email):
-            return "Invalid email format. Please provide a valid email address."
+            return ToolResult.fail(
+                "Invalid email format. Please provide a valid email address.",
+                error_type="ValidationError",
+            )
 
         # Update profile
         updated_profile = current_profile.copy()
@@ -40,7 +46,9 @@ class EditProfileTool(BaseTool):
         # Save profile
         save_profile(updated_profile)
 
-        return f"Profile updated and saved: Name '{name or 'unchanged'}', Email '{email or 'unchanged'}'."
+        return ToolResult.ok_result(
+            f"Profile updated and saved: Name '{name or 'unchanged'}', Email '{email or 'unchanged'}'."
+        )
 
     def get_schema(self) -> dict:
         schema = super().get_schema()

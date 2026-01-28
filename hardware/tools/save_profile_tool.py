@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Local application imports
-from core.base_tool import BaseTool
+from core.base_tool import BaseTool, ToolResult
 from core.data_utils import save_profile
 from core.utils import is_valid_email
 
@@ -19,12 +19,15 @@ class SaveProfileTool(BaseTool):
     def description(self) -> str:
         return "Saves the user profile information."
 
-    def execute(self, name: str = "", email: str = "") -> str:
+    def execute(self, name: str = "", email: str = "") -> ToolResult:
         # Validate inputs
         if name and not name.strip():
-            return "Name cannot be empty."
+            return ToolResult.fail("Name cannot be empty.", error_type="ValidationError")
         if email and not is_valid_email(email):
-            return "Invalid email format. Please provide a valid email address."
+            return ToolResult.fail(
+                "Invalid email format. Please provide a valid email address.",
+                error_type="ValidationError",
+            )
 
         # Save profile
         profile = {
@@ -33,7 +36,7 @@ class SaveProfileTool(BaseTool):
         }
         save_profile(profile)
 
-        return "Profile saved successfully."
+        return ToolResult.ok_result("Profile saved successfully.")
 
     def get_schema(self) -> dict:
         schema = super().get_schema()
