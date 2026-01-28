@@ -33,12 +33,8 @@ class TestLLMProviderFactory:
             _env_file=None,
         )
 
-        with patch(
-            "hardware.core.llm.google_ai_wrapper.genai"
-        ) as mock_genai:
-            with patch(
-                "hardware.core.llm.google_ai_wrapper.GOOGLE_AI_AVAILABLE", True
-            ):
+        with patch("hardware.core.llm.google_ai_wrapper.genai") as mock_genai:
+            with patch("hardware.core.llm.google_ai_wrapper.GOOGLE_AI_AVAILABLE", True):
                 mock_genai.types.GenerationConfig.return_value = MagicMock()
                 provider = LLMProviderFactory.create(config)
                 assert provider is not None
@@ -47,9 +43,7 @@ class TestLLMProviderFactory:
         """Test create_with_fallback when primary succeeds."""
         config = AIConfig(provider=AIProvider.OLLAMA)
 
-        with patch.object(
-            LLMProviderFactory, "create"
-        ) as mock_create:
+        with patch.object(LLMProviderFactory, "create") as mock_create:
             mock_provider = MagicMock(spec=LLMProvider)
             mock_create.return_value = mock_provider
 
@@ -70,9 +64,7 @@ class TestLLMProviderFactory:
                 raise ValueError("Google API key required")
             return MagicMock(spec=LLMProvider)
 
-        with patch.object(
-            LLMProviderFactory, "create", side_effect=mock_create
-        ):
+        with patch.object(LLMProviderFactory, "create", side_effect=mock_create):
             result = LLMProviderFactory.create_with_fallback(config)
 
             assert call_count == 2  # Tried twice

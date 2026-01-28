@@ -23,12 +23,12 @@ from typing import Any
 
 from app_logging.logger import get_logger
 from core.memory.conversation_memory import ConversationMemory
-from core.memory.episodic_memory import EpisodicMemory, Episode, EventType, Session
+from core.memory.episodic_memory import Episode, EpisodicMemory, EventType, Session
 from core.memory.memory_store import (
     AdvancedMemoryStore,
     MemoryEntry,
-    MemoryType,
     MemoryPriority,
+    MemoryType,
 )
 
 logger = get_logger(__name__)
@@ -176,51 +176,57 @@ class UnifiedMemoryManager:
         if include_semantic:
             semantic_results = self.semantic.recall(query, limit=limit)
             for memory, score in semantic_results:
-                results.append(MemorySearchResult(
-                    source="semantic",
-                    content=memory.content,
-                    relevance=score,
-                    timestamp=memory.created_at,
-                    metadata={
-                        "id": memory.id,
-                        "type": memory.memory_type.value,
-                        "tags": memory.tags,
-                    },
-                ))
+                results.append(
+                    MemorySearchResult(
+                        source="semantic",
+                        content=memory.content,
+                        relevance=score,
+                        timestamp=memory.created_at,
+                        metadata={
+                            "id": memory.id,
+                            "type": memory.memory_type.value,
+                            "tags": memory.tags,
+                        },
+                    )
+                )
 
         # Search episodic memory
         if include_episodic:
             episodes = self.episodic.search(query, limit=limit)
             for episode in episodes:
-                results.append(MemorySearchResult(
-                    source="episodic",
-                    content=episode.description,
-                    relevance=episode.importance,
-                    timestamp=episode.timestamp,
-                    metadata={
-                        "id": episode.id,
-                        "type": episode.event_type.value,
-                        "outcome": episode.outcome,
-                    },
-                ))
+                results.append(
+                    MemorySearchResult(
+                        source="episodic",
+                        content=episode.description,
+                        relevance=episode.importance,
+                        timestamp=episode.timestamp,
+                        metadata={
+                            "id": episode.id,
+                            "type": episode.event_type.value,
+                            "outcome": episode.outcome,
+                        },
+                    )
+                )
 
         # Search conversation history
         if include_conversation:
             query_lower = query.lower()
             for msg in self.conversation.get_history():
                 if query_lower in msg.get("content", "").lower():
-                    results.append(MemorySearchResult(
-                        source="conversation",
-                        content=msg.get("content", ""),
-                        relevance=0.5,
-                        timestamp=datetime.now(),  # Conversations don't have timestamps
-                        metadata={"role": msg.get("role", "")},
-                    ))
+                    results.append(
+                        MemorySearchResult(
+                            source="conversation",
+                            content=msg.get("content", ""),
+                            relevance=0.5,
+                            timestamp=datetime.now(),  # Conversations don't have timestamps
+                            metadata={"role": msg.get("role", "")},
+                        )
+                    )
 
         # Sort by relevance
         results.sort(key=lambda r: r.relevance, reverse=True)
 
-        return results[:limit * 2]  # Return more since we searched multiple sources
+        return results[: limit * 2]  # Return more since we searched multiple sources
 
     def get_context(self, max_items: int = 10) -> ContextSnapshot:
         """Get a snapshot of the current memory context.
@@ -462,9 +468,15 @@ class UnifiedMemoryManager:
         episodic_stats = self.episodic.get_stats()
 
         reflection_parts.append("\n## Memory Status")
-        reflection_parts.append(f"- Semantic memories: {semantic_stats['total_memories']}")
-        reflection_parts.append(f"- Episodes recorded: {episodic_stats['total_episodes']}")
-        reflection_parts.append(f"- Working memory: {semantic_stats['working_memory_size']} items")
+        reflection_parts.append(
+            f"- Semantic memories: {semantic_stats['total_memories']}"
+        )
+        reflection_parts.append(
+            f"- Episodes recorded: {episodic_stats['total_episodes']}"
+        )
+        reflection_parts.append(
+            f"- Working memory: {semantic_stats['working_memory_size']} items"
+        )
 
         # Identify patterns (simple version)
         recent_episodes = self.episodic.recall_recent(20)
@@ -495,10 +507,13 @@ class UnifiedMemoryManager:
 
         if all_tags:
             from collections import Counter
+
             tag_counts = Counter(all_tags)
             top_tags = tag_counts.most_common(5)
             if top_tags:
-                insights.append(f"Most frequent topics: {', '.join(t for t, _ in top_tags)}")
+                insights.append(
+                    f"Most frequent topics: {', '.join(t for t, _ in top_tags)}"
+                )
 
         # Check session patterns
         sessions = list(self.episodic._sessions.values())

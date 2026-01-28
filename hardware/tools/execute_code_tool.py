@@ -49,6 +49,7 @@ EXTENSION_TO_LANGUAGE = {
 # SECURITY: AST-based Python code analyzer for sandbox bypass prevention
 # ============================================================================
 
+
 @dataclass(frozen=True)
 class SecurityAnalysisResult:
     """Result of a security analysis."""
@@ -83,7 +84,9 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
         re.compile(r"\\bshutdown\\b", re.IGNORECASE),
         re.compile(r"\\breboot\\b", re.IGNORECASE),
         re.compile(r"\\bos\\.system\\s*\\(", re.IGNORECASE),
-        re.compile(r"\\bsubprocess\\.(run|popen|call|check_output)\\s*\\(", re.IGNORECASE),
+        re.compile(
+            r"\\bsubprocess\\.(run|popen|call|check_output)\\s*\\(", re.IGNORECASE
+        ),
         re.compile(r"\\beval\\s*\\(", re.IGNORECASE),
         re.compile(r"\\bexec\\s*\\(", re.IGNORECASE),
         re.compile(r"__subclasses__\\s*\\(", re.IGNORECASE),
@@ -275,7 +278,9 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
             "os.system",
         }
 
-        if not (self._calls & writey_calls) and not any("open" in c for c in self._calls):
+        if not (self._calls & writey_calls) and not any(
+            "open" in c for c in self._calls
+        ):
             return []
 
         violations: list[str] = []
@@ -296,7 +301,9 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
         provider = LLMProviderFactory.create_with_fallback()
 
         # Keep payload small; include only features + full code (bounded)
-        code_snippet = code if len(code) <= 4000 else code[:4000] + "\n# ... truncated ..."
+        code_snippet = (
+            code if len(code) <= 4000 else code[:4000] + "\n# ... truncated ..."
+        )
 
         features = {
             "imports": sorted(self._imports),
@@ -322,21 +329,21 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
             )
             content = ""
             if isinstance(resp, dict):
-                content = (
-                    resp.get("message", {})
-                    .get("content", "")
-                    .strip()
-                )
+                content = resp.get("message", {}).get("content", "").strip()
             verdict = content.splitlines()[0].strip().upper() if content else ""
             if verdict == "SAFE":
                 return SecurityAnalysisResult("safe", "AI classified as SAFE")
             if verdict == "DANGEROUS":
                 return SecurityAnalysisResult("dangerous", "AI classified as DANGEROUS")
-            return SecurityAnalysisResult("unknown", f"AI returned unexpected output: {content!r}")
+            return SecurityAnalysisResult(
+                "unknown", f"AI returned unexpected output: {content!r}"
+            )
         except asyncio.TimeoutError:
             return SecurityAnalysisResult("unknown", "AI analysis timed out")
         except Exception as e:
-            return SecurityAnalysisResult("unknown", f"AI analysis failed: {type(e).__name__}: {e}")
+            return SecurityAnalysisResult(
+                "unknown", f"AI analysis failed: {type(e).__name__}: {e}"
+            )
 
     # -------------------------
     # Public API
@@ -387,7 +394,9 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
                 verdict = asyncio.run(self._ai_security_verdict(code))
             except RuntimeError:
                 # If we're already in an event loop, fall back to sync-safe path.
-                verdict = SecurityAnalysisResult("unknown", "AI analysis skipped (event loop already running)")
+                verdict = SecurityAnalysisResult(
+                    "unknown", "AI analysis skipped (event loop already running)"
+                )
 
             if verdict.verdict == "dangerous":
                 self._cache_set(cache_key, verdict)
@@ -398,7 +407,9 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
             return []
 
         # AI disabled
-        self._cache_set(cache_key, SecurityAnalysisResult("unknown", "AI analysis disabled"))
+        self._cache_set(
+            cache_key, SecurityAnalysisResult("unknown", "AI analysis disabled")
+        )
         return []
 
 
@@ -406,19 +417,20 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
 # SECURITY: Improved bash command analyzer
 # ============================================================================
 
+
 def analyze_bash_security(code: str) -> list[str]:
     """Analyze bash code for security vulnerabilities.
-    
+
     Uses multiple techniques to detect dangerous patterns:
     - Direct pattern matching for common dangerous commands
     - Shell command parsing to detect command chaining
     - Detection of obfuscation attempts
     """
     violations = []
-    
+
     # Normalize the code for analysis
     normalized = code.lower()
-    
+
     # Dangerous commands and patterns
     dangerous_patterns = [
         # File system destruction
@@ -427,54 +439,47 @@ def analyze_bash_security(code: str) -> list[str]:
         r"dd\s+if=",
         r"mkfs\.",
         r"format\s+[a-z]:",
-        
         # Fork bombs
         r":\(\)\s*{\s*:\s*\|\s*:\s*&\s*}\s*;",
-        
         # Direct device access
         r">\s*\/dev\/sda",
         r">\s*\/dev\/sd[b-z]",
-        
         # Permission escalation
         r"chmod\s+777\s+[\/~]",
         r"chown\s+root",
-        
         # Command substitution for bypass
         r"\$\([^)]*\)",  # $(command)
         r"`[^`]*`",  # `command`
-        
         # Pipe to dangerous commands
         r"\|\s*sh\b",
         r"\|\s*bash\b",
         r"\|\s*python\b",
-        
         # Background execution
         r"&\s*$",
         r"nohup\b",
-        
         # Network operations
         r"nc\s+-l",
         r"netcat\s+-l",
         r"wget\s+.*\|",
         r"curl\s+.*\|",
     ]
-    
+
     for pattern in dangerous_patterns:
         if re.search(pattern, normalized, re.MULTILINE):
             violations.append(f"Detected dangerous pattern: {pattern}")
-    
+
     # Check for command chaining that could bypass simple checks
     if ";" in code and any(cmd in normalized for cmd in ["rm", "dd", "mkfs", "chmod"]):
         violations.append("Command chaining with dangerous commands detected")
-    
+
     # Check for variable substitution that could hide commands
     if re.search(r"\$\{[^}]+\}", code):
         violations.append("Variable substitution detected (potential obfuscation)")
-    
+
     # Check for base64 encoded commands
     if "base64" in normalized and ("-d" in normalized or "--decode" in normalized):
         violations.append("Base64 decoding detected (potential command obfuscation)")
-    
+
     return violations
 
 
@@ -482,9 +487,10 @@ def analyze_bash_security(code: str) -> list[str]:
 # SECURITY: Improved JavaScript code analyzer
 # ============================================================================
 
+
 def analyze_javascript_security(code: str) -> list[str]:
     """Analyze JavaScript code for security vulnerabilities.
-    
+
     Detects dangerous patterns including:
     - Direct require calls to dangerous modules
     - Indirect require through variables
@@ -493,17 +499,31 @@ def analyze_javascript_security(code: str) -> list[str]:
     - Process manipulation
     """
     violations = []
-    
+
     # Normalize for basic checks
-    normalized = code.lower()
-    
+    code.lower()
+
     # Dangerous modules
     dangerous_modules = [
-        "child_process", "fs", "net", "http", "https", "dgram",
-        "cluster", "worker_threads", "vm", "os", "path", "util",
-        "crypto", "tls", "url", "querystring", "stream",
+        "child_process",
+        "fs",
+        "net",
+        "http",
+        "https",
+        "dgram",
+        "cluster",
+        "worker_threads",
+        "vm",
+        "os",
+        "path",
+        "util",
+        "crypto",
+        "tls",
+        "url",
+        "querystring",
+        "stream",
     ]
-    
+
     # Check for direct require calls
     for module in dangerous_modules:
         # Check both single and double quotes
@@ -515,38 +535,38 @@ def analyze_javascript_security(code: str) -> list[str]:
         for pattern in patterns:
             if pattern in code:
                 violations.append(f"Direct require of dangerous module: {module}")
-    
+
     # Check for indirect require through variables
     if re.search(r"require\s*\(\s*[^'\"`]", code):
         violations.append("Indirect require call detected (variable-based)")
-    
+
     # Check for string concatenation in require
     if re.search(r"require\s*\(\s*['\"`].*[\+\$]", code):
         violations.append("String concatenation in require (obfuscation attempt)")
-    
+
     # Check for eval and Function
     if re.search(r"\beval\s*\(", code):
         violations.append("Use of eval() detected")
-    
+
     if re.search(r"new\s+Function\s*\(", code):
         violations.append("Use of Function constructor detected")
-    
+
     # Check for process manipulation
     if re.search(r"process\.(exit|kill|chdir|env)", code):
         violations.append("Process manipulation detected")
-    
+
     # Check for global object manipulation
     if re.search(r"global\s*\[", code):
         violations.append("Global object manipulation detected")
-    
+
     # Check for Buffer usage (potential for shellcode)
     if re.search(r"new\s+Buffer\s*\(", code):
         violations.append("Buffer constructor detected (potential shellcode)")
-    
+
     # Check for atob/btoa (base64 encoding/decoding for obfuscation)
     if re.search(r"\b(atob|btoa)\s*\(", code):
         violations.append("Base64 encoding/decoding detected (potential obfuscation)")
-    
+
     return violations
 
 
@@ -558,7 +578,17 @@ class ExecuteCodeTool(BaseTool):
     Can execute inline code or code from files.
     """
 
-    SUPPORTED_LANGUAGES = ["python", "javascript", "node", "js", "typescript", "ts", "bash", "shell", "sh"]
+    SUPPORTED_LANGUAGES = [
+        "python",
+        "javascript",
+        "node",
+        "js",
+        "typescript",
+        "ts",
+        "bash",
+        "shell",
+        "sh",
+    ]
 
     def __init__(
         self,
@@ -583,7 +613,9 @@ class ExecuteCodeTool(BaseTool):
         # Paths where file execution is allowed (default: current directory)
         self.allowed_paths = [Path(p).resolve() for p in (allowed_paths or ["."])]
         self._node_available = shutil.which("node") is not None
-        self._ts_node_available = shutil.which("ts-node") is not None or shutil.which("npx") is not None
+        self._ts_node_available = (
+            shutil.which("ts-node") is not None or shutil.which("npx") is not None
+        )
         self._bash_available = shutil.which("bash") is not None
 
     @property
@@ -618,7 +650,17 @@ class ExecuteCodeTool(BaseTool):
                 "language": {
                     "type": "string",
                     "description": "Programming language: 'python', 'javascript', 'typescript', 'bash'. Auto-detected from file extension if not specified.",
-                    "enum": ["python", "javascript", "node", "js", "typescript", "ts", "bash", "shell", "sh"],
+                    "enum": [
+                        "python",
+                        "javascript",
+                        "node",
+                        "js",
+                        "typescript",
+                        "ts",
+                        "bash",
+                        "shell",
+                        "sh",
+                    ],
                     "default": "python",
                 },
                 "args": {
@@ -695,10 +737,10 @@ class ExecuteCodeTool(BaseTool):
 
     def _is_path_allowed(self, file_path: Path) -> bool:
         """Check if a file path is within allowed directories.
-        
+
         Args:
             file_path: Path to check.
-            
+
         Returns:
             True if path is allowed.
         """
@@ -728,28 +770,28 @@ class ExecuteCodeTool(BaseTool):
             Execution output or error message.
         """
         path = Path(file_path)
-        
+
         # Check if file exists
         if not path.exists():
             return f"File not found: {file_path}"
-        
+
         if not path.is_file():
             return f"Not a file: {file_path}"
-        
+
         # Security check: verify path is in allowed directories
         if not self._is_path_allowed(path):
             return f"Access denied: {file_path} is not in an allowed directory"
-        
+
         # Auto-detect language from extension if not specified
         if not language:
             ext = path.suffix.lower()
             language = EXTENSION_TO_LANGUAGE.get(ext, "")
             if not language:
                 return f"Could not auto-detect language for extension '{ext}'. Please specify the language parameter."
-        
+
         language = language.lower()
         args = args or []
-        
+
         # Execute based on language
         try:
             if language == "python":
@@ -768,11 +810,11 @@ class ExecuteCodeTool(BaseTool):
 
     def _execute_python_file(self, path: Path, args: list[str]) -> str:
         """Execute a Python file.
-        
+
         Args:
             path: Path to the Python file.
             args: Command-line arguments.
-            
+
         Returns:
             Execution output.
         """
@@ -792,17 +834,19 @@ class ExecuteCodeTool(BaseTool):
 
     def _execute_javascript_file(self, path: Path, args: list[str]) -> str:
         """Execute a JavaScript file with Node.js.
-        
+
         Args:
             path: Path to the JS file.
             args: Command-line arguments.
-            
+
         Returns:
             Execution output.
         """
         if not self._node_available:
-            return "Node.js is not available. Install Node.js to execute JavaScript files."
-        
+            return (
+                "Node.js is not available. Install Node.js to execute JavaScript files."
+            )
+
         try:
             result = subprocess.run(
                 ["node", str(path)] + args,
@@ -811,7 +855,9 @@ class ExecuteCodeTool(BaseTool):
                 timeout=self.timeout,
                 cwd=path.parent,
             )
-            return self._format_subprocess_result(result, f"JavaScript file: {path.name}")
+            return self._format_subprocess_result(
+                result, f"JavaScript file: {path.name}"
+            )
         except subprocess.TimeoutExpired:
             return f"Execution timed out after {self.timeout} seconds"
         except Exception as e:
@@ -819,11 +865,11 @@ class ExecuteCodeTool(BaseTool):
 
     def _execute_typescript_file(self, path: Path, args: list[str]) -> str:
         """Execute a TypeScript file.
-        
+
         Args:
             path: Path to the TS file.
             args: Command-line arguments.
-            
+
         Returns:
             Execution output.
         """
@@ -834,7 +880,7 @@ class ExecuteCodeTool(BaseTool):
             cmd = ["npx", "ts-node", str(path)] + args
         else:
             return "TypeScript execution requires ts-node. Install with: npm install -g ts-node typescript"
-        
+
         try:
             result = subprocess.run(
                 cmd,
@@ -843,7 +889,9 @@ class ExecuteCodeTool(BaseTool):
                 timeout=self.timeout,
                 cwd=path.parent,
             )
-            return self._format_subprocess_result(result, f"TypeScript file: {path.name}")
+            return self._format_subprocess_result(
+                result, f"TypeScript file: {path.name}"
+            )
         except subprocess.TimeoutExpired:
             return f"Execution timed out after {self.timeout} seconds"
         except Exception as e:
@@ -851,17 +899,17 @@ class ExecuteCodeTool(BaseTool):
 
     def _execute_bash_file(self, path: Path, args: list[str]) -> str:
         """Execute a Bash script.
-        
+
         Args:
             path: Path to the script.
             args: Command-line arguments.
-            
+
         Returns:
             Execution output.
         """
         if not self._bash_available:
             return "Bash is not available on this system."
-        
+
         try:
             result = subprocess.run(
                 ["bash", str(path)] + args,
@@ -876,34 +924,36 @@ class ExecuteCodeTool(BaseTool):
         except Exception as e:
             raise ToolError(f"Bash script execution failed: {e}") from e
 
-    def _format_subprocess_result(self, result: subprocess.CompletedProcess, context: str = "") -> str:
+    def _format_subprocess_result(
+        self, result: subprocess.CompletedProcess, context: str = ""
+    ) -> str:
         """Format subprocess result into readable output.
-        
+
         Args:
             result: Subprocess result.
             context: Description of what was executed.
-            
+
         Returns:
             Formatted output string.
         """
         output_parts = []
-        
+
         if context:
             output_parts.append(f"**{context}**")
-        
+
         if result.stdout:
             output_parts.append(f"**Output:**\n```\n{result.stdout.strip()}\n```")
-        
+
         if result.stderr:
             label = "Errors" if result.returncode != 0 else "Warnings"
             output_parts.append(f"**{label}:**\n```\n{result.stderr.strip()}\n```")
-        
+
         if result.returncode != 0:
             output_parts.append(f"**Exit code:** {result.returncode}")
-        
+
         if not output_parts or (not result.stdout and not result.stderr):
             output_parts.append("✓ Executed successfully (no output)")
-        
+
         return "\n\n".join(output_parts)
 
     def _execute_typescript(self, code: str) -> str:
@@ -933,7 +983,7 @@ class ExecuteCodeTool(BaseTool):
                     cmd = ["ts-node", temp_file]
                 else:
                     cmd = ["npx", "ts-node", temp_file]
-                
+
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -965,7 +1015,9 @@ class ExecuteCodeTool(BaseTool):
         # This detects dangerous patterns including obfuscation attempts
         violations = analyze_bash_security(code)
         if violations:
-            return f"Security violation detected:\n" + "\n".join(f"  - {v}" for v in violations)
+            return "Security violation detected:\n" + "\n".join(
+                f"  - {v}" for v in violations
+            )
 
         try:
             result = subprocess.run(
@@ -991,15 +1043,16 @@ class ExecuteCodeTool(BaseTool):
         """
         if not self._node_available:
             return (
-                "Node.js is not available. "
-                "Install Node.js to execute JavaScript code."
+                "Node.js is not available. Install Node.js to execute JavaScript code."
             )
 
         # SECURITY: Use improved JavaScript security analyzer
         # This detects dangerous patterns including obfuscation attempts
         violations = analyze_javascript_security(code)
         if violations:
-            return f"Security violation detected:\n" + "\n".join(f"  - {v}" for v in violations)
+            return "Security violation detected:\n" + "\n".join(
+                f"  - {v}" for v in violations
+            )
 
         try:
             # Create a temporary file for the code
@@ -1070,7 +1123,9 @@ class ExecuteCodeTool(BaseTool):
         )
         violations = analyzer.analyze(code)
         if violations:
-            return "Security violation detected:\n" + "\n".join(f"  - {v}" for v in violations)
+            return "Security violation detected:\n" + "\n".join(
+                f"  - {v}" for v in violations
+            )
 
         # SECURITY: Create restricted globals with whitelist-only approach
         # Only include safe builtins - removed dangerous ones like __import__, getattr, setattr, hasattr
@@ -1088,7 +1143,6 @@ class ExecuteCodeTool(BaseTool):
                 "reversed": reversed,
                 "all": all,
                 "any": any,
-                
                 # Type constructors
                 "list": list,
                 "dict": dict,
@@ -1098,12 +1152,10 @@ class ExecuteCodeTool(BaseTool):
                 "int": int,
                 "float": float,
                 "bool": bool,
-                
                 # Type checking
                 "type": type,
                 "isinstance": isinstance,
                 "issubclass": issubclass,
-                
                 # Math operations
                 "abs": abs,
                 "min": min,
@@ -1112,28 +1164,23 @@ class ExecuteCodeTool(BaseTool):
                 "round": round,
                 "pow": pow,
                 "divmod": divmod,
-                
                 # Character operations
                 "ord": ord,
                 "chr": chr,
                 "hex": hex,
                 "bin": bin,
                 "oct": oct,
-                
                 # String formatting
                 "format": format,
                 "repr": repr,
-                
                 # Iteration
                 "iter": iter,
                 "next": next,
                 "slice": slice,
-                
                 # Constants
                 "True": True,
                 "False": False,
                 "None": None,
-                
                 # Common exceptions (read-only)
                 "Exception": Exception,
                 "ValueError": ValueError,
@@ -1223,7 +1270,9 @@ class AnalyzeCodeTool(BaseTool):
             A structured [`ToolResult`](hardware/core/base_tool.py:1).
         """
         if not code.strip():
-            return ToolResult.fail("Please provide code to analyze.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide code to analyze.", error_type="ValidationError"
+            )
 
         try:
             import ast
@@ -1252,8 +1301,7 @@ class AnalyzeCodeTool(BaseTool):
                     functions.append(f"async {node.name}({', '.join(args)})")
                 elif isinstance(node, ast.ClassDef):
                     bases = [
-                        getattr(b, "id", getattr(b, "attr", "?"))
-                        for b in node.bases
+                        getattr(b, "id", getattr(b, "attr", "?")) for b in node.bases
                     ]
                     classes.append(f"{node.name}({', '.join(bases)})")
                 elif isinstance(node, ast.Assign):
@@ -1263,7 +1311,9 @@ class AnalyzeCodeTool(BaseTool):
 
             # Count lines
             lines = code.split("\n")
-            code_lines = sum(1 for line in lines if line.strip() and not line.strip().startswith("#"))
+            code_lines = sum(
+                1 for line in lines if line.strip() and not line.strip().startswith("#")
+            )
 
             result = [
                 "## Code Analysis",
@@ -1301,7 +1351,9 @@ class AnalyzeCodeTool(BaseTool):
             return ToolResult.ok_result("\n".join(result))
 
         except SyntaxError as e:
-            return ToolResult.fail(f"Syntax error in code: {e}", error_type="SyntaxError")
+            return ToolResult.fail(
+                f"Syntax error in code: {e}", error_type="SyntaxError"
+            )
         except Exception as e:
             logger.error(f"Code analysis failed: {e}")
             raise ToolError(f"Analysis failed: {e}") from e

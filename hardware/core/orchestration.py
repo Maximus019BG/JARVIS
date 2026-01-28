@@ -79,7 +79,10 @@ CODE_FENCE_RE = re.compile(r"```")
 # Tooling / execution triggers
 FILE_EXT_RE = re.compile(r"\.(?:py|ts|js|java|go|rs|md|yaml|yml|json)\b", re.IGNORECASE)
 PATH_LIKE_RE = re.compile(r"(?:^|\s)(?:[./\\][^\s]+)")
-ERROR_TERMS_RE = re.compile(r"\b(?:traceback|stack trace|exception|error|failed?|fails?|crash|bug)\b", re.IGNORECASE)
+ERROR_TERMS_RE = re.compile(
+    r"\b(?:traceback|stack trace|exception|error|failed?|fails?|crash|bug)\b",
+    re.IGNORECASE,
+)
 TOOLING_TERMS_RE = re.compile(
     r"\b(?:test|tests|pytest|unittest|npm|pip|poetry|uv|docker|kubernetes|git|github|ci|cd)\b",
     re.IGNORECASE,
@@ -206,7 +209,12 @@ class OrchestrationRouter:
 
         if not self._orchestrator:
             # If orchestrator isn't available, routing is always false.
-            return RoutingDecision(score=0.0, should_route=False, is_uncertain=False, reasons={"no_orchestrator": 1.0})
+            return RoutingDecision(
+                score=0.0,
+                should_route=False,
+                is_uncertain=False,
+                reasons={"no_orchestrator": 1.0},
+            )
 
         msg = message or ""
         score = 0.0
@@ -217,7 +225,10 @@ class OrchestrationRouter:
             score += LEGACY_LENGTH_BOOST
             reasons["legacy:length"] = LEGACY_LENGTH_BOOST
 
-        if msg.count(".") >= LEGACY_PUNCT_DOT_TRIGGER or msg.count(",") >= LEGACY_PUNCT_COMMA_TRIGGER:
+        if (
+            msg.count(".") >= LEGACY_PUNCT_DOT_TRIGGER
+            or msg.count(",") >= LEGACY_PUNCT_COMMA_TRIGGER
+        ):
             score += LEGACY_PUNCT_BOOST
             reasons["legacy:punct"] = LEGACY_PUNCT_BOOST
 
@@ -242,7 +253,9 @@ class OrchestrationRouter:
             reasons["complexity:enumeration"] = delta
 
         # Clause-ish: multiple sentences or conjunctions, small signal.
-        if msg.count(";") >= 1 or re.search(r"\b(?:and|then|also|but)\b", msg, re.IGNORECASE):
+        if msg.count(";") >= 1 or re.search(
+            r"\b(?:and|then|also|but)\b", msg, re.IGNORECASE
+        ):
             score += 0.3
             reasons["complexity:multi_clause"] = 0.3
 
@@ -259,12 +272,19 @@ class OrchestrationRouter:
             # Default rules fallback decision within uncertain band:
             # lean direct unless there are explicit intent/tooling signals.
             intent_or_tooling = any(
-                k.startswith("intent:") or k.startswith("signal:") or k.startswith("legacy:")
+                k.startswith("intent:")
+                or k.startswith("signal:")
+                or k.startswith("legacy:")
                 for k in reasons.keys()
             )
             should_route = bool(intent_or_tooling and score >= 1.2)
 
-        return RoutingDecision(score=score, should_route=should_route, is_uncertain=is_uncertain, reasons=reasons)
+        return RoutingDecision(
+            score=score,
+            should_route=should_route,
+            is_uncertain=is_uncertain,
+            reasons=reasons,
+        )
 
     def should_use_orchestrator(self, message: str) -> bool:
         """Return True if the message should be handled by the orchestrator.
@@ -274,7 +294,9 @@ class OrchestrationRouter:
 
         return self.evaluate(message).should_route
 
-    async def should_use_orchestrator_async(self, message: str, llm: "LLMProvider | None") -> bool:
+    async def should_use_orchestrator_async(
+        self, message: str, llm: "LLMProvider | None"
+    ) -> bool:
         """Hybrid router: rules-first, LLM classifier fallback when uncertain."""
 
         decision = self.evaluate(message)
@@ -297,7 +319,9 @@ class OrchestrationRouter:
             return decision.should_route
 
         try:
-            clf = await _classify_route_to_orchestrator(llm, message=message, score=decision.score)
+            clf = await _classify_route_to_orchestrator(
+                llm, message=message, score=decision.score
+            )
             if clf is None:
                 logger.debug(
                     "Routing classifier returned no decision; falling back to rules: route=%s score=%.2f",
@@ -336,7 +360,7 @@ async def _classify_route_to_orchestrator(
     """Ask the LLM for a cheap JSON classification. Returns None on parse errors."""
 
     # Truncate for safety/perf.
-    clipped = (message or "")
+    clipped = message or ""
     if len(clipped) > max_chars:
         clipped = clipped[:max_chars]
 
@@ -435,7 +459,9 @@ class OrchestrationRunner:
         try:
             context: dict = {}
             if self._memory_manager:
-                context["memory_context"] = self._memory_manager.get_context_for_prompt(500)
+                context["memory_context"] = self._memory_manager.get_context_for_prompt(
+                    500
+                )
 
             response = await self._orchestrator.orchestrate(message, context)
 

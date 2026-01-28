@@ -95,7 +95,8 @@ class TestTTSEngineFactory:
 
     def test_create_disabled(self):
         """Test creating disabled engine."""
-        from config.config import TTSConfig, TTSEngine as TTSEngineEnum
+        from config.config import TTSConfig
+        from config.config import TTSEngine as TTSEngineEnum
 
         config = TTSConfig(engine=TTSEngineEnum.DISABLED)
         engine = TTSEngineFactory.create(config)

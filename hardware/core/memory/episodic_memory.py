@@ -47,7 +47,9 @@ class Episode:
 
     # Context
     context: dict[str, Any] = field(default_factory=dict)
-    participants: list[str] = field(default_factory=list)  # e.g., ["user", "coder_agent"]
+    participants: list[str] = field(
+        default_factory=list
+    )  # e.g., ["user", "coder_agent"]
     location: str = ""  # Virtual location/context
 
     # Relationships
@@ -91,7 +93,9 @@ class Episode:
             id=data["id"],
             event_type=EventType(data["event_type"]),
             description=data["description"],
-            timestamp=datetime.fromisoformat(data["timestamp"]) if data.get("timestamp") else datetime.now(),
+            timestamp=datetime.fromisoformat(data["timestamp"])
+            if data.get("timestamp")
+            else datetime.now(),
             context=data.get("context", {}),
             participants=data.get("participants", []),
             location=data.get("location", ""),
@@ -140,8 +144,12 @@ class Session:
         return cls(
             id=data["id"],
             name=data["name"],
-            start_time=datetime.fromisoformat(data["start_time"]) if data.get("start_time") else datetime.now(),
-            end_time=datetime.fromisoformat(data["end_time"]) if data.get("end_time") else None,
+            start_time=datetime.fromisoformat(data["start_time"])
+            if data.get("start_time")
+            else datetime.now(),
+            end_time=datetime.fromisoformat(data["end_time"])
+            if data.get("end_time")
+            else None,
             episode_ids=data.get("episode_ids", []),
             summary=data.get("summary", ""),
             goals=data.get("goals", []),
@@ -240,7 +248,9 @@ class EpisodicMemory:
 
         return session
 
-    def end_session(self, summary: str = "", outcomes: list[str] | None = None) -> Session | None:
+    def end_session(
+        self, summary: str = "", outcomes: list[str] | None = None
+    ) -> Session | None:
         """End the current session.
 
         Args:
@@ -368,8 +378,7 @@ class EpisodicMemory:
         end = end or datetime.now()
 
         episodes = [
-            ep for ep in self._episodes.values()
-            if start <= ep.timestamp <= end
+            ep for ep in self._episodes.values() if start <= ep.timestamp <= end
         ]
 
         return sorted(episodes, key=lambda e: e.timestamp)
@@ -388,10 +397,7 @@ class EpisodicMemory:
         Returns:
             List of matching episodes.
         """
-        episodes = [
-            ep for ep in self._episodes.values()
-            if ep.event_type == event_type
-        ]
+        episodes = [ep for ep in self._episodes.values() if ep.event_type == event_type]
 
         episodes.sort(key=lambda e: e.timestamp, reverse=True)
         return episodes[:limit]
@@ -411,8 +417,7 @@ class EpisodicMemory:
             List of matching episodes.
         """
         episodes = [
-            ep for ep in self._episodes.values()
-            if participant in ep.participants
+            ep for ep in self._episodes.values() if participant in ep.participants
         ]
 
         episodes.sort(key=lambda e: e.timestamp, reverse=True)
@@ -596,7 +601,11 @@ class EpisodicMemory:
 
         # Sort by importance and age
         scored = [
-            (ep_id, ep.importance * 0.5 + (1 - min(1.0, (datetime.now() - ep.timestamp).days / 30)) * 0.5)
+            (
+                ep_id,
+                ep.importance * 0.5
+                + (1 - min(1.0, (datetime.now() - ep.timestamp).days / 30)) * 0.5,
+            )
             for ep_id, ep in self._episodes.items()
         ]
         scored.sort(key=lambda x: x[1])
@@ -615,7 +624,9 @@ class EpisodicMemory:
                 "saved_at": datetime.now().isoformat(),
                 "episode_counter": self._episode_counter,
                 "session_counter": self._session_counter,
-                "current_session_id": self._current_session.id if self._current_session else None,
+                "current_session_id": self._current_session.id
+                if self._current_session
+                else None,
                 "last_episode_id": self._last_episode_id,
                 "episodes": [ep.to_dict() for ep in self._episodes.values()],
                 "sessions": [s.to_dict() for s in self._sessions.values()],
@@ -656,7 +667,9 @@ class EpisodicMemory:
                 if session.is_active:
                     self._current_session = session
 
-            logger.info(f"Loaded {len(self._episodes)} episodes, {len(self._sessions)} sessions")
+            logger.info(
+                f"Loaded {len(self._episodes)} episodes, {len(self._sessions)} sessions"
+            )
 
         except Exception as e:
             logger.error(f"Failed to load episodic memory: {e}")
@@ -666,7 +679,9 @@ class EpisodicMemory:
         return {
             "total_episodes": len(self._episodes),
             "total_sessions": len(self._sessions),
-            "current_session": self._current_session.name if self._current_session else None,
+            "current_session": self._current_session.name
+            if self._current_session
+            else None,
             "by_type": {
                 et.value: sum(1 for e in self._episodes.values() if e.event_type == et)
                 for et in EventType

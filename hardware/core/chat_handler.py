@@ -19,10 +19,9 @@ from typing import TYPE_CHECKING, Any
 from app_logging.logger import get_logger
 from core.base_tool import ToolResult
 from core.memory.conversation_memory import ConversationMemory
-from core.tool_registry import ToolRegistry
-
 from core.orchestration import OrchestrationRouter, OrchestrationRunner
 from core.tool_execution import ToolCallExecutor
+from core.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
     from core.agents import OrchestratorAgent
@@ -117,12 +116,14 @@ class ChatHandler:
 
         # Avoid initializing an LLM unless we actually need the classifier.
         llm = self._llm
-        return asyncio.run(self._orchestration_router.should_use_orchestrator_async(message, llm))
+        return asyncio.run(
+            self._orchestration_router.should_use_orchestrator_async(message, llm)
+        )
 
     def start_chat(self) -> None:
         """Start the interactive chat loop."""
         logger.info("Starting JARVIS Chat")
-        
+
         # Start a memory session
         if self._memory_manager:
             try:
@@ -134,10 +135,12 @@ class ChatHandler:
                 logger.info(f"Started session: {session.id}")
             except Exception as e:
                 logger.warning(f"Failed to start memory session: {e}")
-        
+
         print("Welcome to JARVIS! I'm your AI assistant.")
         print("I can help with coding, planning, designing, research, and more.")
-        print("Type 'quit' to exit, 'status' for system status, or 'help' for commands.\n")
+        print(
+            "Type 'quit' to exit, 'status' for system status, or 'help' for commands.\n"
+        )
 
         # Announce startup with TTS
         self._speak_sync("JARVIS initialized. How can I help you?")
@@ -176,22 +179,22 @@ class ChatHandler:
             # Process the message
             try:
                 self._message_count += 1
-                
+
                 # Record in episodic memory
                 if self._memory_manager:
                     self._memory_manager.record_conversation("user", user_input)
-                
+
                 # Process with orchestrator or direct LLM
                 if self._should_use_orchestrator(user_input):
                     print("🤖 [Using multi-agent system...]")
                     response = asyncio.run(self._process_with_orchestrator(user_input))
                 else:
                     response = asyncio.run(self.process_message(user_input))
-                
+
                 # Record response
                 if self._memory_manager:
                     self._memory_manager.record_conversation("assistant", response)
-                    
+
             except (ValueError, KeyError) as exc:
                 logger.warning("Data error while processing message: %s", exc)
                 response = f"Error: Invalid data format - {exc}"
@@ -214,18 +217,18 @@ class ChatHandler:
     def _handle_quit(self) -> None:
         """Handle quit command and cleanup."""
         logger.info("User quit the chat")
-        
+
         # End memory session
         if self._memory_manager and self._session_started:
             try:
-                session = self._memory_manager.end_session(
+                self._memory_manager.end_session(
                     summary=f"Chat session with {self._message_count} messages",
                     outcomes=["Session completed normally"],
                 )
                 logger.info("Session ended")
             except Exception as e:
                 logger.warning(f"Failed to end session: {e}")
-        
+
         print("\nGoodbye! Your conversation has been saved.")
         self._speak_sync("Goodbye!")
 
@@ -234,7 +237,7 @@ class ChatHandler:
         print("\n" + "=" * 40)
         print("JARVIS System Status")
         print("=" * 40)
-        
+
         # Agent status
         if self._orchestrator:
             agents = self._orchestrator.get_registered_agents()
@@ -243,21 +246,23 @@ class ChatHandler:
                 print(f"  - {agent}")
         else:
             print("✗ Agent system: Not available")
-        
+
         # Memory status
         if self._memory_manager:
             stats = self._memory_manager.get_stats()
-            print(f"✓ Memory system: Active")
+            print("✓ Memory system: Active")
             print(f"  - Semantic memories: {stats['semantic']['total_memories']}")
             print(f"  - Episodes: {stats['episodic']['total_episodes']}")
-            print(f"  - Conversation: {stats['conversation']['message_count']} messages")
+            print(
+                f"  - Conversation: {stats['conversation']['message_count']} messages"
+            )
         else:
             print(f"  Basic memory: {len(self.memory.history)} messages")
-        
+
         # Tools
         tools = self.tool_registry.get_all_tools()
         print(f"✓ Tools: {len(tools)} registered")
-        
+
         print("=" * 40 + "\n")
 
     def _show_help(self) -> None:
@@ -282,9 +287,9 @@ class ChatHandler:
         if not self._memory_manager:
             print("Memory system not available.")
             return
-        
+
         print("\n" + self._memory_manager.reflect())
-        
+
         insights = self._memory_manager.get_insights()
         if insights:
             print("\n## Insights")
@@ -311,7 +316,7 @@ class ChatHandler:
 
     def _speak_sync(self, text: str) -> None:
         """Trigger TTS synchronously using thread pool executor.
-        
+
         This method runs the async TTS in a thread pool to avoid blocking
         the event loop when called from synchronous code.
         """
@@ -343,10 +348,10 @@ class ChatHandler:
 
     def _get_cached_tool_schemas(self) -> list[dict[str, Any]]:
         """Get tool schemas with caching for improved performance.
-        
+
         Performance improvement: Tool schemas are frequently accessed but rarely change.
         Caching them reduces repeated serialization overhead.
-        
+
         Returns:
             List of tool schema dictionaries.
         """
@@ -366,14 +371,14 @@ class ChatHandler:
 
     async def process_message(self, message: str) -> str:
         """Process user message and return response using AI with tool calling.
-        
+
         Performance improvements:
         - Cached tool schemas to reduce repeated serialization
         - Optimized context building
-        
+
         Args:
             message: User message to process.
-            
+
         Returns:
             AI response string.
         """
@@ -384,7 +389,7 @@ class ChatHandler:
 
             self.memory.add_message("user", message)
             history = self.memory.get_history()
-            
+
             # Enhance message with memory context if available
             enhanced_message = message
             if self._memory_manager:
@@ -392,7 +397,9 @@ class ChatHandler:
                 if context and len(context) > 20:
                     enhanced_message = f"[Context: {context}]\n\nUser: {message}"
 
-            llm_response = await self.llm.chat_with_tools(enhanced_message, tools, history)
+            llm_response = await self.llm.chat_with_tools(
+                enhanced_message, tools, history
+            )
             assistant_message = llm_response.get("message", {})
 
             tool_calls = assistant_message.get("tool_calls")

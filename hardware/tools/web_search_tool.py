@@ -91,7 +91,9 @@ class WebSearchTool(BaseTool):
             Formatted search results.
         """
         if not query.strip():
-            return ToolResult.fail("Please provide a search query.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide a search query.", error_type="ValidationError"
+            )
 
         if not self._search_available:
             return ToolResult.fail(
@@ -174,7 +176,9 @@ class FetchWebpageTool(BaseTool):
             Page content as text.
         """
         if not url.strip():
-            return ToolResult.fail("Please provide a URL.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide a URL.", error_type="ValidationError"
+            )
 
         try:
             import urllib.request

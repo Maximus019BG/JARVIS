@@ -32,7 +32,9 @@ class SyncTool(BaseTool):
         )
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()
-        self.sync_manager = SyncManager(self.http_client, self.device_token, self.device_id)
+        self.sync_manager = SyncManager(
+            self.http_client, self.device_token, self.device_id
+        )
 
     def schema_parameters(self) -> dict[str, Any]:
         # No required params

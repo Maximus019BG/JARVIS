@@ -150,8 +150,7 @@ class RecallTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Retrieve information from memory. "
-            "Search by query, tags, or memory type."
+            "Retrieve information from memory. Search by query, tags, or memory type."
         )
 
     def schema_parameters(self) -> dict[str, Any]:
@@ -291,7 +290,9 @@ class ForgetTool(BaseTool):
             Confirmation message.
         """
         if not memory_id.strip():
-            return ToolResult.fail("Please provide a memory ID.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide a memory ID.", error_type="ValidationError"
+            )
 
         try:
             agent = self._get_memory_agent()
@@ -301,7 +302,9 @@ class ForgetTool(BaseTool):
                 logger.info(f"Forgot memory: {memory_id}")
                 return ToolResult.ok_result(f"Forgot memory: {memory_id}")
             else:
-                return ToolResult.fail(f"Memory not found: {memory_id}", error_type="NotFound")
+                return ToolResult.fail(
+                    f"Memory not found: {memory_id}", error_type="NotFound"
+                )
 
         except Exception as e:
             logger.error(f"Failed to forget memory: {e}")

@@ -25,7 +25,9 @@ logger = get_logger(__name__)
 class PluginError(Exception):
     """Raised when plugin loading fails."""
 
-    def __init__(self, message: str, errors: list[tuple[str, str]] | None = None) -> None:
+    def __init__(
+        self, message: str, errors: list[tuple[str, str]] | None = None
+    ) -> None:
         """Initialize the plugin error.
 
         Args:
@@ -120,15 +122,11 @@ class ExternalToolConnector:
 
         # Get and validate TOOLS export
         if not hasattr(plugin_module, "TOOLS"):
-            raise PluginError(
-                f"Plugin must export a TOOLS list: {path}"
-            )
+            raise PluginError(f"Plugin must export a TOOLS list: {path}")
 
         tools_list = plugin_module.TOOLS
         if not isinstance(tools_list, (list, tuple)):
-            raise PluginError(
-                f"TOOLS must be a list or tuple: {path}"
-            )
+            raise PluginError(f"TOOLS must be a list or tuple: {path}")
 
         # Register tools, collecting any errors
         registered_names: list[str] = []
@@ -214,9 +212,7 @@ class ExternalToolConnector:
             raise PluginError(f"TOOLS must contain classes, got: {type(tool_class)}")
 
         if not issubclass(tool_class, BaseTool):
-            raise PluginError(
-                f"Tool class must inherit from BaseTool: {tool_class}"
-            )
+            raise PluginError(f"Tool class must inherit from BaseTool: {tool_class}")
 
         # Try to instantiate
         try:
@@ -226,9 +222,7 @@ class ExternalToolConnector:
             try:
                 return tool_class(security_manager=self.security)
             except TypeError:
-                raise PluginError(
-                    f"Cannot instantiate tool class: {tool_class}"
-                )
+                raise PluginError(f"Cannot instantiate tool class: {tool_class}")
 
     def _register_tool(self, tool: BaseTool) -> None:
         """Register a tool with the registry and track it."""

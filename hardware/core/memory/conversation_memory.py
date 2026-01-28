@@ -12,7 +12,9 @@ if TYPE_CHECKING:
 class ConversationMemory:
     """Manages conversation history with limited memory."""
 
-    def __init__(self, max_messages: int | None = None, config: AppConfig | None = None):
+    def __init__(
+        self, max_messages: int | None = None, config: AppConfig | None = None
+    ):
         """Initialize conversation memory.
 
         Args:

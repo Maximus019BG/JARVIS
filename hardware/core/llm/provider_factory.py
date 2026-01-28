@@ -108,7 +108,9 @@ class LLMProviderFactory:
                 "Google AI provider is not available. Install google-generativeai."
             )
 
-        api_key = config.google_api_key.get_secret_value() if config.google_api_key else ""
+        api_key = (
+            config.google_api_key.get_secret_value() if config.google_api_key else ""
+        )
         return GoogleAIWrapper(
             api_key=api_key,
             temperature=config.temperature,

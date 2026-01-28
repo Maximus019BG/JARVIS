@@ -34,13 +34,13 @@ class LoadBlueprintTool(BaseTool):
         # resolving it to a canonical absolute path, and validating it against
         # SecurityManager allow/block rules.
         base_dir = Path("data/blueprints")
-        candidate = (base_dir / f"{blueprint_name}.json")
+        candidate = base_dir / f"{blueprint_name}.json"
 
         security = get_security_manager()
         try:
             resolved = candidate.resolve()
             resolved = security.validate_file_access(resolved)
-        except Exception as e:
+        except Exception:
             return ToolResult.fail(
                 f"Blueprint '{blueprint_name}' not found.",
                 error_type="NotFound",

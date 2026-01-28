@@ -22,7 +22,9 @@ class SaveProfileTool(BaseTool):
     def execute(self, name: str = "", email: str = "") -> ToolResult:
         # Validate inputs
         if name and not name.strip():
-            return ToolResult.fail("Name cannot be empty.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Name cannot be empty.", error_type="ValidationError"
+            )
         if email and not is_valid_email(email):
             return ToolResult.fail(
                 "Invalid email format. Please provide a valid email address.",

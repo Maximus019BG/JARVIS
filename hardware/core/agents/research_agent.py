@@ -240,7 +240,7 @@ Extract and provide:
         Returns:
             AgentResponse with fact-check results.
         """
-        claims_str = "\n".join(f"{i+1}. {c}" for i, c in enumerate(claims))
+        claims_str = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(claims))
 
         prompt = f"""Fact-check these claims:
 
@@ -312,7 +312,7 @@ QUESTION: {question}
 
         if context_documents:
             for i, doc in enumerate(context_documents):
-                prompt += f"\n\n--- DOCUMENT {i+1} ---\n{doc}"
+                prompt += f"\n\n--- DOCUMENT {i + 1} ---\n{doc}"
 
         prompt += """
 

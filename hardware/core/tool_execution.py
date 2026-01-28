@@ -17,7 +17,8 @@ import dataclasses
 import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable
 
 from app_logging.logger import get_logger
@@ -72,7 +73,9 @@ def _get_tool_schema(tool: Any) -> dict[str, Any] | None:
     """
 
     schema: Any = None
-    if hasattr(tool, "schema_parameters") and callable(getattr(tool, "schema_parameters")):
+    if hasattr(tool, "schema_parameters") and callable(
+        getattr(tool, "schema_parameters")
+    ):
         try:
             schema = tool.schema_parameters()
         except Exception:
@@ -101,7 +104,9 @@ def _is_instance_of_json_type(value: Any, schema_type: str) -> bool:
     return True  # Unknown type keyword => don't fail.
 
 
-def _validate_args_against_schema(args: dict[str, Any], schema: dict[str, Any]) -> list[str]:
+def _validate_args_against_schema(
+    args: dict[str, Any], schema: dict[str, Any]
+) -> list[str]:
     """Lightweight schema validation.
 
     Intentionally partial: only enforces common constructs used by our tool schemas.
@@ -160,7 +165,9 @@ def _validate_args_against_schema(args: dict[str, Any], schema: dict[str, Any]) 
                     isinstance(t, str) and _is_instance_of_json_type(value, t)
                     for t in schema_type
                 ):
-                    errors.append(f"field '{key}' must match one of types {schema_type}")
+                    errors.append(
+                        f"field '{key}' must match one of types {schema_type}"
+                    )
                     continue
 
             if prop.get("type") == "array" and isinstance(value, list):
@@ -180,7 +187,9 @@ def _validate_args_against_schema(args: dict[str, Any], schema: dict[str, Any]) 
 def _timeout_seconds_for_tool(tool: Any, default: float | None) -> float | None:
     """Return timeout seconds for a tool (optional)."""
 
-    if hasattr(tool, "get_timeout_seconds") and callable(getattr(tool, "get_timeout_seconds")):
+    if hasattr(tool, "get_timeout_seconds") and callable(
+        getattr(tool, "get_timeout_seconds")
+    ):
         try:
             v = tool.get_timeout_seconds()
             if isinstance(v, (int, float)):
@@ -318,7 +327,9 @@ class ToolCallExecutor:
                             )
                         )
 
-            timeout_seconds = _timeout_seconds_for_tool(tool, self._default_timeout_seconds)
+            timeout_seconds = _timeout_seconds_for_tool(
+                tool, self._default_timeout_seconds
+            )
 
             def invoke() -> Any:
                 return tool.execute(**arguments)
@@ -359,7 +370,11 @@ class ToolCallExecutor:
                 )
 
             # Fill in any missing metadata.
-            if result.tool is None or result.call_id is None or result.duration_ms is None:
+            if (
+                result.tool is None
+                or result.call_id is None
+                or result.duration_ms is None
+            ):
                 merged = dataclasses.replace(
                     result,
                     tool=result.tool or function_name,

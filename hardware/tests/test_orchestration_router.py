@@ -76,7 +76,9 @@ class TestOrchestrationRouter:
 
     def test_high_confidence_rules_do_not_call_classifier(self):
         router = OrchestrationRouter(orchestrator=_DummyOrchestrator())
-        llm = _ClassifierLLM('{"route_to_orchestrator": false, "confidence": 1, "reason": "n/a"}')
+        llm = _ClassifierLLM(
+            '{"route_to_orchestrator": false, "confidence": 1, "reason": "n/a"}'
+        )
 
         msg = "Implement a REST API in Python and add pytest tests."
         use_orch = asyncio.run(router.should_use_orchestrator_async(msg, llm))
@@ -85,7 +87,9 @@ class TestOrchestrationRouter:
 
     def test_low_confidence_rules_do_not_call_classifier(self):
         router = OrchestrationRouter(orchestrator=_DummyOrchestrator())
-        llm = _ClassifierLLM('{"route_to_orchestrator": true, "confidence": 1, "reason": "n/a"}')
+        llm = _ClassifierLLM(
+            '{"route_to_orchestrator": true, "confidence": 1, "reason": "n/a"}'
+        )
 
         msg = "What is the capital of France?"
         use_orch = asyncio.run(router.should_use_orchestrator_async(msg, llm))
@@ -94,7 +98,9 @@ class TestOrchestrationRouter:
 
     def test_uncertain_score_triggers_classifier_path_true(self):
         router = OrchestrationRouter(orchestrator=_DummyOrchestrator())
-        llm = _ClassifierLLM('{"route_to_orchestrator": true, "confidence": 0.7, "reason": "multi-step"}')
+        llm = _ClassifierLLM(
+            '{"route_to_orchestrator": true, "confidence": 0.7, "reason": "multi-step"}'
+        )
 
         # Craft a message that lands in the uncertainty band (between low/high thresholds)
         msg = "I need help with architecture"  # medium signals, not legacy triggers
@@ -118,7 +124,9 @@ class TestOrchestrationRouter:
 
     def test_classifier_truncates_long_input(self):
         router = OrchestrationRouter(orchestrator=_DummyOrchestrator())
-        llm = _ClassifierLLM('{"route_to_orchestrator": false, "confidence": 0.6, "reason": "simple"}')
+        llm = _ClassifierLLM(
+            '{"route_to_orchestrator": false, "confidence": 0.6, "reason": "simple"}'
+        )
 
         # Keep length under legacy-length trigger so we're still uncertain and hit classifier.
         msg = ("I need help with architecture " + ("x" * 150)).strip()
@@ -134,8 +142,8 @@ class TestOrchestrationRouter:
 @pytest.mark.parametrize(
     "response",
     [
-        "{\"route_to_orchestrator\": true, \"confidence\": 1, \"reason\": \"ok\"}",
-        "```json\n{\"route_to_orchestrator\": false, \"confidence\": 0.4, \"reason\": \"ok\"}\n```",
+        '{"route_to_orchestrator": true, "confidence": 1, "reason": "ok"}',
+        '```json\n{"route_to_orchestrator": false, "confidence": 0.4, "reason": "ok"}\n```',
     ],
 )
 def test_classifier_accepts_plain_or_fenced_json(response: str):

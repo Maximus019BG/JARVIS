@@ -128,12 +128,13 @@ class SecurityManager:
 
         # Load trusted public key for plugin signature verification
         self._public_key = self._load_public_key()
-        
+
         # Get path validation cache size from config
         from config.config import get_config
+
         app_config = get_config()
-        self._path_cache_size = getattr(app_config, 'path_validation_cache_size', 128)
-        
+        self._path_cache_size = getattr(app_config, "path_validation_cache_size", 128)
+
         # Initialize path validation cache
         self._path_cache: dict[str, Path] = {}
         self._path_cache_lock = Lock()
@@ -151,9 +152,9 @@ class SecurityManager:
             The public key object or None if not configured.
         """
         try:
+            from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives import serialization
             from cryptography.hazmat.primitives.asymmetric import rsa
-            from cryptography.hazmat.backends import default_backend
 
             # Try to load from environment variable or file
             public_key_path = os.getenv("PLUGIN_PUBLIC_KEY_PATH")
@@ -171,32 +172,32 @@ class SecurityManager:
 
     def _get_path_cache_key(self, path: str | Path) -> str:
         """Generate a cache key for path validation.
-        
+
         Args:
             path: The path to generate a key for.
-            
+
         Returns:
             A string key suitable for caching.
         """
         if isinstance(path, Path):
             return str(path.resolve())
         return unquote(str(path))
-    
+
     def _get_cached_path(self, cache_key: str) -> Path | None:
         """Get a path from the cache if available.
-        
+
         Args:
             cache_key: The cache key to look up.
-            
+
         Returns:
             The cached path if found, None otherwise.
         """
         with self._path_cache_lock:
             return self._path_cache.get(cache_key)
-    
+
     def _cache_path(self, cache_key: str, resolved_path: Path) -> None:
         """Cache a validated path.
-        
+
         Args:
             cache_key: The cache key to store under.
             resolved_path: The resolved path to cache.
@@ -207,19 +208,19 @@ class SecurityManager:
                 # Remove first item (oldest)
                 self._path_cache.pop(next(iter(self._path_cache)))
             self._path_cache[cache_key] = resolved_path
-    
+
     def _clear_path_cache(self) -> None:
         """Clear the path validation cache.
-        
+
         Useful for testing or when allowed/blocked paths change.
         """
         with self._path_cache_lock:
             self._path_cache.clear()
             logger.debug("Path validation cache cleared")
-    
+
     def validate_file_access(self, path: str | Path) -> Path:
         """Validate and resolve a file path for access.
-        
+
         Performance improvement: Uses caching to avoid repeated path resolution
         and validation for the same paths. This provides 5-10% improvement for
         repeated file access operations.
@@ -235,7 +236,7 @@ class SecurityManager:
         """
         # Generate cache key
         cache_key = self._get_path_cache_key(path)
-        
+
         # Check cache first
         cached_path = self._get_cached_path(cache_key)
         if cached_path is not None:
@@ -245,7 +246,7 @@ class SecurityManager:
             # Remove stale cache entry
             with self._path_cache_lock:
                 self._path_cache.pop(cache_key, None)
-        
+
         # Decode URL-encoded paths to catch encoded traversal attempts
         if isinstance(path, str):
             path = unquote(path)
@@ -308,12 +309,12 @@ class SecurityManager:
 
         # Cache the validated path
         self._cache_path(cache_key, resolved)
-        
+
         return resolved
 
     def validate_file_size(self, path: Path) -> None:
         """Validate that a file is within size limits.
-        
+
         Performance improvement: Uses internal cache to avoid repeated file size
         checks for the same files. This provides 5-10% improvement for
         repeated file access operations.
@@ -326,14 +327,14 @@ class SecurityManager:
         """
         # Use string representation for caching (Path objects are not hashable)
         path_str = str(path.resolve())
-        
+
         # Check if we've already validated this file size
         cache_key = f"size:{path_str}"
         cached_result = self._get_cached_path(cache_key)
         if cached_result is not None:
             # File was previously validated, skip check
             return
-        
+
         if not path.exists():
             return
 
@@ -346,16 +347,15 @@ class SecurityManager:
                 {"path": str(path), "size": actual_size, "max": max_size},
             )
             raise SecurityError(
-                f"File size ({actual_size} bytes) exceeds limit "
-                f"({max_size} bytes)"
+                f"File size ({actual_size} bytes) exceeds limit ({max_size} bytes)"
             )
-        
+
         # Cache the validated file size
         self._cache_path(cache_key, path)
-    
+
     def get_path_cache_stats(self) -> dict[str, Any]:
         """Get statistics about the path validation cache.
-        
+
         Returns:
             Dictionary with cache statistics.
         """
@@ -481,7 +481,9 @@ class SecurityManager:
                 )
                 return False
             # In MEDIUM security, allow with warning
-            logger.warning("Allowing plugin without signature verification (medium security)")
+            logger.warning(
+                "Allowing plugin without signature verification (medium security)"
+            )
             return True
 
         # Look for signature file alongside the plugin
@@ -499,9 +501,9 @@ class SecurityManager:
             return True
 
         try:
+            from cryptography.exceptions import InvalidSignature
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.asymmetric import padding
-            from cryptography.exceptions import InvalidSignature
 
             # Read the plugin content and signature
             with open(plugin_file, "rb") as f:
@@ -541,7 +543,9 @@ class SecurityManager:
                 )
                 return False
             # In MEDIUM security, allow with warning
-            logger.warning("Allowing plugin despite verification error (medium security)")
+            logger.warning(
+                "Allowing plugin despite verification error (medium security)"
+            )
             return True
 
 

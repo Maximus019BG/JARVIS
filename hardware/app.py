@@ -22,8 +22,8 @@ from __future__ import annotations
 
 # Standard library imports
 import asyncio
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 # Local application imports
@@ -32,6 +32,9 @@ from config.config import get_config
 from core.chat_handler import ChatHandler
 from core.security import SecurityManager, set_security_manager
 from core.tool_registry import ToolRegistry
+
+# Import agent tools
+from tools import AGENT_TOOLS
 
 # Import tools
 from tools.apply_theme_tool import ApplyThemeTool
@@ -46,9 +49,6 @@ from tools.save_profile_tool import SaveProfileTool
 from tools.smart_mode_tool import SmartModeTool
 from tools.view_stats_tool import ViewStatsTool
 from tools.write_file_tool import WriteFileTool
-
-# Import agent tools
-from tools import AGENT_TOOLS
 
 if TYPE_CHECKING:
     from core.agents import OrchestratorAgent
@@ -108,7 +108,7 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     # File access tools (with security)
     registry.register_tool(ReadFileTool(security_manager))
     registry.register_tool(WriteFileTool(security_manager))
-    
+
     # Agent tools (code execution, web search, memory, etc.)
     for tool in AGENT_TOOLS:
         try:
@@ -120,7 +120,9 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     registry.register_tool(WriteFileTool(security_manager))
 
 
-def load_external_plugins(registry: ToolRegistry, security_manager: SecurityManager) -> None:
+def load_external_plugins(
+    registry: ToolRegistry, security_manager: SecurityManager
+) -> None:
     """Load external plugins from the plugins directory if it exists."""
     from core.external_tools import ExternalToolConnector
 
@@ -141,34 +143,34 @@ def load_external_plugins(registry: ToolRegistry, security_manager: SecurityMana
 
 def setup_agents(model_name: str | None = None) -> OrchestratorAgent:
     """Set up the multi-agent system.
-    
+
     Args:
         model_name: Ollama model to use for agents.
-        
+
     Returns:
         Configured OrchestratorAgent with all specialized agents.
     """
     from core.agents import create_agent_team
-    
+
     orchestrator = create_agent_team(model_name)
     return orchestrator
 
 
 def setup_advanced_memory() -> None:
     """Set up the advanced memory system.
-    
+
     Returns:
         Configured UnifiedMemoryManager.
     """
     from core.memory import UnifiedMemoryManager
-    
+
     memory_manager = UnifiedMemoryManager(
         storage_path="data/memory",
         max_conversation_messages=200,
         max_semantic_memories=10000,
         max_episodes=5000,
     )
-    
+
     return memory_manager
 
 
@@ -180,7 +182,7 @@ def main() -> None:
     # Load configuration
     config = get_config()
     logger.info("Starting %s", config.app_name)
-    
+
     print("\n" + "=" * 60)
     print("  🤖 JARVIS - AI-Powered Hardware Assistant")
     print("=" * 60)
@@ -214,10 +216,12 @@ def main() -> None:
 
     # Load external plugins
     load_external_plugins(registry, security_manager)
-    
+
     # Setup multi-agent system
     try:
-        model_name = config.ai.ollama_model if hasattr(config.ai, 'ollama_model') else None
+        model_name = (
+            config.ai.ollama_model if hasattr(config.ai, "ollama_model") else None
+        )
         orchestrator = setup_agents(model_name)
         agent_names = orchestrator.get_registered_agents()
         logger.info("Agent system initialized with %d agents", len(agent_names))
@@ -226,7 +230,7 @@ def main() -> None:
         logger.warning("Failed to initialize agent system: %s", e)
         orchestrator = None
         print("  ⚠ Agent system not available")
-    
+
     # Setup advanced memory
     try:
         memory_manager = setup_advanced_memory()
@@ -247,7 +251,7 @@ def main() -> None:
         orchestrator=orchestrator,
         memory_manager=memory_manager,
     )
-    
+
     print("=" * 60 + "\n")
 
     logger.info("Starting chat")

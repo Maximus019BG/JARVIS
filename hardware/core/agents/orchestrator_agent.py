@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 
 class SubtaskStatus(str, Enum):
     """Status of a subtask."""
-    
+
     PENDING = "pending"
     WAITING = "waiting"  # Waiting for dependencies
     RUNNING = "running"
@@ -39,7 +39,7 @@ class SubtaskStatus(str, Enum):
 @dataclass
 class Subtask:
     """Represents a single subtask with dependencies."""
-    
+
     id: str
     description: str
     agent_role: AgentRole
@@ -65,7 +65,7 @@ class OrchestratorAgent(BaseAgent):
 
     The orchestrator analyzes complex requests, breaks them into subtasks
     with dependencies, and executes them in parallel where possible.
-    
+
     Features:
     - Intelligent task decomposition
     - Dependency tracking between subtasks
@@ -132,7 +132,9 @@ Be precise and methodical. Maximize parallelism while respecting dependencies.""
         """Get a registered agent by role."""
         return self._registered_agents.get(role)
 
-    async def analyze_task(self, task: str, context: dict[str, Any] | None = None) -> TaskBreakdown:
+    async def analyze_task(
+        self, task: str, context: dict[str, Any] | None = None
+    ) -> TaskBreakdown:
         """Analyze a task and break it down into subtasks with dependencies.
 
         Args:
@@ -161,7 +163,7 @@ Respond in this EXACT JSON format (no markdown, just JSON):
             "expected_output": "What this subtask should produce"
         }},
         {{
-            "id": "plan_1", 
+            "id": "plan_1",
             "description": "Create implementation plan",
             "agent": "PLANNER",
             "priority": 2,
@@ -193,16 +195,16 @@ RULES:
         # Parse the JSON response
         subtasks = []
         objective = task
-        
+
         if response.success:
             try:
                 # Extract JSON from response (handle markdown code blocks)
                 content = response.content
-                json_match = re.search(r'\{[\s\S]*\}', content)
+                json_match = re.search(r"\{[\s\S]*\}", content)
                 if json_match:
                     data = json.loads(json_match.group())
                     objective = data.get("objective", task)
-                    
+
                     role_map = {
                         "CODER": AgentRole.CODER,
                         "PLANNER": AgentRole.PLANNER,
@@ -211,18 +213,20 @@ RULES:
                         "RESEARCHER": AgentRole.RESEARCHER,
                         "MEMORY": AgentRole.MEMORY,
                     }
-                    
+
                     for st in data.get("subtasks", []):
                         agent_name = st.get("agent", "").upper()
                         if agent_name in role_map:
-                            subtasks.append(Subtask(
-                                id=st.get("id", f"task_{len(subtasks)}"),
-                                description=st.get("description", ""),
-                                agent_role=role_map[agent_name],
-                                priority=st.get("priority", 1),
-                                dependencies=st.get("dependencies", []),
-                                expected_output=st.get("expected_output", ""),
-                            ))
+                            subtasks.append(
+                                Subtask(
+                                    id=st.get("id", f"task_{len(subtasks)}"),
+                                    description=st.get("description", ""),
+                                    agent_role=role_map[agent_name],
+                                    priority=st.get("priority", 1),
+                                    dependencies=st.get("dependencies", []),
+                                    expected_output=st.get("expected_output", ""),
+                                )
+                            )
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"Failed to parse task breakdown JSON: {e}")
 
@@ -238,19 +242,19 @@ RULES:
 
     def _calculate_execution_order(self, subtasks: list[Subtask]) -> list[list[str]]:
         """Calculate execution order respecting dependencies.
-        
+
         Returns groups of subtask IDs where each group can run in parallel,
         and groups must run sequentially.
         """
         if not subtasks:
             return []
-        
+
         # Build dependency graph
         subtask_map = {st.id: st for st in subtasks}
         completed: set[str] = set()
         execution_order: list[list[str]] = []
         remaining = set(subtask_map.keys())
-        
+
         while remaining:
             # Find all subtasks whose dependencies are satisfied
             ready = []
@@ -259,24 +263,26 @@ RULES:
                 deps_satisfied = all(d in completed for d in subtask.dependencies)
                 if deps_satisfied:
                     ready.append(task_id)
-            
+
             if not ready:
                 # Circular dependency or missing dependency - force remaining
-                logger.warning(f"Circular or missing dependencies detected: {remaining}")
+                logger.warning(
+                    f"Circular or missing dependencies detected: {remaining}"
+                )
                 execution_order.append(list(remaining))
                 break
-            
+
             # Sort ready tasks by priority
             ready.sort(key=lambda tid: subtask_map[tid].priority)
-            
+
             # Add this batch to execution order
             execution_order.append(ready)
-            
+
             # Mark as completed and remove from remaining
             for task_id in ready:
                 completed.add(task_id)
                 remaining.remove(task_id)
-        
+
         return execution_order
 
     async def _execute_subtask(
@@ -286,23 +292,23 @@ RULES:
         results: dict[str, AgentResponse],
     ) -> AgentResponse:
         """Execute a single subtask with the appropriate agent.
-        
+
         Args:
             subtask: The subtask to execute.
             context: Current context.
             results: Results from completed subtasks.
-            
+
         Returns:
             AgentResponse from the agent.
         """
         async with self._execution_semaphore:
             subtask.status = SubtaskStatus.RUNNING
-            
+
             agent = self._registered_agents.get(subtask.agent_role)
-            
+
             # Build context including dependency results
             subtask_context = {**context}
-            
+
             if subtask.dependencies:
                 dep_results = {}
                 for dep_id in subtask.dependencies:
@@ -310,29 +316,33 @@ RULES:
                         dep_results[dep_id] = results[dep_id].content
                 subtask_context["dependency_results"] = dep_results
                 subtask_context["previous_work"] = "\n\n".join(
-                    f"=== {dep_id} ===\n{content}" 
+                    f"=== {dep_id} ===\n{content}"
                     for dep_id, content in dep_results.items()
                 )
-            
+
             # Enhanced prompt with context
             enhanced_prompt = subtask.description
             if subtask.expected_output:
                 enhanced_prompt += f"\n\nEXPECTED OUTPUT: {subtask.expected_output}"
             if subtask.dependencies and "previous_work" in subtask_context:
                 enhanced_prompt += f"\n\nPREVIOUS WORK TO BUILD ON:\n{subtask_context['previous_work'][:2000]}"
-            
+
             try:
                 if agent:
-                    logger.info(f"[Orchestrator] Running {agent.name}: {subtask.description[:60]}...")
+                    logger.info(
+                        f"[Orchestrator] Running {agent.name}: {subtask.description[:60]}..."
+                    )
                     result = await agent.process(enhanced_prompt, subtask_context)
                 else:
-                    logger.warning(f"[Orchestrator] No agent for {subtask.agent_role}, handling directly")
+                    logger.warning(
+                        f"[Orchestrator] No agent for {subtask.agent_role}, handling directly"
+                    )
                     result = await self.process(enhanced_prompt, subtask_context)
-                
+
                 subtask.status = SubtaskStatus.COMPLETED
                 subtask.result = result
                 return result
-                
+
             except Exception as e:
                 logger.error(f"[Orchestrator] Subtask {subtask.id} failed: {e}")
                 subtask.status = SubtaskStatus.FAILED
@@ -351,18 +361,18 @@ RULES:
         results: dict[str, AgentResponse],
     ) -> dict[str, AgentResponse]:
         """Execute a group of independent subtasks in parallel with streaming.
-        
+
         Performance improvements:
         - Uses asyncio.as_completed() for streaming results as they complete
         - Better parallelization by processing results immediately
         - Reduced memory overhead by not waiting for all tasks to complete
-        
+
         Args:
             subtask_ids: IDs of subtasks to run in parallel.
             subtask_map: Map of all subtasks.
             context: Current context.
             results: Results from previous groups.
-            
+
         Returns:
             Map of subtask ID to result.
         """
@@ -374,7 +384,7 @@ RULES:
             task = self._execute_subtask(subtask, context, results)
             task_to_id[task] = task_id
             tasks.append(task)
-        
+
         # Use as_completed for streaming results as they finish
         # This allows processing results immediately rather than waiting for all
         group_results = {}
@@ -389,7 +399,7 @@ RULES:
                     agent_role=subtask_map[task_id].agent_role,
                     success=False,
                 )
-        
+
         return group_results
 
     async def _synthesize_results(
@@ -400,13 +410,13 @@ RULES:
         results: dict[str, AgentResponse],
     ) -> str:
         """Synthesize all subtask results into a coherent response.
-        
+
         Args:
             task: Original task.
             objective: Task objective.
             subtasks: All subtasks.
             results: All results.
-            
+
         Returns:
             Synthesized response content.
         """
@@ -420,7 +430,7 @@ RULES:
                 results_by_agent[agent_name].append(
                     (subtask.description, results[subtask.id].content)
                 )
-        
+
         # Build synthesis prompt
         results_text = []
         for agent, agent_results in results_by_agent.items():
@@ -429,7 +439,7 @@ RULES:
                 # Truncate long results
                 truncated = content[:1500] + "..." if len(content) > 1500 else content
                 results_text.append(f"\n**Task:** {desc}\n**Result:**\n{truncated}")
-        
+
         synthesis_prompt = f"""Synthesize these results into a clear, comprehensive response.
 
 ## ORIGINAL REQUEST
@@ -439,7 +449,7 @@ RULES:
 {objective}
 
 ## AGENT CONTRIBUTIONS
-{''.join(results_text)}
+{"".join(results_text)}
 
 ## YOUR TASK
 Create a unified response that:
@@ -494,7 +504,7 @@ Be concise but complete. Use formatting (headers, bullets, code blocks) as appro
 
         # Build subtask map
         subtask_map = {st.id: st for st in breakdown.subtasks}
-        
+
         # Execute in order, with parallelism within groups
         results: dict[str, AgentResponse] = {}
         accumulated_context = context or {}
@@ -505,12 +515,12 @@ Be concise but complete. Use formatting (headers, bullets, code blocks) as appro
                 f"[Orchestrator] Executing group {group_idx + 1}/{len(breakdown.execution_order)} "
                 f"({parallel_count} task{'s' if parallel_count > 1 else ''} in parallel)"
             )
-            
+
             # Execute all tasks in this group in parallel with streaming
             group_results = await self._execute_parallel_group(
                 group, subtask_map, accumulated_context, results
             )
-            
+
             # Merge results and update context immediately as they arrive
             # This allows dependent tasks to start sooner
             for task_id, result in group_results.items():
@@ -556,19 +566,19 @@ Be concise but complete. Use formatting (headers, bullets, code blocks) as appro
         context: dict[str, Any] | None = None,
     ) -> AgentResponse:
         """Quickly delegate a task to a specific agent without full orchestration.
-        
+
         Args:
             task: The task to delegate.
             agent_role: Which agent to use.
             context: Optional context.
-            
+
         Returns:
             AgentResponse from the agent.
         """
         agent = self._registered_agents.get(agent_role)
         if agent:
             return await agent.process(task, context)
-        
+
         logger.warning(f"Agent {agent_role} not registered, handling directly")
         return await self.process(task, context)
 

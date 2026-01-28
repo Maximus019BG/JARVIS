@@ -38,7 +38,9 @@ def test_profile_utf8_round_trip_non_ascii() -> None:
     assert loaded == profile
 
 
-def test_theme_normalization_unknown_and_wrong_types_logs(caplog: pytest.LogCaptureFixture) -> None:
+def test_theme_normalization_unknown_and_wrong_types_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     # Mix of valid overrides, unknown keys, and wrong types.
     bad_theme = {
         "primary": "#000000",
@@ -57,10 +59,14 @@ def test_theme_normalization_unknown_and_wrong_types_logs(caplog: pytest.LogCapt
     for k in data_utils.DEFAULT_THEME:
         assert k in loaded
 
-    assert any("Theme payload required normalization" in r.message for r in caplog.records)
+    assert any(
+        "Theme payload required normalization" in r.message for r in caplog.records
+    )
 
 
-def test_load_profile_invalid_json_logs_and_falls_back(caplog: pytest.LogCaptureFixture, tmp_path: Path) -> None:
+def test_load_profile_invalid_json_logs_and_falls_back(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
     # Write invalid JSON directly.
     Path(data_utils.PROFILE_FILE).write_text("{not valid json", encoding="utf-8")
 
@@ -72,7 +78,9 @@ def test_load_profile_invalid_json_logs_and_falls_back(caplog: pytest.LogCapture
 
 
 def test_atomic_write_uses_os_replace() -> None:
-    with patch.object(data_utils.os, "replace", wraps=data_utils.os.replace) as replace_spy:
+    with patch.object(
+        data_utils.os, "replace", wraps=data_utils.os.replace
+    ) as replace_spy:
         data_utils.save_profile({"name": "Alice", "email": "alice@example.com"})
         assert replace_spy.call_count == 1
 

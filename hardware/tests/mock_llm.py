@@ -50,6 +50,4 @@ class MockLlamaWrapper:
     ) -> str:
         """Mock continue conversation."""
         await asyncio.sleep(0.01)
-        return (
-            f"Tool result processed: {tool_results[0]['content'] if tool_results else 'No results'}"
-        )
+        return f"Tool result processed: {tool_results[0]['content'] if tool_results else 'No results'}"

@@ -32,7 +32,9 @@ class ResolveConflictTool(BaseTool):
         )
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()
-        self.sync_manager = SyncManager(self.http_client, self.device_token, self.device_id)
+        self.sync_manager = SyncManager(
+            self.http_client, self.device_token, self.device_id
+        )
 
     def schema_parameters(self) -> dict[str, Any]:
         return {
@@ -58,7 +60,9 @@ class ResolveConflictTool(BaseTool):
         **_: Any,
     ) -> ToolResult:
         if not blueprint_id:
-            return ToolResult.fail("blueprint_id is required", error_type="ValidationError")
+            return ToolResult.fail(
+                "blueprint_id is required", error_type="ValidationError"
+            )
 
         if resolution not in ("server", "local", "merge"):
             return ToolResult.fail(
@@ -67,7 +71,9 @@ class ResolveConflictTool(BaseTool):
             )
 
         async def _run() -> dict[str, Any]:
-            return await self.sync_manager.resolve_conflict(blueprint_id, str(resolution))
+            return await self.sync_manager.resolve_conflict(
+                blueprint_id, str(resolution)
+            )
 
         try:
             result = asyncio.run(_run())

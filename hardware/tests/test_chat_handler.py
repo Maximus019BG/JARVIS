@@ -14,7 +14,9 @@ from tests.mock_llm import MockLlamaWrapper
 class TestChatHandler:
     """Test cases for ChatHandler."""
 
-    def test_tool_schema_cache_reused_when_registry_version_unchanged(self, chat_handler):
+    def test_tool_schema_cache_reused_when_registry_version_unchanged(
+        self, chat_handler
+    ):
         first = chat_handler._get_cached_tool_schemas()
         second = chat_handler._get_cached_tool_schemas()
         assert first is second

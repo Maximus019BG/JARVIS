@@ -48,7 +48,9 @@ class ToolRegistry:
 
         if tool.name in self._tools:
             old_tool = self._tools[tool.name]
-            old_qualname = f"{old_tool.__class__.__module__}.{old_tool.__class__.__qualname__}"
+            old_qualname = (
+                f"{old_tool.__class__.__module__}.{old_tool.__class__.__qualname__}"
+            )
             new_qualname = f"{tool.__class__.__module__}.{tool.__class__.__qualname__}"
             logger.warning(
                 "Duplicate tool registration for '%s': overwriting %s with %s",

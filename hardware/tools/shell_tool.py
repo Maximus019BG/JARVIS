@@ -219,14 +219,18 @@ class ShellCommandTool(BaseTool):
             Command output.
         """
         if not command.strip():
-            return ToolResult.fail("Please provide a command to execute.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide a command to execute.", error_type="ValidationError"
+            )
 
         # Parse and validate into argv. We intentionally do not support shell features
         # (pipes, redirects, command substitution) to eliminate command injection.
         argv, error = self._parse_and_validate_command(command)
         if error:
             logger.warning(f"Blocked command: {command} - {error}")
-            return ToolResult.fail(f"Command not allowed: {error}", error_type="ValidationError")
+            return ToolResult.fail(
+                f"Command not allowed: {error}", error_type="ValidationError"
+            )
 
         # Validate working directory if provided
         if working_dir:
@@ -349,10 +353,14 @@ class ListDirectoryTool(BaseTool):
                 )
 
             if not dir_path.exists():
-                return ToolResult.fail(f"Directory not found: {path}", error_type="NotFound")
+                return ToolResult.fail(
+                    f"Directory not found: {path}", error_type="NotFound"
+                )
 
             if not dir_path.is_dir():
-                return ToolResult.fail(f"Not a directory: {path}", error_type="ValidationError")
+                return ToolResult.fail(
+                    f"Not a directory: {path}", error_type="ValidationError"
+                )
 
             entries = []
             for entry in sorted(dir_path.iterdir()):
@@ -387,7 +395,9 @@ class ListDirectoryTool(BaseTool):
             return ToolResult.ok_result(header + "\n".join(entries))
 
         except PermissionError:
-            return ToolResult.fail(f"Permission denied: {path}", error_type="AccessDenied")
+            return ToolResult.fail(
+                f"Permission denied: {path}", error_type="AccessDenied"
+            )
         except Exception as e:
             logger.error(f"Failed to list directory: {e}")
             raise ToolError(f"Failed to list directory: {e}") from e

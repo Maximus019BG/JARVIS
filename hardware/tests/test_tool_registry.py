@@ -93,6 +93,7 @@ class TestToolRegistry:
         assert registry.get_version() == 2
 
         assert any(
-            "Duplicate tool registration" in record.message and "dupe_tool" in record.message
+            "Duplicate tool registration" in record.message
+            and "dupe_tool" in record.message
             for record in caplog.records
         )

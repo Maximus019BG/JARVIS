@@ -159,9 +159,7 @@ class GTTSEngine(TTSEngine):
         self._init_pygame()
 
         # Create temp file for audio
-        with tempfile.NamedTemporaryFile(
-            suffix=".mp3", delete=False
-        ) as temp_file:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
             temp_path = Path(temp_file.name)
 
         try:
@@ -195,9 +193,7 @@ class GTTSEngine(TTSEngine):
         self._init_pygame()
 
         # Create temp file for audio
-        with tempfile.NamedTemporaryFile(
-            suffix=".mp3", delete=False
-        ) as temp_file:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
             temp_path = Path(temp_file.name)
 
         try:
@@ -257,7 +253,8 @@ class TTSEngineFactory:
         Returns:
             A TTS engine instance.
         """
-        from config.config import TTSConfig, TTSEngine as TTSEngineEnum
+        from config.config import TTSConfig
+        from config.config import TTSEngine as TTSEngineEnum
 
         if config is None:
             config = TTSConfig()

@@ -19,7 +19,9 @@ class UpdateBlueprintTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Update a local blueprint from the server. Requires blueprint_id parameter."
+        return (
+            "Update a local blueprint from the server. Requires blueprint_id parameter."
+        )
 
     def __init__(self):
         self.security = SecurityManager()
@@ -32,7 +34,9 @@ class UpdateBlueprintTool(BaseTool):
         )
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()
-        self.sync_manager = SyncManager(self.http_client, self.device_token, self.device_id)
+        self.sync_manager = SyncManager(
+            self.http_client, self.device_token, self.device_id
+        )
 
     def schema_parameters(self) -> dict[str, Any]:
         return {
@@ -48,7 +52,9 @@ class UpdateBlueprintTool(BaseTool):
 
     def execute(self, blueprint_id: str = "", **_: Any) -> ToolResult:
         if not blueprint_id:
-            return ToolResult.fail("blueprint_id is required", error_type="ValidationError")
+            return ToolResult.fail(
+                "blueprint_id is required", error_type="ValidationError"
+            )
 
         async def _run() -> dict[str, Any]:
             return await self.sync_manager.update_blueprint(blueprint_id)

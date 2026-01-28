@@ -210,7 +210,7 @@ TASK: {task_description}
 """
 
         if complexity_factors:
-            prompt += f"\n\nKNOWN COMPLEXITY FACTORS:\n" + "\n".join(
+            prompt += "\n\nKNOWN COMPLEXITY FACTORS:\n" + "\n".join(
                 f"- {f}" for f in complexity_factors
             )
 

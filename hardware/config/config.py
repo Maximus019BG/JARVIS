@@ -109,7 +109,9 @@ class SecurityConfig(BaseSettings):
     audit_log_path: str = "audit.log"
     # Rate limiting configuration
     rate_limit_max_requests: int = Field(default=100, alias="RATE_LIMIT_MAX_REQUESTS")
-    rate_limit_window_seconds: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
+    rate_limit_window_seconds: int = Field(
+        default=60, alias="RATE_LIMIT_WINDOW_SECONDS"
+    )
 
     @property
     def allowed_paths(self) -> list[str]:
@@ -174,9 +176,13 @@ class AppConfig(BaseSettings):
     log_level: str = "INFO"
     data_dir: Path = Path("./data")
     # Conversation memory configuration
-    conversation_max_messages: int = Field(default=50, alias="CONVERSATION_MAX_MESSAGES")
-    conversation_recent_messages: int = Field(default=10, alias="CONVERSATION_RECENT_MESSAGES")
-    
+    conversation_max_messages: int = Field(
+        default=50, alias="CONVERSATION_MAX_MESSAGES"
+    )
+    conversation_recent_messages: int = Field(
+        default=10, alias="CONVERSATION_RECENT_MESSAGES"
+    )
+
     # HTTP client connection pooling configuration
     http_max_connections: int = Field(default=100, alias="HTTP_MAX_CONNECTIONS")
     http_max_keepalive: int = Field(default=20, alias="HTTP_MAX_KEEPALIVE")
@@ -186,9 +192,11 @@ class AppConfig(BaseSettings):
     http_write_timeout: float = Field(default=10.0, alias="HTTP_WRITE_TIMEOUT")
     http_pool_timeout: float = Field(default=5.0, alias="HTTP_POOL_TIMEOUT")
     http_enable_http2: bool = Field(default=True, alias="HTTP_ENABLE_HTTP2")
-    
+
     # Path validation cache configuration
-    path_validation_cache_size: int = Field(default=128, alias="PATH_VALIDATION_CACHE_SIZE")
+    path_validation_cache_size: int = Field(
+        default=128, alias="PATH_VALIDATION_CACHE_SIZE"
+    )
 
     # Sub-configurations
     ai: AIConfig = Field(default_factory=AIConfig)

@@ -88,7 +88,9 @@ class SummarizeTool(BaseTool):
             Summary of the text.
         """
         if not text.strip():
-            return ToolResult.fail("Please provide text to summarize.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide text to summarize.", error_type="ValidationError"
+            )
 
         # For very short text, no need to summarize
         if len(text) < 200:
@@ -142,7 +144,9 @@ Instructions:
 
             summary = response.get("message", {}).get("content", "")
             if not summary:
-                return ToolResult.fail("Failed to generate summary.", error_type="LLMError")
+                return ToolResult.fail(
+                    "Failed to generate summary.", error_type="LLMError"
+                )
 
             logger.info(f"Summarized {len(text)} chars to {len(summary)} chars")
             return ToolResult.ok_result(summary)
@@ -215,7 +219,9 @@ class ExtractKeyPointsTool(BaseTool):
             List of key points.
         """
         if not text.strip():
-            return ToolResult.fail("Please provide text to analyze.", error_type="ValidationError")
+            return ToolResult.fail(
+                "Please provide text to analyze.", error_type="ValidationError"
+            )
 
         prompt = f"""Extract the {max_points} most important key points from this text:
 
@@ -252,7 +258,9 @@ Format as a numbered list. Each point should be:
 
             result = response.get("message", {}).get("content", "")
             if not result:
-                return ToolResult.fail("Failed to extract key points.", error_type="LLMError")
+                return ToolResult.fail(
+                    "Failed to extract key points.", error_type="LLMError"
+                )
 
             logger.info(f"Extracted key points from {len(text)} chars")
             return ToolResult.ok_result(result)

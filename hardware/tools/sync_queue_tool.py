@@ -33,7 +33,9 @@ class SyncQueueTool(BaseTool):
         )
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()
-        self.sync_manager = SyncManager(self.http_client, self.device_token, self.device_id)
+        self.sync_manager = SyncManager(
+            self.http_client, self.device_token, self.device_id
+        )
         self.queue = OfflineQueue()
 
     def schema_parameters(self) -> dict[str, Any]:
@@ -50,7 +52,9 @@ class SyncQueueTool(BaseTool):
             "required": [],
         }
 
-    def execute(self, action: Literal["view", "process", "clear"] | str = "view", **_: Any) -> ToolResult:
+    def execute(
+        self, action: Literal["view", "process", "clear"] | str = "view", **_: Any
+    ) -> ToolResult:
         if action == "view":
             operations = [
                 {"type": op.get("type"), "timestamp": op.get("timestamp")}
@@ -67,6 +71,7 @@ class SyncQueueTool(BaseTool):
             return ToolResult.ok_result("Queue cleared")
 
         if action == "process":
+
             async def _run() -> list[dict[str, Any]]:
                 return await self.sync_manager.process_offline_queue()
 
@@ -77,8 +82,12 @@ class SyncQueueTool(BaseTool):
                     results=results,
                 )
             except RuntimeError as e:
-                return ToolResult.fail(f"Process failed: {e}", error_type="RuntimeError")
+                return ToolResult.fail(
+                    f"Process failed: {e}", error_type="RuntimeError"
+                )
             except Exception as e:
                 return ToolResult.fail(f"Process failed: {e}", error_type="Exception")
 
-        return ToolResult.fail(f"Unknown action: {action}", error_type="ValidationError")
+        return ToolResult.fail(
+            f"Unknown action: {action}", error_type="ValidationError"
+        )

@@ -81,13 +81,17 @@ class SyncConfigTool(BaseTool):
 
         if action == "set_interval":
             if interval is None:
-                return ToolResult.fail("interval parameter is required", error_type="ValidationError")
+                return ToolResult.fail(
+                    "interval parameter is required", error_type="ValidationError"
+                )
             self.config.set_sync_interval(interval)
             return ToolResult.ok_result(f"Sync interval set to {interval} minutes")
 
         if action == "set_conflict":
             if mode not in ("auto", "manual"):
-                return ToolResult.fail("mode must be 'auto' or 'manual'", error_type="ValidationError")
+                return ToolResult.fail(
+                    "mode must be 'auto' or 'manual'", error_type="ValidationError"
+                )
             self.config.set_conflict_resolution(str(mode))
             return ToolResult.ok_result(f"Conflict resolution set to {mode}")
 
@@ -102,8 +106,14 @@ class SyncConfigTool(BaseTool):
 
         if action == "set_offline":
             if offline is None:
-                return ToolResult.fail("offline parameter is required", error_type="ValidationError")
+                return ToolResult.fail(
+                    "offline parameter is required", error_type="ValidationError"
+                )
             self.config.set_offline_enabled(bool(offline))
-            return ToolResult.ok_result(f"Offline mode {'enabled' if offline else 'disabled'}")
+            return ToolResult.ok_result(
+                f"Offline mode {'enabled' if offline else 'disabled'}"
+            )
 
-        return ToolResult.fail(f"Unknown action: {action}", error_type="ValidationError")
+        return ToolResult.fail(
+            f"Unknown action: {action}", error_type="ValidationError"
+        )

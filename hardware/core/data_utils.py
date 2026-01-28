@@ -46,7 +46,11 @@ def _read_json_file(path: str) -> Any | None:
         return None
     except (json.JSONDecodeError, OSError) as e:
         # Keep fallback behavior but make it observable.
-        logger.warning("Failed to read/parse JSON; falling back", extra={"path": path, "reason": type(e).__name__}, exc_info=True)
+        logger.warning(
+            "Failed to read/parse JSON; falling back",
+            extra={"path": path, "reason": type(e).__name__},
+            exc_info=True,
+        )
         return None
 
 
@@ -77,7 +81,11 @@ def _atomic_write_json(path: str, data: Any) -> None:
 
         os.replace(tmp_path, path)
     except OSError as e:
-        logger.warning("Failed to write JSON atomically", extra={"path": path, "reason": type(e).__name__}, exc_info=True)
+        logger.warning(
+            "Failed to write JSON atomically",
+            extra={"path": path, "reason": type(e).__name__},
+            exc_info=True,
+        )
         raise
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -157,7 +165,10 @@ def load_theme() -> dict[str, str]:
     obj = _read_json_file(THEME_FILE) if os.path.exists(THEME_FILE) else None
     theme, normalized = _validate_theme(obj)
     if normalized and obj is not None:
-        logger.warning("Theme JSON required normalization; using merged defaults", extra={"path": THEME_FILE, "reason": "validation_error"})
+        logger.warning(
+            "Theme JSON required normalization; using merged defaults",
+            extra={"path": THEME_FILE, "reason": "validation_error"},
+        )
     return theme
 
 
@@ -168,7 +179,10 @@ def save_theme(theme: dict[str, str]) -> None:
     # Keep compatibility: accept dict-like payloads; validate/normalize rather than raising.
     normalized_theme, normalized = _validate_theme(theme)
     if normalized:
-        logger.warning("Theme payload required normalization before saving", extra={"path": THEME_FILE, "reason": "validation_error"})
+        logger.warning(
+            "Theme payload required normalization before saving",
+            extra={"path": THEME_FILE, "reason": "validation_error"},
+        )
 
     _atomic_write_json(THEME_FILE, normalized_theme)
 
@@ -180,7 +194,10 @@ def load_profile() -> dict[str, str]:
     obj = _read_json_file(PROFILE_FILE) if os.path.exists(PROFILE_FILE) else None
     profile, normalized = _validate_profile(obj)
     if normalized and obj is not None:
-        logger.warning("Profile JSON required normalization; using normalized result", extra={"path": PROFILE_FILE, "reason": "validation_error"})
+        logger.warning(
+            "Profile JSON required normalization; using normalized result",
+            extra={"path": PROFILE_FILE, "reason": "validation_error"},
+        )
     return profile
 
 
@@ -190,6 +207,9 @@ def save_profile(profile: dict[str, str]) -> None:
 
     normalized_profile, normalized = _validate_profile(profile)
     if normalized:
-        logger.warning("Profile payload required normalization before saving", extra={"path": PROFILE_FILE, "reason": "validation_error"})
+        logger.warning(
+            "Profile payload required normalization before saving",
+            extra={"path": PROFILE_FILE, "reason": "validation_error"},
+        )
 
     _atomic_write_json(PROFILE_FILE, normalized_profile)

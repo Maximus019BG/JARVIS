@@ -28,6 +28,7 @@ import numpy as np
 # Try to import orjson for faster JSON processing, fall back to standard json
 try:
     import orjson
+
     _USE_ORJSON = True
 except ImportError:
     _USE_ORJSON = False
@@ -40,31 +41,31 @@ logger = get_logger(__name__)
 
 def _json_dumps(obj: Any, indent: int | None = None) -> str:
     """Serialize object to JSON string using orjson if available.
-    
+
     Performance improvement: orjson is 2-3x faster than standard json.
-    
+
     Args:
         obj: Object to serialize.
         indent: Indentation level (orjson doesn't support indent, falls back to json).
-        
+
     Returns:
         JSON string.
     """
     if _USE_ORJSON and indent is None:
         # orjson returns bytes, decode to str
-        return orjson.dumps(obj).decode('utf-8')
+        return orjson.dumps(obj).decode("utf-8")
     # Fall back to standard json for indented output or if orjson unavailable
     return json.dumps(obj, indent=indent, default=str)
 
 
 def _json_loads(s: str | bytes) -> Any:
     """Deserialize JSON string using orjson if available.
-    
+
     Performance improvement: orjson is 2-3x faster than standard json.
-    
+
     Args:
         s: JSON string or bytes to deserialize.
-        
+
     Returns:
         Deserialized object.
     """
@@ -169,9 +170,15 @@ class MemoryEntry:
             tags=data.get("tags", []),
             source=data.get("source", ""),
             context=data.get("context", ""),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(),
-            accessed_at=datetime.fromisoformat(data["accessed_at"]) if data.get("accessed_at") else datetime.now(),
-            modified_at=datetime.fromisoformat(data["modified_at"]) if data.get("modified_at") else datetime.now(),
+            created_at=datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else datetime.now(),
+            accessed_at=datetime.fromisoformat(data["accessed_at"])
+            if data.get("accessed_at")
+            else datetime.now(),
+            modified_at=datetime.fromisoformat(data["modified_at"])
+            if data.get("modified_at")
+            else datetime.now(),
             access_count=data.get("access_count", 0),
             usefulness_score=data.get("usefulness_score", 0.5),
             related_ids=data.get("related_ids", []),
@@ -282,7 +289,7 @@ class AdvancedMemoryStore:
 
         This is a basic embedding for when no ML model is available.
         For production, use sentence-transformers or similar.
-        
+
         Optimized with numpy for better performance.
 
         Args:
@@ -301,7 +308,9 @@ class AdvancedMemoryStore:
         # Character-based features (first 26 dimensions) - vectorized
         if text:
             # Convert characters to indices (a-z -> 0-25)
-            char_codes = np.array([ord(c) - ord('a') for c in text if 'a' <= c <= 'z'], dtype=np.int32)
+            char_codes = np.array(
+                [ord(c) - ord("a") for c in text if "a" <= c <= "z"], dtype=np.int32
+            )
             if len(char_codes) > 0:
                 # Count occurrences using bincount (much faster than loop)
                 counts = np.bincount(char_codes, minlength=26)
@@ -310,7 +319,9 @@ class AdvancedMemoryStore:
         # Word-based features
         embedding[26] = len(words)  # Word count
         embedding[27] = len(text)  # Character count
-        embedding[28] = sum(len(w) for w in words) / max(1, len(words))  # Avg word length
+        embedding[28] = sum(len(w) for w in words) / max(
+            1, len(words)
+        )  # Avg word length
 
         # Simple hash-based features for remaining dimensions
         text_hash = hashlib.md5(text.encode()).hexdigest()
@@ -327,13 +338,13 @@ class AdvancedMemoryStore:
 
     def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
         """Compute cosine similarity between two vectors using numpy.
-        
+
         Optimized with numpy for better performance on large datasets.
-        
+
         Args:
             a: First vector (numpy array).
             b: Second vector (numpy array).
-            
+
         Returns:
             Cosine similarity score between 0.0 and 1.0.
         """
@@ -405,7 +416,9 @@ class AdvancedMemoryStore:
         for tag in memory.tags:
             self._tag_index[tag].add(memory_id)
         self._type_index[memory_type].add(memory_id)
-        self._embedding_index.append((memory_id, embedding))  # Keep numpy array for fast search
+        self._embedding_index.append(
+            (memory_id, embedding)
+        )  # Keep numpy array for fast search
 
         # Add to working memory if high priority
         if priority in (MemoryPriority.CRITICAL, MemoryPriority.HIGH):
@@ -521,11 +534,7 @@ class AdvancedMemoryStore:
         for tag in tags:
             memory_ids.update(self._tag_index.get(tag, set()))
 
-        results = [
-            self._memories[mid]
-            for mid in memory_ids
-            if mid in self._memories
-        ]
+        results = [self._memories[mid] for mid in memory_ids if mid in self._memories]
 
         # Sort by importance
         results.sort(key=lambda m: m.calculate_importance(), reverse=True)
@@ -554,11 +563,7 @@ class AdvancedMemoryStore:
         """
         memory_ids = self._type_index.get(memory_type, set())
 
-        results = [
-            self._memories[mid]
-            for mid in memory_ids
-            if mid in self._memories
-        ]
+        results = [self._memories[mid] for mid in memory_ids if mid in self._memories]
 
         results.sort(key=lambda m: m.calculate_importance(), reverse=True)
 
@@ -576,9 +581,7 @@ class AdvancedMemoryStore:
             List of memories in working memory.
         """
         return [
-            self._memories[mid]
-            for mid in self._working_memory
-            if mid in self._memories
+            self._memories[mid] for mid in self._working_memory if mid in self._memories
         ]
 
     def _add_to_working_memory(self, memory_id: str) -> None:
@@ -614,8 +617,7 @@ class AdvancedMemoryStore:
             self._tag_index[tag].discard(memory_id)
         self._type_index[memory.memory_type].discard(memory_id)
         self._embedding_index = [
-            (mid, emb) for mid, emb in self._embedding_index
-            if mid != memory_id
+            (mid, emb) for mid, emb in self._embedding_index if mid != memory_id
         ]
 
         # Remove from working memory
@@ -626,7 +628,8 @@ class AdvancedMemoryStore:
         for related_id in memory.related_ids:
             if related_id in self._memories:
                 self._memories[related_id].related_ids = [
-                    rid for rid in self._memories[related_id].related_ids
+                    rid
+                    for rid in self._memories[related_id].related_ids
                     if rid != memory_id
                 ]
 
@@ -644,7 +647,9 @@ class AdvancedMemoryStore:
         """
         if memory_id in self._memories:
             memory = self._memories[memory_id]
-            memory.usefulness_score = max(0.0, min(1.0, memory.usefulness_score + delta))
+            memory.usefulness_score = max(
+                0.0, min(1.0, memory.usefulness_score + delta)
+            )
             memory.modified_at = datetime.now()
             # Schedule async save instead of immediate write
             self._schedule_save()
@@ -699,20 +704,22 @@ class AdvancedMemoryStore:
             # Don't remove critical memories
             if memory.priority != MemoryPriority.CRITICAL:
                 self.forget(memory_id)
-                logger.debug(f"Consolidated memory {memory_id} (importance: {importance:.3f})")
+                logger.debug(
+                    f"Consolidated memory {memory_id} (importance: {importance:.3f})"
+                )
 
     def _schedule_save(self) -> None:
         """Schedule an async save with write-behind caching.
-        
+
         This method implements write-behind caching by debouncing save operations.
         Multiple rapid changes will only trigger one save after a delay.
         """
         self._dirty = True
-        
+
         # Cancel any pending save task
         if self._save_task and not self._save_task.done():
             self._save_task.cancel()
-        
+
         # Schedule a new save task
         try:
             loop = asyncio.get_event_loop()
@@ -726,7 +733,7 @@ class AdvancedMemoryStore:
         try:
             # Wait for the debounce delay
             await asyncio.sleep(self.write_behind_delay)
-            
+
             # Only save if still dirty (no new changes)
             if self._dirty:
                 await self._save_async()
@@ -739,14 +746,14 @@ class AdvancedMemoryStore:
 
     async def _save_async(self) -> None:
         """Save memories to disk asynchronously using aiofiles.
-        
+
         This method uses async file I/O to avoid blocking the event loop.
         Uses orjson for faster JSON serialization when available.
         """
         async with self._save_lock:
             try:
                 import aiofiles
-                
+
                 data = {
                     "version": "2.0",
                     "saved_at": datetime.now().isoformat(),
@@ -758,7 +765,7 @@ class AdvancedMemoryStore:
                 file_path = self.storage_path / "memory_store.json"
                 # Use orjson for faster serialization (2-3x speedup)
                 json_str = _json_dumps(data, indent=2)
-                async with aiofiles.open(file_path, 'w', encoding="utf-8") as f:
+                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
                     await f.write(json_str)
 
                 logger.debug(f"Saved {len(self._memories)} memories to disk")
@@ -768,7 +775,7 @@ class AdvancedMemoryStore:
 
     def _save_sync(self) -> None:
         """Synchronous fallback for saving memories to disk.
-        
+
         Used when no event loop is available or for critical saves.
         Uses orjson for faster JSON serialization when available.
         """
@@ -792,20 +799,20 @@ class AdvancedMemoryStore:
 
     def _save(self) -> None:
         """Save memories to disk (legacy method for backward compatibility).
-        
+
         This method now uses write-behind caching to reduce disk I/O.
         """
         self._schedule_save()
 
     async def flush(self) -> None:
         """Immediately flush any pending changes to disk.
-        
+
         Call this method to ensure all changes are persisted before shutdown.
         """
         if self._dirty:
             await self._save_async()
             self._dirty = False
-        
+
         # Wait for any pending save task
         if self._save_task and not self._save_task.done():
             try:
@@ -829,7 +836,9 @@ class AdvancedMemoryStore:
 
         summary_parts = ["Current context:"]
         for memory in working:
-            summary_parts.append(f"- [{memory.memory_type.value}] {memory.content[:100]}")
+            summary_parts.append(
+                f"- [{memory.memory_type.value}] {memory.content[:100]}"
+            )
 
         return "\n".join(summary_parts)
 
@@ -844,24 +853,21 @@ class AdvancedMemoryStore:
             "working_memory_size": len(self._working_memory),
             "total_tags": len(self._tag_index),
             "by_type": {
-                mt.value: len(self._type_index.get(mt, set()))
-                for mt in MemoryType
+                mt.value: len(self._type_index.get(mt, set())) for mt in MemoryType
             },
             "by_priority": {
-                mp.value: sum(
-                    1 for m in self._memories.values()
-                    if m.priority == mp
-                )
+                mp.value: sum(1 for m in self._memories.values() if m.priority == mp)
                 for mp in MemoryPriority
             },
             "average_importance": sum(
                 m.calculate_importance() for m in self._memories.values()
-            ) / max(1, len(self._memories)),
+            )
+            / max(1, len(self._memories)),
         }
 
     def _load(self) -> None:
         """Load memories from disk.
-        
+
         Note: This is a synchronous method called during initialization.
         For async loading, use _load_async().
         Uses orjson for faster JSON deserialization when available.
@@ -898,7 +904,7 @@ class AdvancedMemoryStore:
 
     async def _load_async(self) -> None:
         """Load memories from disk asynchronously using aiofiles.
-        
+
         This method uses async file I/O to avoid blocking during initialization.
         Uses orjson for faster JSON deserialization when available.
         """
@@ -909,10 +915,10 @@ class AdvancedMemoryStore:
 
         try:
             import aiofiles
-            
-            async with aiofiles.open(file_path, 'r', encoding="utf-8") as f:
+
+            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
-            
+
             # Use orjson for faster deserialization (2-3x speedup)
             data = _json_loads(content)
 
@@ -970,7 +976,7 @@ class AdvancedMemoryStore:
 
         for mem_data in data.get("memories", []):
             # Generate new ID to avoid conflicts
-            old_id = mem_data["id"]
+            mem_data["id"]
             mem_data["id"] = self._generate_id()
 
             memory = MemoryEntry.from_dict(mem_data)

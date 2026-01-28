@@ -33,7 +33,9 @@ class SendBlueprintTool(BaseTool):
         )
         self.device_token = self.security.load_device_token()
         self.device_id = self.security.load_device_id()
-        self.sync_manager = SyncManager(self.http_client, self.device_token, self.device_id)
+        self.sync_manager = SyncManager(
+            self.http_client, self.device_token, self.device_id
+        )
 
     def schema_parameters(self) -> dict[str, Any]:
         return {
@@ -51,7 +53,9 @@ class SendBlueprintTool(BaseTool):
             "required": [],
         }
 
-    def execute(self, blueprint_path: str = "", blueprint_id: str = "", **_: Any) -> ToolResult:
+    def execute(
+        self, blueprint_path: str = "", blueprint_id: str = "", **_: Any
+    ) -> ToolResult:
         """Send blueprint to server.
 
         Note: Under the hood the sync manager is async; we run it synchronously here
