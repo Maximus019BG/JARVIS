@@ -19,6 +19,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
@@ -820,9 +821,11 @@ class ExecuteCodeTool(BaseTool):
         Returns:
             Execution output.
         """
+        cmd = [sys.executable, str(path), *args]
+
         try:
             result = subprocess.run(
-                ["python3", str(path)] + args,
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
