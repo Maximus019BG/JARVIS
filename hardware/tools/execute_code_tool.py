@@ -498,10 +498,10 @@ def analyze_javascript_security(code: str) -> list[str]:
     - eval and Function constructors
     - Process manipulation
     """
-    violations = []
 
     # Normalize for basic checks
-    code.lower()
+    normalized = code.lower()
+    violations: list[str] = []
 
     # Dangerous modules
     dangerous_modules = [
@@ -524,47 +524,49 @@ def analyze_javascript_security(code: str) -> list[str]:
         "stream",
     ]
 
-    # Check for direct require calls
-    for module in dangerous_modules:
-        # Check both single and double quotes
-        patterns = [
+    def _direct_require_patterns(module: str) -> tuple[str, str, str]:
+        # Check single quotes, double quotes, and backticks.
+        return (
             f"require('{module}')",
             f'require("{module}")',
             f"require(`{module}`)",
-        ]
-        for pattern in patterns:
-            if pattern in code:
+        )
+
+    # Check for direct require calls
+    for module in dangerous_modules:
+        for pattern in _direct_require_patterns(module):
+            if pattern in normalized:
                 violations.append(f"Direct require of dangerous module: {module}")
 
     # Check for indirect require through variables
-    if re.search(r"require\s*\(\s*[^'\"`]", code):
+    if re.search(r"require\s*\(\s*[^'\"`]", normalized):
         violations.append("Indirect require call detected (variable-based)")
 
     # Check for string concatenation in require
-    if re.search(r"require\s*\(\s*['\"`].*[\+\$]", code):
+    if re.search(r"require\s*\(\s*['\"`].*[\+\$]", normalized):
         violations.append("String concatenation in require (obfuscation attempt)")
 
     # Check for eval and Function
-    if re.search(r"\beval\s*\(", code):
+    if re.search(r"\beval\s*\(", normalized):
         violations.append("Use of eval() detected")
 
-    if re.search(r"new\s+Function\s*\(", code):
+    if re.search(r"new\s+function\s*\(", normalized):
         violations.append("Use of Function constructor detected")
 
     # Check for process manipulation
-    if re.search(r"process\.(exit|kill|chdir|env)", code):
+    if re.search(r"process\.(exit|kill|chdir|env)", normalized):
         violations.append("Process manipulation detected")
 
     # Check for global object manipulation
-    if re.search(r"global\s*\[", code):
+    if re.search(r"global\s*\[", normalized):
         violations.append("Global object manipulation detected")
 
     # Check for Buffer usage (potential for shellcode)
-    if re.search(r"new\s+Buffer\s*\(", code):
+    if re.search(r"new\s+buffer\s*\(", normalized):
         violations.append("Buffer constructor detected (potential shellcode)")
 
     # Check for atob/btoa (base64 encoding/decoding for obfuscation)
-    if re.search(r"\b(atob|btoa)\s*\(", code):
+    if re.search(r"\b(atob|btoa)\s*\(", normalized):
         violations.append("Base64 encoding/decoding detected (potential obfuscation)")
 
     return violations
