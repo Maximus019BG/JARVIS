@@ -31,6 +31,3 @@ class LiveAssistanceTool(BaseTool):
         return ToolResult.ok_result(
             "Live assistance mode activated. Real-time help and guidance is now available."
         )
-
-    def get_schema(self) -> dict:
-        return super().get_schema()

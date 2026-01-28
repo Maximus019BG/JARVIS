@@ -21,6 +21,3 @@ class QuitTool(BaseTool):
         """Execute the quit tool."""
 
         return ToolResult.ok_result("Exiting application (stub).")
-
-    def get_schema(self) -> dict:
-        return super().get_schema()

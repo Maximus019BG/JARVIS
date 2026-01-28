@@ -88,6 +88,3 @@ class ViewStatsTool(BaseTool):
             "Temperature": self._get_temperature(),
             "Uptime": self._get_uptime(),
         }
-
-    def get_schema(self) -> dict:
-        return super().get_schema()

@@ -40,11 +40,13 @@ class SaveProfileTool(BaseTool):
 
         return ToolResult.ok_result("Profile saved successfully.")
 
-    def get_schema(self) -> dict:
-        schema = super().get_schema()
-        schema["function"]["parameters"]["properties"] = {
-            "name": {"type": "string", "description": "User's name"},
-            "email": {"type": "string", "description": "User's email address"},
+    def schema_parameters(self) -> dict[str, object]:
+        return {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "User's name"},
+                "email": {"type": "string", "description": "User's email address"},
+            },
+            "required": [],
+            "additionalProperties": False,
         }
-        schema["function"]["parameters"]["required"] = []
-        return schema

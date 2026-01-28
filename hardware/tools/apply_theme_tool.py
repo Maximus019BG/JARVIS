@@ -94,21 +94,23 @@ class ApplyThemeTool(BaseTool):
             f"Theme applied and saved: Primary {primary or 'unchanged'}, Secondary {secondary or 'unchanged'}, Background {background or 'unchanged'}."
         )
 
-    def get_schema(self) -> dict:
-        schema = super().get_schema()
-        schema["function"]["parameters"]["properties"] = {
-            "primary": {
-                "type": "string",
-                "description": "Primary color (hex like #2563eb or color name)",
+    def schema_parameters(self) -> dict[str, object]:
+        return {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "string",
+                    "description": "Primary color (hex like #2563eb or color name)",
+                },
+                "secondary": {
+                    "type": "string",
+                    "description": "Secondary color (hex like #2563eb or color name)",
+                },
+                "background": {
+                    "type": "string",
+                    "description": "Background color (hex like #2563eb or color name)",
+                },
             },
-            "secondary": {
-                "type": "string",
-                "description": "Secondary color (hex like #2563eb or color name)",
-            },
-            "background": {
-                "type": "string",
-                "description": "Background color (hex like #2563eb or color name)",
-            },
+            "required": [],
+            "additionalProperties": False,
         }
-        schema["function"]["parameters"]["required"] = []
-        return schema

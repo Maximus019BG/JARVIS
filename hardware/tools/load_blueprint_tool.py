@@ -74,13 +74,15 @@ class LoadBlueprintTool(BaseTool):
                 error_type="Exception",
             )
 
-    def get_schema(self) -> dict:
-        schema = super().get_schema()
-        schema["function"]["parameters"]["properties"] = {
-            "blueprint_name": {
-                "type": "string",
-                "description": "The name of the blueprint to load",
-            }
+    def schema_parameters(self) -> dict[str, object]:
+        return {
+            "type": "object",
+            "properties": {
+                "blueprint_name": {
+                    "type": "string",
+                    "description": "The name of the blueprint to load.",
+                },
+            },
+            "required": ["blueprint_name"],
+            "additionalProperties": False,
         }
-        schema["function"]["parameters"]["required"] = ["blueprint_name"]
-        return schema

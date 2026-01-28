@@ -23,6 +23,3 @@ class SmartModeTool(BaseTool):
         return ToolResult.ok_result(
             "Smart mode activated. You can now chat with the AI assistant."
         )
-
-    def get_schema(self) -> dict:
-        return super().get_schema()
