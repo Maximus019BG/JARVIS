@@ -12,15 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import json
 import re
 import time
 from typing import TYPE_CHECKING, Any
 
 from app_logging.logger import get_logger
-from core.base_tool import ToolError
 from core.memory.conversation_memory import ConversationMemory
-from core.tool_registry import ToolNotFoundError, ToolRegistry
+from core.tool_registry import ToolRegistry
+
+from core.orchestration import ORCHESTRATION_KEYWORDS, OrchestrationRouter, OrchestrationRunner
+from core.tool_execution import ToolCallExecutor
 
 if TYPE_CHECKING:
     from core.agents import OrchestratorAgent
@@ -31,14 +32,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-# Keywords that suggest complex tasks needing orchestration
-ORCHESTRATION_KEYWORDS = [
-    "create", "build", "implement", "develop", "design",
-    "plan", "analyze", "research", "review", "improve",
-    "refactor", "debug", "fix", "optimize", "write code",
-    "make a", "help me", "can you", "i need", "i want",
-    "blueprint", "architecture", "system", "project",
-]
+# NOTE: ORCHESTRATION_KEYWORDS moved to core.orchestration (imported above)
 
 
 class ChatHandler:
@@ -68,19 +62,28 @@ class ChatHandler:
         self._enable_tts = enable_tts
         self._orchestrator = orchestrator
         self._memory_manager = memory_manager
-        
+
         # Use advanced memory if available, otherwise basic
         if memory_manager:
             self.memory = memory_manager.conversation
         else:
             self.memory = ConversationMemory()
-        
+
+        # Extracted helpers
+        self._tool_executor = ToolCallExecutor(self.tool_registry, logger)
+        self._orchestration_router = OrchestrationRouter(self._orchestrator)
+        self._orchestration_runner: OrchestrationRunner | None = (
+            OrchestrationRunner(self._orchestrator, self._memory_manager, logger)
+            if self._orchestrator
+            else None
+        )
+
         # Session tracking
         self._session_started = False
         self._message_count = 0
-        
+
         # Cache for tool schemas (frequently accessed, rarely changes)
-        self._tool_schema_cache: dict[str, Any] | None = None
+        self._tool_schema_cache: list[dict[str, Any]] | None = None
         self._tool_schema_cache_version = 0
 
     @property
@@ -106,36 +109,8 @@ class ChatHandler:
         return self._tts
 
     def _should_use_orchestrator(self, message: str) -> bool:
-        """Determine if a message should be handled by the orchestrator.
-        
-        Complex tasks benefit from multi-agent orchestration.
-        Simple questions can be answered directly.
-        
-        Args:
-            message: User message.
-            
-        Returns:
-            True if orchestrator should handle this.
-        """
-        if not self._orchestrator:
-            return False
-        
-        message_lower = message.lower()
-        
-        # Check for orchestration keywords
-        for keyword in ORCHESTRATION_KEYWORDS:
-            if keyword in message_lower:
-                return True
-        
-        # Long messages are often complex requests
-        if len(message) > 200:
-            return True
-        
-        # Messages with multiple sentences might be complex
-        if message.count('.') >= 3 or message.count(',') >= 4:
-            return True
-        
-        return False
+        """Determine if a message should be handled by the orchestrator."""
+        return self._orchestration_router.should_use_orchestrator(message)
 
     def start_chat(self) -> None:
         """Start the interactive chat loop."""
@@ -318,55 +293,14 @@ class ChatHandler:
         print("Context cleared.\n")
 
     async def _process_with_orchestrator(self, message: str) -> str:
-        """Process a message using the multi-agent orchestrator.
-        
-        Args:
-            message: User message.
-            
-        Returns:
-            Response from orchestrator.
-        """
-        if not self._orchestrator:
+        """Process a message using the multi-agent orchestrator."""
+        if not self._orchestrator or not self._orchestration_runner:
             return await self.process_message(message)
-        
-        start_time = time.time()
-        
-        try:
-            # Add memory context
-            context = {}
-            if self._memory_manager:
-                context["memory_context"] = self._memory_manager.get_context_for_prompt(500)
-            
-            # Orchestrate the task
-            response = await self._orchestrator.orchestrate(message, context)
-            
-            # Record event
-            if self._memory_manager:
-                from core.memory import EventType
-                self._memory_manager.record_event(
-                    description=f"Orchestrated task: {message[:50]}...",
-                    event_type=EventType.TASK_COMPLETE,
-                    success=response.success,
-                    importance=0.7,
-                )
-            
-            elapsed = time.time() - start_time
-            logger.info(f"Orchestration completed in {elapsed:.2f}s")
-            
-            # Add metadata to response
-            meta = response.metadata
-            if meta.get("subtasks_total"):
-                footer = f"\n\n---\n📊 Completed {meta['subtasks_completed']}/{meta['subtasks_total']} subtasks"
-                if meta.get("subtasks_failed"):
-                    footer += f" ({meta['subtasks_failed']} failed)"
-                return response.content + footer
-            
-            return response.content
-            
-        except Exception as e:
-            logger.error(f"Orchestration failed: {e}")
-            # Fall back to direct processing
-            return await self.process_message(message)
+
+        return await self._orchestration_runner.run(
+            message,
+            fallback_coro=lambda: self.process_message(message),
+        )
 
     def _speak_sync(self, text: str) -> None:
         """Trigger TTS synchronously using thread pool executor.
@@ -409,12 +343,15 @@ class ChatHandler:
         Returns:
             List of tool schema dictionaries.
         """
-        current_version = self.tool_registry.get_version() if hasattr(self.tool_registry, 'get_version') else 0
-        
+        current_version = self.tool_registry.get_version()
+
         # Return cached schemas if version hasn't changed
-        if self._tool_schema_cache is not None and self._tool_schema_cache_version == current_version:
+        if (
+            self._tool_schema_cache is not None
+            and self._tool_schema_cache_version == current_version
+        ):
             return self._tool_schema_cache
-        
+
         # Refresh cache
         self._tool_schema_cache = self.tool_registry.get_tool_schemas()
         self._tool_schema_cache_version = current_version
@@ -489,44 +426,5 @@ class ChatHandler:
             logger.info("Message processing completed in %.2fs", total_time)
 
     def execute_tool_call(self, tool_call: dict[str, Any]) -> str:
-        """Execute a tool call from the LLM.
-        
-        Performance improvements:
-        - Optimized JSON parsing with error handling
-        - Cached tool lookups
-        """
-
-        try:
-            fn = tool_call.get("function") or {}
-            function_name = fn.get("name")
-            if not function_name:
-                return "Error executing tool: missing function name"
-
-            raw_args = fn.get("arguments", "{}")
-            try:
-                # Use orjson for faster JSON parsing if available
-                try:
-                    import orjson
-                    arguments = orjson.loads(raw_args) if raw_args else {}
-                except ImportError:
-                    arguments = json.loads(raw_args) if raw_args else {}
-            except (json.JSONDecodeError, Exception):
-                return f"Error executing tool {function_name}: invalid JSON arguments"
-
-            if not isinstance(arguments, dict):
-                return (
-                    f"Error executing tool {function_name}: arguments must be an object"
-                )
-
-            tool = self.tool_registry.get_tool(function_name)
-            return tool.execute(**arguments)
-        except ToolNotFoundError:
-            return f"Error executing tool {function_name}: unknown tool"
-        except ToolError as exc:
-            return f"Error executing tool {function_name}: {exc}"
-        except TypeError as exc:
-            # Most common failure: unexpected kwargs.
-            return f"Error executing tool {function_name}: {exc}"
-        except Exception as exc:
-            logger.exception("Unexpected tool execution error")
-            return f"Error executing tool {function_name}: {exc}"
+        """Execute a tool call from the LLM."""
+        return self._tool_executor.execute_tool_call(tool_call)

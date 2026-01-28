@@ -13,6 +13,38 @@ from tests.mock_llm import MockLlamaWrapper
 class TestChatHandler:
     """Test cases for ChatHandler."""
 
+    def test_tool_schema_cache_reused_when_registry_version_unchanged(self, chat_handler):
+        first = chat_handler._get_cached_tool_schemas()
+        second = chat_handler._get_cached_tool_schemas()
+        assert first is second
+
+    def test_tool_schema_cache_invalidates_when_registry_version_changes(
+        self, tool_registry, mock_llm
+    ):
+        handler = ChatHandler(tool_registry, llm=mock_llm)
+
+        first = handler._get_cached_tool_schemas()
+
+        # Mutate registry -> version bump
+        new_tool = Mock()
+        new_tool.name = "another_tool"
+        new_tool.description = "Another tool"
+        new_tool.execute.return_value = "ok"
+        new_tool.get_schema.return_value = {
+            "type": "function",
+            "function": {
+                "name": "another_tool",
+                "description": "Another tool",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        }
+        tool_registry.register_tool(new_tool)
+
+        second = handler._get_cached_tool_schemas()
+
+        assert second is not first
+        assert any(schema["function"]["name"] == "another_tool" for schema in second)
+
     @pytest.fixture
     def mock_llm(self):
         """Mock LLM wrapper."""
