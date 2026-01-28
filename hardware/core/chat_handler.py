@@ -21,7 +21,7 @@ from core.base_tool import ToolResult
 from core.memory.conversation_memory import ConversationMemory
 from core.tool_registry import ToolRegistry
 
-from core.orchestration import ORCHESTRATION_KEYWORDS, OrchestrationRouter, OrchestrationRunner
+from core.orchestration import OrchestrationRouter, OrchestrationRunner
 from core.tool_execution import ToolCallExecutor
 
 if TYPE_CHECKING:
@@ -110,8 +110,14 @@ class ChatHandler:
         return self._tts
 
     def _should_use_orchestrator(self, message: str) -> bool:
-        """Determine if a message should be handled by the orchestrator."""
-        return self._orchestration_router.should_use_orchestrator(message)
+        """Determine if a message should be handled by the orchestrator.
+
+        Uses a rules-first score; if uncertain, attempts a cheap LLM classification.
+        """
+
+        # Avoid initializing an LLM unless we actually need the classifier.
+        llm = self._llm
+        return asyncio.run(self._orchestration_router.should_use_orchestrator_async(message, llm))
 
     def start_chat(self) -> None:
         """Start the interactive chat loop."""
