@@ -3,11 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from config.config import get_config
 from core.base_tool import BaseTool, ToolResult
-from core.network.http_client import HttpClient
-from core.security.security_manager import SecurityManager
-from core.sync.sync_manager import SyncManager
+from core.sync.sync_factory import build_sync_stack
 
 
 class SyncTool(BaseTool):
@@ -22,19 +19,12 @@ class SyncTool(BaseTool):
         return "Sync blueprints to the server to view latest updates"
 
     def __init__(self):
-        self.security = SecurityManager()
-
-        # Security: base URL is now configured via environment/config, not hardcoded.
-        cfg = get_config()
-        self.http_client = HttpClient(
-            base_url=cfg.sync_api.base_url,
-            security_manager=self.security,
-        )
-        self.device_token = self.security.load_device_token()
-        self.device_id = self.security.load_device_id()
-        self.sync_manager = SyncManager(
-            self.http_client, self.device_token, self.device_id
-        )
+        stack = build_sync_stack()
+        self.security = stack.security
+        self.http_client = stack.http_client
+        self.device_token = stack.device_token
+        self.device_id = stack.device_id
+        self.sync_manager = stack.sync_manager
 
     def schema_parameters(self) -> dict[str, Any]:
         # No required params

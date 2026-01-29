@@ -50,8 +50,24 @@ def test_execute_python_file_uses_sys_executable_and_passes_args_timeout_cwd(
     class _ToolError(Exception):  # pragma: no cover
         pass
 
-    class _ToolResult:  # pragma: no cover
-        pass
+    class _ToolResult:
+        """Minimal ToolResult stub matching the interface used by ExecuteCodeTool."""
+
+        def __init__(
+            self, ok: bool, result: str = "", error: str = "", error_type: str = ""
+        ):
+            self.ok = ok
+            self.result = result
+            self.error = error
+            self.error_type = error_type
+
+        @staticmethod
+        def ok_result(result: str) -> "_ToolResult":
+            return _ToolResult(ok=True, result=result)
+
+        @staticmethod
+        def fail(error: str, error_type: str = "") -> "_ToolResult":
+            return _ToolResult(ok=False, error=error, error_type=error_type)
 
     fake_base_tool.BaseTool = _BaseTool  # type: ignore[attr-defined]
     fake_base_tool.ToolError = _ToolError  # type: ignore[attr-defined]

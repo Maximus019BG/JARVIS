@@ -71,26 +71,27 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
     Notes:
     - This does *not* remove the runtime sandbox restrictions in [`ExecuteCodeTool._execute_python()`](hardware/tools/execute_code_tool.py:772).
       It only improves the *classification* so benign usage patterns aren't auto-blocked.
-    - If AI analysis fails (provider unavailable / timeout / exception), we fall back to conservative blocking
-      only when the pre-check indicates obvious maliciousness; otherwise we mark as unknown and allow the
-      existing sandbox to enforce runtime restrictions.
+    - Unknown/None/unexpected verdicts are handled **fail-closed by default** via
+      `fail_closed_on_unknown_verdict` in [`PythonASTSecurityAnalyzer.analyze()`](hardware/tools/execute_code_tool.py:353).
     """
 
     # Quick denylist for code that is almost always malicious in this environment.
     # Keep this small and high-confidence to avoid false positives.
+    #
+    # Note: this is declared as a class attribute. Some unit tests monkeypatch
+    # `re.compile` and can cause `QUICK_DENY_PATTERNS` to contain non-regex
+    # sentinels. `_quick_precheck()` handles that defensively.
     QUICK_DENY_PATTERNS: tuple[re.Pattern[str], ...] = (
-        re.compile(r"\\brm\\s+-rf\\b", re.IGNORECASE),
-        re.compile(r"\\bmkfs\\.", re.IGNORECASE),
-        re.compile(r"\\bdd\\s+if=", re.IGNORECASE),
-        re.compile(r"\\bshutdown\\b", re.IGNORECASE),
-        re.compile(r"\\breboot\\b", re.IGNORECASE),
-        re.compile(r"\\bos\\.system\\s*\\(", re.IGNORECASE),
-        re.compile(
-            r"\\bsubprocess\\.(run|popen|call|check_output)\\s*\\(", re.IGNORECASE
-        ),
-        re.compile(r"\\beval\\s*\\(", re.IGNORECASE),
-        re.compile(r"\\bexec\\s*\\(", re.IGNORECASE),
-        re.compile(r"__subclasses__\\s*\\(", re.IGNORECASE),
+        re.compile(r"\brm\s+-rf\b", re.IGNORECASE),
+        re.compile(r"\bmkfs\.", re.IGNORECASE),
+        re.compile(r"\bdd\s+if=", re.IGNORECASE),
+        re.compile(r"\bshutdown\b", re.IGNORECASE),
+        re.compile(r"\breboot\b", re.IGNORECASE),
+        re.compile(r"\bos\.system\s*\(", re.IGNORECASE),
+        re.compile(r"\bsubprocess\.(run|popen|call|check_output)\s*\(", re.IGNORECASE),
+        re.compile(r"\beval\s*\(", re.IGNORECASE),
+        re.compile(r"\bexec\s*\(", re.IGNORECASE),
+        re.compile(r"__subclasses__\s*\(", re.IGNORECASE),
         re.compile(r"__globals__", re.IGNORECASE),
         re.compile(r"__builtins__", re.IGNORECASE),
     )
@@ -134,12 +135,14 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
         ai_timeout_seconds: float = 2.5,
         enable_ai: bool = True,
         cache_max_entries: int = 512,
+        fail_closed_on_unknown_verdict: bool = True,
     ):
         self.violations: list[str] = []
         self.allowed_modules = allowed_modules or set()
         self.project_root = (project_root or Path.cwd()).resolve()
         self.ai_timeout_seconds = ai_timeout_seconds
         self.enable_ai = enable_ai
+        self.fail_closed_on_unknown_verdict = fail_closed_on_unknown_verdict
 
         # Simple in-memory LRU-ish cache using dict insertion order.
         # Key: sha256(code + allowed_modules + analyzer_version)
@@ -215,9 +218,19 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
     def _quick_precheck(self, code: str) -> list[str]:
         normalized = code
         violations: list[str] = []
+
         for pat in self.QUICK_DENY_PATTERNS:
-            if pat.search(normalized):
-                violations.append(f"Obvious dangerous pattern: {pat.pattern}")
+            # Some tests stub `re.compile` and can leave `QUICK_DENY_PATTERNS`
+            # containing plain objects without `.search()`. Treat those as
+            # non-matching rather than crashing.
+            search = getattr(pat, "search", None)
+            if not callable(search):
+                continue
+
+            if search(normalized):
+                pattern = getattr(pat, "pattern", "<unknown>")
+                violations.append(f"Obvious dangerous pattern: {pattern}")
+
         return violations
 
     def _is_protected_path(self, raw: str) -> bool:
@@ -357,12 +370,32 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
         """
         self.violations = []
 
+        def _handle_verdict(res: SecurityAnalysisResult | None) -> list[str]:
+            # Defensive: treat missing/unexpected verdicts as unknown.
+            if res is None:
+                if self.fail_closed_on_unknown_verdict:
+                    return [
+                        "Security analysis returned no verdict (None); blocking by default"
+                    ]
+                return []
+
+            verdict = (res.verdict or "").strip().lower()
+            if verdict == "dangerous":
+                return [res.reason]
+            if verdict == "safe":
+                return []
+
+            # unknown or unexpected
+            if self.fail_closed_on_unknown_verdict:
+                return [
+                    f"Security analysis returned unknown verdict; blocking by default: {res.reason}"
+                ]
+            return []
+
         cache_key = self._hash_key(code)
         cached = self._cache_get(cache_key)
         if cached is not None:
-            if cached.verdict == "dangerous":
-                return [cached.reason]
-            return []
+            return _handle_verdict(cached)
 
         # 1) Quick pre-check
         pre = self._quick_precheck(code)
@@ -399,19 +432,13 @@ class PythonASTSecurityAnalyzer(ast.NodeVisitor):
                     "unknown", "AI analysis skipped (event loop already running)"
                 )
 
-            if verdict.verdict == "dangerous":
-                self._cache_set(cache_key, verdict)
-                return [verdict.reason]
-
-            # SAFE/UNKNOWN => allow execution; runtime sandbox still applies.
             self._cache_set(cache_key, verdict)
-            return []
+            return _handle_verdict(verdict)
 
         # AI disabled
-        self._cache_set(
-            cache_key, SecurityAnalysisResult("unknown", "AI analysis disabled")
-        )
-        return []
+        verdict = SecurityAnalysisResult("unknown", "AI analysis disabled")
+        self._cache_set(cache_key, verdict)
+        return _handle_verdict(verdict)
 
 
 # ============================================================================
@@ -1125,6 +1152,7 @@ class ExecuteCodeTool(BaseTool):
             project_root=Path(".").resolve(),
             ai_timeout_seconds=2.5,
             enable_ai=True,
+            fail_closed_on_unknown_verdict=True,
         )
         violations = analyzer.analyze(code)
         if violations:
