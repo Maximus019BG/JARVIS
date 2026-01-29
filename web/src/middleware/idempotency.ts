@@ -1,26 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/server/db';
-import { idempotencyKey } from '@/server/db/schemas/idempotencyKey';
+import { idempotencyKey } from '@/server/db/schemas/idempotency_key';
 import { eq, and, gt } from 'drizzle-orm';
 
 const IDEMPOTENCY_EXPIRY_HOURS = 24;
 
 export async function idempotency(request: NextRequest) {
-  const idempotencyKey = request.headers.get('X-Idempotency-Key');
+  const requestIdempotencyKey = request.headers.get('X-Idempotency-Key');
   const deviceId = request.headers.get('X-Device-Id');
-  
-  if (!idempotencyKey || !deviceId) {
+
+  if (!requestIdempotencyKey || !deviceId) {
     return NextResponse.next();
   }
-  
+
   const existing = await db.query.idempotencyKey.findFirst({
     where: and(
-      eq(idempotencyKey.key, idempotencyKey),
+      eq(idempotencyKey.key, requestIdempotencyKey),
       eq(idempotencyKey.deviceId, deviceId),
       gt(idempotencyKey.expiresAt, new Date())
     )
   });
-  
+
   if (existing) {
     return NextResponse.json(JSON.parse(existing.response), {
       status: 200,
@@ -29,13 +29,13 @@ export async function idempotency(request: NextRequest) {
       }
     });
   }
-  
+
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_EXPIRY_HOURS * 60 * 60 * 1000);
-  
+
   request.headers.set('X-Idempotency-Store', 'true');
-  request.headers.set('X-Idempotency-Key', idempotencyKey);
+  request.headers.set('X-Idempotency-Key', requestIdempotencyKey);
   request.headers.set('X-Idempotency-Expires', expiresAt.toISOString());
-  
+
   return NextResponse.next();
 }
 

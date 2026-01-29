@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/server/db';
 import { nonce } from '@/server/db/schemas/nonce';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, gt, lt } from 'drizzle-orm';
 
 const NONCE_EXPIRY_SECONDS = 300;
 const TIMESTAMP_TOLERANCE_SECONDS = 300;
@@ -51,8 +51,9 @@ export async function replayProtection(request: NextRequest) {
   });
   
   // Clean up expired nonces periodically
+  // (delete where expiresAt < now)
   await db.delete(nonce).where(
-    gt(nonce.expiresAt, new Date())
+    lt(nonce.expiresAt, new Date())
   );
   
   return NextResponse.next();

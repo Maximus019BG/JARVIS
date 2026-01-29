@@ -4,13 +4,15 @@ import { blueprint, syncLog } from '@/server/db/schemas/blueprint';
 import { verifyDeviceToken } from '@/lib/device-auth';
 import { verifyHMACSignature } from '@/lib/hmac-verify';
 import { idempotency, storeIdempotencyResponse } from '@/middleware/idempotency';
+import { replayProtection } from '@/middleware/replay-protection';
 import { eq, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
 export async function POST(request: NextRequest) {
   // Check idempotency
   const idempotencyResult = await idempotency(request);
-  if (idempotencyResult.status !== 200) {
+  // Only short-circuit when we're replaying a stored response
+  if (idempotencyResult.headers.get('X-Idempotency-Replayed') === 'true') {
     return idempotencyResult;
   }
 
@@ -26,6 +28,11 @@ export async function POST(request: NextRequest) {
         { error: 'Missing required headers' },
         { status: 400 }
       );
+    }
+
+    const replayResult = await replayProtection(request);
+    if (replayResult.status !== 200) {
+      return replayResult;
     }
 
     const claims = await verifyDeviceToken(token);
@@ -65,6 +72,14 @@ export async function POST(request: NextRequest) {
     const existing = await db.query.blueprint.findFirst({
       where: eq(blueprint.id, blueprintId)
     });
+
+    // Ownership check (prevent IDOR): existing blueprint must belong to the device's workstation
+    if (existing && existing.workstationId !== claims.workstationId) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      );
+    }
 
     if (existing && existing.version >= version) {
       return NextResponse.json(

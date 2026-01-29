@@ -3,6 +3,7 @@ import { db } from '@/server/db';
 import { blueprint } from '@/server/db/schemas/blueprint';
 import { verifyDeviceToken } from '@/lib/device-auth';
 import { verifyHMACSignature } from '@/lib/hmac-verify';
+import { replayProtection } from '@/middleware/replay-protection';
 import { eq, and, gte, isNull } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -27,6 +28,11 @@ export async function GET(request: NextRequest) {
         { error: 'Invalid device token' },
         { status: 401 }
       );
+    }
+
+    const replayResult = await replayProtection(request);
+    if (replayResult.status !== 200) {
+      return replayResult;
     }
 
     // Verify HMAC signature

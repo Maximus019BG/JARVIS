@@ -3,8 +3,10 @@ import { db } from '@/server/db';
 import { blueprint, syncLog } from '@/server/db/schemas/blueprint';
 import { verifyDeviceToken } from '@/lib/device-auth';
 import { verifyHMACSignature } from '@/lib/hmac-verify';
+import { replayProtection } from '@/middleware/replay-protection';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +29,11 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid device token' },
         { status: 401 }
       );
+    }
+
+    const replayResult = await replayProtection(request);
+    if (replayResult.status !== 200) {
+      return replayResult;
     }
 
     const hmacSecret = process.env.BLUEPRINT_SYNC_HMAC_SECRET;
@@ -73,6 +80,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Ownership check (prevent IDOR): blueprint must belong to the device's workstation
+    if (existing.workstationId !== claims.workstationId) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      );
+    }
+
     // Determine merged data
     let mergedData;
     if (resolution === 'server') {
@@ -94,10 +109,16 @@ export async function POST(request: NextRequest) {
 
     // Update blueprint
     const now = new Date();
+    const newHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(mergedData))
+      .digest('hex');
+
     await db.update(blueprint)
       .set({
         metadata: JSON.stringify(mergedData),
         version: newVersion,
+        hash: newHash,
         syncStatus: 'synced',
         lastSyncedAt: now,
         deviceId,
@@ -122,7 +143,8 @@ export async function POST(request: NextRequest) {
       success: true,
       blueprintId,
       version: newVersion,
-      mergedData
+      mergedData,
+      hash: newHash
     });
   } catch (error) {
     console.error('Resolve conflict error:', error);

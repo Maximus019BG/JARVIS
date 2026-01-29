@@ -92,7 +92,11 @@ class HttpClient:
         if not self.security.rate_limiter.allow_request():
             raise RateLimitExceeded("Too many requests")
 
-        headers = self._build_security_headers(device_id, device_token)
+        # Server signature verification for GET /sync expects payload = { since }
+        # where `since` comes from the query string.
+        payload = params or {}
+
+        headers = self._build_security_headers(device_id, device_token, payload)
         url = f"{self.base_url}{endpoint}"
         response = await self.client.get(url, params=params, headers=headers)
         return self._handle_response(response)
@@ -122,6 +126,7 @@ class HttpClient:
         self, device_id: str, device_token: str, payload: Optional[Dict] = None
     ) -> Dict:
         """Build secure request headers with replay protection"""
+        # Server expects ISO8601 timestamp strings (see web replay protection).
         timestamp = datetime.utcnow().isoformat()
         nonce = secrets.token_urlsafe(16)
 
@@ -133,25 +138,42 @@ class HttpClient:
             "Content-Type": "application/json",
         }
 
-        if payload:
-            signature = self._calculate_signature(payload, timestamp, nonce)
-            headers["X-Signature"] = signature
+        # Server requires X-Signature for both GET and POST.
+        signature = self._calculate_signature(payload or {}, timestamp, nonce)
+        headers["X-Signature"] = signature
 
         return headers
 
     def _calculate_signature(self, payload: Dict, timestamp: str, nonce: str) -> str:
-        """Calculate HMAC signature for payload"""
+        """Calculate HMAC signature for payload.
+
+        Must match server verifier canonicalization:
+        JSON.stringify(canonical, Object.keys(canonical).sort())
+
+        That is: only top-level keys are sorted (timestamp, nonce, payload).
+        The nested payload is serialized with insertion order.
+        """
         import hashlib
         import hmac
         import json
 
+        # Match server canonicalization exactly:
+        # JSON.stringify(canonical, Object.keys(canonical).sort())
+        # => only top-level keys are sorted; nested payload keeps insertion order.
         canonical = {"timestamp": timestamp, "nonce": nonce, "payload": payload}
-        payload_str = json.dumps(canonical, sort_keys=True)
+        canonical_ordered = {k: canonical[k] for k in sorted(canonical.keys())}
+        payload_str = json.dumps(
+            canonical_ordered,
+            separators=(",", ":"),
+            sort_keys=False,
+            ensure_ascii=False,
+        )
 
         signing_key = self.security.get_signing_key()
 
-        h = hmac.HMAC(signing_key, hashlib.sha256())
-        h.update(payload_str.encode())
+        # Python's hmac.HMAC expects digestmod, not a hash instance.
+        h = hmac.HMAC(signing_key, digestmod=hashlib.sha256)
+        h.update(payload_str.encode("utf-8"))
         return h.hexdigest()
 
     def _handle_response(self, response: httpx.Response) -> Dict:

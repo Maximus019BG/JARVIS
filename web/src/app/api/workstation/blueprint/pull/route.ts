@@ -3,6 +3,7 @@ import { db } from '@/server/db';
 import { blueprint, syncLog } from '@/server/db/schemas/blueprint';
 import { verifyDeviceToken } from '@/lib/device-auth';
 import { verifyHMACSignature } from '@/lib/hmac-verify';
+import { replayProtection } from '@/middleware/replay-protection';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
@@ -27,6 +28,11 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid device token' },
         { status: 401 }
       );
+    }
+
+    const replayResult = await replayProtection(request);
+    if (replayResult.status !== 200) {
+      return replayResult;
     }
 
     const hmacSecret = process.env.BLUEPRINT_SYNC_HMAC_SECRET;

@@ -12,16 +12,21 @@ export function verifyHMACSignature(
     nonce,
     payload
   };
-  
+
   const payloadString = JSON.stringify(canonical, Object.keys(canonical).sort());
-  
+
   const expectedSignature = crypto
     .createHmac('sha256', secret)
     .update(payloadString)
     .digest('hex');
-  
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+
+  // timingSafeEqual throws if buffer lengths differ; treat as invalid signature.
+  try {
+    const provided = Buffer.from(signature, 'utf8');
+    const expected = Buffer.from(expectedSignature, 'utf8');
+    if (provided.length !== expected.length) return false;
+    return crypto.timingSafeEqual(provided, expected);
+  } catch {
+    return false;
+  }
 }
