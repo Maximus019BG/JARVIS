@@ -1,5 +1,5 @@
-import { db } from '@/server/db';
-import { device } from '@/server/db/schemas/device';
+import { db } from '~/server/db';
+import { device } from '~/server/db/schemas/device';
 import { eq } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
 

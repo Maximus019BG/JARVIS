@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 
 // Route handlers under test
-import { POST as pushPOST } from '@/app/api/workstation/blueprint/push/route';
-import { POST as pullPOST } from '@/app/api/workstation/blueprint/pull/route';
-import { GET as syncGET } from '@/app/api/workstation/blueprint/sync/route';
-import { POST as resolvePOST } from '@/app/api/workstation/blueprint/resolve/route';
+import { POST as pushPOST } from '~/app/api/workstation/blueprint/push/route';
+import { POST as pullPOST } from '~/app/api/workstation/blueprint/pull/route';
+import { GET as syncGET } from '~/app/api/workstation/blueprint/sync/route';
+import { POST as resolvePOST } from '~/app/api/workstation/blueprint/resolve/route';
 
 // Mocking
-jest.mock('@/server/db', () => ({
+jest.mock('~/server/db', () => ({
   db: {
     query: {
       idempotencyKey: { findFirst: jest.fn() },
@@ -20,17 +20,17 @@ jest.mock('@/server/db', () => ({
   }
 }));
 
-jest.mock('@/lib/device-auth', () => ({
+jest.mock('~/lib/device-auth', () => ({
   verifyDeviceToken: jest.fn()
 }));
 
-jest.mock('@/lib/hmac-verify', () => ({
+jest.mock('~/lib/hmac-verify', () => ({
   verifyHMACSignature: jest.fn()
 }));
 
-import { db } from '@/server/db';
-import { verifyDeviceToken } from '@/lib/device-auth';
-import { verifyHMACSignature } from '@/lib/hmac-verify';
+import { db } from '~/server/db';
+import { verifyDeviceToken } from '~/lib/device-auth';
+import { verifyHMACSignature } from '~/lib/hmac-verify';
 
 function makeHeaders(overrides: Record<string, string> = {}) {
   const h = new Headers({

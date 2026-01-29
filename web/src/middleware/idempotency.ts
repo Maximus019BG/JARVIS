@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/server/db';
-import { idempotencyKey } from '@/server/db/schemas/idempotency_key';
+import { db } from '~/server/db';
+import { idempotencyKey } from '~/server/db/schemas/idempotency_key';
 import { eq, and, gt } from 'drizzle-orm';
 
 const IDEMPOTENCY_EXPIRY_HOURS = 24;

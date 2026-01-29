@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/server/db';
-import { device } from '@/server/db/schemas/device';
-import { workstation } from '@/server/db/schemas/workstation';
+import { db } from '~/server/db';
+import { device } from '~/server/db/schemas/device';
+import { workstation } from '~/server/db/schemas/workstation';
 import { eq } from 'drizzle-orm';
-import { auth } from '@/lib/auth';
-import { generateDeviceToken } from '@/lib/device-auth';
+import { auth } from '~/lib/auth';
+import { generateDeviceToken } from '~/lib/device-auth';
 import { nanoid } from 'nanoid';
 
 export async function POST(request: NextRequest) {

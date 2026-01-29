@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/server/db';
-import { nonce } from '@/server/db/schemas/nonce';
+import { db } from '~/server/db';
+import { nonce } from '~/server/db/schemas/nonce';
 import { eq, and, gt, lt } from 'drizzle-orm';
 
 const NONCE_EXPIRY_SECONDS = 300;
