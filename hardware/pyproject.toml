@@ -3,7 +3,7 @@ name = "hardware"
 version = "0.2.0"
 description = "JARVIS hardware part - AI-powered chat agent with tool calling"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     # LLM Providers
     "ollama>=0.4.0",
@@ -27,7 +27,16 @@ dependencies = [
     "jinja2>=3.1.0",
     # Performance
     "orjson>=3.10.0",
+    # Vision (opencv is cross-platform)
+    "opencv-python-headless>=4.9.0",
 ]
+
+# NOTE: Vision dependencies (mediapipe, picamera2) are NOT listed here because:
+# - mediapipe doesn't have Python 3.13 wheels yet
+# - picamera2 requires libcap-dev which is Pi-specific
+# Install manually on Raspberry Pi with:
+#   pip install mediapipe picamera2
+# The code gracefully handles missing dependencies.
 
 [project.scripts]
 jarvis = "app:main"

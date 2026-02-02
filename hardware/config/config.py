@@ -205,6 +205,14 @@ class AppConfig(BaseSettings):
     theme: ThemeConfig = Field(default_factory=ThemeConfig)
     sync_api: SyncApiConfig = Field(default_factory=SyncApiConfig)
 
+    # Vision / Gesture control (lazy import to avoid circular deps)
+    @property
+    def vision(self) -> "VisionConfig":
+        """Get vision configuration (lazy loaded)."""
+        from core.vision.vision_config import VisionConfig
+
+        return VisionConfig()
+
     def validate_all(self) -> None:
         """Validate all configuration settings."""
         self.ai.validate_provider()

@@ -8,6 +8,8 @@ A chat-driven hardware app using a natural language interface with AI and tools 
 > All dependency management is handled via **`uv`** using `pyproject.toml` and `uv.lock`.
 >
 > Attempts to install dependencies without `uv` may fail or produce inconsistent environments.
+> You need to have `libcap-dev`
+
 
 
 ## Project Structure

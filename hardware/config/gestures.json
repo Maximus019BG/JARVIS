@@ -1,0 +1,88 @@
+{
+  "version": "1.0",
+  "description": "Gesture-to-action mappings for JARVIS",
+  "mappings": {
+    "thumbs_up": {
+      "action": "confirm",
+      "description": "Confirm/approve current action"
+    },
+    "thumbs_down": {
+      "action": "cancel",
+      "description": "Cancel/reject current action"
+    },
+    "open_palm": {
+      "action": "stop",
+      "description": "Stop current operation"
+    },
+    "closed_fist": {
+      "action": "undo",
+      "description": "Undo last action"
+    },
+    "pointing": {
+      "action": "select",
+      "description": "Select/point at item"
+    },
+    "peace": {
+      "action": "help",
+      "description": "Show help information"
+    },
+    "ok_sign": {
+      "action": "ok",
+      "description": "Acknowledge/accept"
+    },
+    "pinch": {
+      "action": "zoom",
+      "description": "Zoom/focus action"
+    },
+    "swipe_left": {
+      "action": "back",
+      "description": "Go back/previous"
+    },
+    "swipe_right": {
+      "action": "forward",
+      "description": "Go forward/next"
+    },
+    "swipe_up": {
+      "action": "scroll_up",
+      "description": "Scroll up"
+    },
+    "swipe_down": {
+      "action": "scroll_down",
+      "description": "Scroll down"
+    },
+    "wave": {
+      "action": "hello",
+      "description": "Greeting/wake JARVIS"
+    },
+    "three_fingers": {
+      "action": "menu",
+      "description": "Open menu"
+    },
+    "rock": {
+      "action": "rock_on",
+      "description": "Fun acknowledgment"
+    },
+    "call_me": {
+      "action": "call",
+      "description": "Initiate call/communication"
+    }
+  },
+  "gesture_descriptions": {
+    "thumbs_up": "Thumb pointing up, other fingers closed",
+    "thumbs_down": "Thumb pointing down, other fingers closed",
+    "open_palm": "All five fingers extended",
+    "closed_fist": "All fingers closed into fist",
+    "pointing": "Only index finger extended",
+    "peace": "Index and middle fingers extended (V sign)",
+    "ok_sign": "Thumb and index finger touching in circle",
+    "pinch": "Thumb and index finger close together",
+    "swipe_left": "Quick hand movement to the left",
+    "swipe_right": "Quick hand movement to the right",
+    "swipe_up": "Quick hand movement upward",
+    "swipe_down": "Quick hand movement downward",
+    "wave": "Side-to-side hand movement",
+    "three_fingers": "Index, middle, and ring fingers extended",
+    "rock": "Index and pinky fingers extended",
+    "call_me": "Thumb and pinky fingers extended (phone gesture)"
+  }
+}
