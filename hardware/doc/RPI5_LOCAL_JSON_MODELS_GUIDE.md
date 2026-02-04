@@ -1,288 +1,172 @@
-# Raspberry Pi 5 (4GB, 64-bit OS Lite) — local JSON→JSON model guidance (target: <5s)
+# Raspberry Pi 5 Agent LLM Recommendations (4GB-first)
 
-This note is a **Pi 5–specific addendum** to [`hardware/doc/LOCAL_JSON_MODELS_FOR_BLUEPRINT_GEOMETRY.md`](hardware/doc/LOCAL_JSON_MODELS_FOR_BLUEPRINT_GEOMETRY.md:1). It answers: which previously recommended *local JSON→JSON* models are feasible on a **Raspberry Pi 5 4GB**, what **GGUF quantization + context** to use, **rough tokens/sec**, and **practical latency recommendations**.
+> Platform target: **Raspberry Pi 5**, **4GB RAM**, **Raspberry Pi OS Lite**, CPU-only inference.
 
-Assumptions:
+This document consolidates Raspberry Pi 5–relevant **throughput (tokens/s)** and **RAM footprint** measurements from published benchmarks, and turns them into **agent-by-agent model picks** with explicit **quantization** and **context caps**.
 
-- Device: **Raspberry Pi 5 (4GB)**
-- OS: **Raspberry Pi OS Lite 64-bit**
-- Runtime: **CPU-only** (no CUDA; Vulkan may exist but is rarely worth the complexity for Pi 5)
-- Stack: **[`llama.cpp`](https://github.com/ggerganov/llama.cpp)**
-- Goal: **fast, reliable JSON-in/JSON-out** transforms (blueprint/geometry cleaning, normalization), using **grammar-constrained decoding** when strict JSON is required.
+## Related docs in this repo
 
----
+- Blueprint-specific model notes: [`hardware/doc/AI_MODELS_FOR_BLUEPRINTS.md`](hardware/doc/AI_MODELS_FOR_BLUEPRINTS.md:1)
+- Other local JSON / geometry model notes: [`hardware/doc/LOCAL_JSON_MODELS_FOR_BLUEPRINT_GEOMETRY.md`](hardware/doc/LOCAL_JSON_MODELS_FOR_BLUEPRINT_GEOMETRY.md:1)
 
-## 1) Pi 5 4GB constraints (what actually limits you)
+## Sources (deep research)
 
-### RAM budget reality
-
-On a 4GB Pi 5, you do *not* get 4GB for the model:
-
-- OS + services + page cache: commonly **0.7–1.3GB**
-- Safe model+KV+buffers budget: typically **~2.0–2.8GB**
-
-That budget must cover:
-
-- **model weights** (GGUF)
-- **KV cache** (grows with context length)
-- scratch buffers / runtime overhead
-
-### Latency target (<5s)
-
-For “single-shot JSON transform” workloads, <5s usually means:
-
-- keep **prompt short** (ideally **<600–1200 tokens** including schema/grammar constraints)
-- keep **output short** (ideally **<200–500 tokens**)
-- avoid huge contexts; don’t run 7B models at 8k context on Pi 4GB
-
-In practice on Pi 5 CPU, **3B-class** models can hit this comfortably; **7B-class** might hit it only with tight settings and small generations.
+- KV-cache / context drives memory; set explicit ctx: https://github.com/ggml-org/llama.cpp/discussions/9784
+- llama.cpp quantization guidance (K-quants; Q4_K_M recommended; Q2_K not recommended): https://github.com/ggml-org/llama.cpp/discussions/2094
+- Pi 5 LLM performance + resource notes (includes SmolLM2 1.7B RAM >5GB remark; llama.cpp vs ollama speed delta): https://www.stratosphereips.org/blog/2025/6/5/how-well-do-llms-perform-on-a-raspberry-pi-5
+- Pi 5 table with concrete tok/s + RAM (Q4_K_M): https://rpubs.com/harpomaxx/rpi5llm
+- Additional tok/s + RAM table for Qwen3 smalls on ARM board (llama.cpp): https://pamir-ai.hashnode.dev/qwen-3-on-a-raspberry-pi-5-small-models-big-agent-energy
+- Phi compatibility risk thread (conversion / tensor shape / arch support issues): https://github.com/ggml-org/llama.cpp/issues/7439
+- Phi-3.5 mini GGUF card (128K context spec; file sizes): https://huggingface.co/QuantFactory/Phi-3.5-mini-instruct-GGUF
 
 ---
 
-## 2) Feasible previously-recommended models on Pi 5 4GB
+## 1) Executive summary
 
-From [`LOCAL_JSON_MODELS_FOR_BLUEPRINT_GEOMETRY.md`](hardware/doc/LOCAL_JSON_MODELS_FOR_BLUEPRINT_GEOMETRY.md:13), these are the realistic options:
+- **Always cap context (`-c`) on Pi 5.** KV cache can be multiple GB, and llama.cpp will often allocate for the model’s maximum context unless you set it.
+  - In a llama.cpp discussion, a user noted Gemma 9B at ctx 8192 uses **~2.8 GB** just for KV cache and recommended trying `-c 4096` to reduce memory.
+  - A maintainer also emphasized setting context explicitly (example `-c 512`) when defaults surprise you.
+  - Source: https://github.com/ggml-org/llama.cpp/discussions/9784
 
-### Feasible (recommended tier)
+- **Default quant choice for 4GB: `Q4_K_M`.** The llama.cpp `quantize --help` table (quoted in discussion) marks `Q4_K_M` as **recommended** (balanced quality) and explicitly says `Q2_K` is **not recommended** due to extreme quality loss.
+  - Source: https://github.com/ggml-org/llama.cpp/discussions/2094
 
-1) **Phi-3.5 Mini Instruct (~3.8B)** — best fit for Pi 5 4GB
-- Why: strong instruction following for size; runs fast enough on CPU.
-- Use when: you want consistent JSON transforms with minimal latency.
+- **Practical 4GB sweet spot models:** pick **1B–3B** class, `Q4_K_M`, and cap ctx around **1024–2048** (sometimes **4096** if you can tolerate tighter headroom).
 
-2) **Qwen2.5 1.5B / 3B Instruct** — if you can accept slightly weaker reasoning
-- Note: the earlier doc highlights Qwen2.5 7B+ as “best overall”, but on **Pi 5 4GB** you generally want **≤3B**.
-- Use when: you want speed, and can enforce structure via grammar.
+- **Numbers you can plan around (Pi 5, from rpubs table):**
+  - `gemma3:1b` `Q4_K_M`: **11.53 tok/s**, **1393.8 MB** RAM
+  - `llama3.2:1b-instruct` `Q4_K_M`: **11.22 tok/s**, **2415.8 MB** RAM
+  - `qwen2.5:1.5b` `Q4_K_M`: **9.97 tok/s**, **1849.3 MB** RAM
+  - `qwen2.5:3b` `Q4_K_M`: **5.2 tok/s**, **3025.9 MB** RAM
+  - `llama3.2:3b` `Q4_K_M`: **4.69 tok/s**, **4659.3 MB** RAM (**exceeds 4GB**)
+  - `smollm2:1.7b-instruct` `Q4_K_M`: **8.23 tok/s**, **5318.2 MB** RAM (**exceeds 4GB**)
 
-3) **Llama 3.2 3B Instruct** (same ecosystem idea as Llama 3.1, but Pi-sized)
-- The earlier doc names **Llama 3.1 8B**; on Pi 5 4GB the practical equivalent is **3B**.
-- Use when: you want Llama-style instruction behavior in a smaller footprint.
+  Source: https://rpubs.com/harpomaxx/rpi5llm
 
-### “Borderline / only if you really tune it”
-
-4) **Llama 3.1 8B Instruct** — borderline on 4GB, not ideal for <5s
-- It can *run* in heavy quantizations, but speed and RAM headroom are poor.
-- Expect slow tokens/sec and frequent swapping risk if context is not kept tiny.
-
-### Not recommended (too big for Pi 5 4GB)
-
-- **Qwen2.5 7B / 14B / 32B / 72B** (7B may technically load in aggressive quants, but is not a good <5s choice)
-- **Mistral 7B–12B class** (similar story: can be made to run, but latency/ram headroom will disappoint)
-- **DeepSeek-R1-Distill 7B/14B/32B** (especially 14B+ is a non-starter here)
+- **Phi models:** even if a model advertises very long context (e.g., Phi-3.5-mini supports **128K** context), on Pi 5 you must still cap ctx aggressively.
+  - Phi-family compatibility in llama.cpp has had breakage risks, so it should be treated as **optional**, not baseline.
+  - Sources: https://huggingface.co/QuantFactory/Phi-3.5-mini-instruct-GGUF and https://github.com/ggml-org/llama.cpp/issues/7439
 
 ---
 
-## 3) Quantization + context settings (GGUF) for Pi 5 4GB
+## 2) Per-agent recommended models (with ctx caps, expected tok/s and RAM)
 
-### Quick rules
+### How to read this table
 
-- Prefer **Q4_K_M** as the default “quality/speed” quant.
-- Use **Q3_K_S** when RAM is tight or you want a smaller footprint.
-- Avoid large context lengths; KV cache will kill you on 4GB.
+- **Quant:** prefer `Q4_K_M` unless stated.
+- **ctx cap:** recommended `-c` for llama.cpp (or equivalent). This is a *reliability cap*, not a capability statement.
+- **Expected tok/s + RAM:** where available, these are directly from cited benchmark tables.
 
-### Recommended settings by model class
+> RAM footprint depends heavily on ctx (KV cache) and runtime buffers. The cited RAM numbers are point measurements under the benchmark’s settings; changing ctx, batch, threads changes RAM. This is why ctx caps matter: https://github.com/ggml-org/llama.cpp/discussions/9784
 
-#### 3B–4B models (best Pi fit)
+| Agent role | Primary pick | Quant | ctx cap (4GB) | Expected tok/s | Expected RAM | Backup pick | Quant | ctx cap | Expected tok/s | Expected RAM | Notes |
+|---|---|---|---:|---:|---:|---|---|---:|---:|---:|---|
+| **Base** (general assistant) | Qwen 2.5 3B | Q4_K_M | 1024–2048 | 5.2 | 3025.9 MB | Qwen 2.5 1.5B | Q4_K_M | 2048 | 9.97 | 1849.3 MB | 3B is often the largest practical size on 4GB; keep ctx tight. Source: https://rpubs.com/harpomaxx/rpi5llm |
+| **Blueprint** (structured specs / geometry prompts) | Qwen 2.5 3B | Q4_K_M | 1024–2048 | 5.2 | 3025.9 MB | Gemma 3 1B | Q4_K_M | 2048 | 11.53 | 1393.8 MB | If 3B causes pressure, drop to 1B and rely on strict JSON/tool schemas. Sources: https://rpubs.com/harpomaxx/rpi5llm and ctx/KV warning: https://github.com/ggml-org/llama.cpp/discussions/9784 |
+| **Coder** (short diffs, patching) | Qwen 2.5 3B | Q4_K_M | 1024 | 5.2 | 3025.9 MB | Llama 3.2 1B Instruct | Q4_K_M | 1024 | 11.22 | 2415.8 MB | For code tasks, prioritize responsiveness; keep ctx smaller than chat. Source: https://rpubs.com/harpomaxx/rpi5llm |
+| **Critic** (sanity checks) | Gemma 3 1B | Q4_K_M | 1024–2048 | 11.53 | 1393.8 MB | Qwen 2.5 1.5B | Q4_K_M | 1024–2048 | 9.97 | 1849.3 MB | Critic needs consistency more than long ctx; small model + strict rubric works. Source: https://rpubs.com/harpomaxx/rpi5llm |
+| **Memory** (summarize / extract) | Gemma 3 1B | Q4_K_M | 2048–4096 | 11.53 | 1393.8 MB | Llama 3.2 1B Instruct | Q4_K_M | 2048 | 11.22 | 2415.8 MB | Memory pipelines should summarize aggressively; cap ctx to avoid KV cache spikes. Sources: https://rpubs.com/harpomaxx/rpi5llm and https://github.com/ggml-org/llama.cpp/discussions/9784 |
+| **Orchestrator** (route + tool plan) | Qwen 2.5 1.5B | Q4_K_M | 2048 | 9.97 | 1849.3 MB | Gemma 3 1B | Q4_K_M | 2048 | 11.53 | 1393.8 MB | Keep one model loaded to avoid memory duplication. Source: https://www.stratosphereips.org/blog/2025/6/5/how-well-do-llms-perform-on-a-raspberry-pi-5 |
+| **Planner** (task decomposition) | Qwen 2.5 3B (conditional) | Q4_K_M | 1024–2048 | 5.2 | 3025.9 MB | Qwen 2.5 1.5B | Q4_K_M | 2048 | 9.97 | 1849.3 MB | 3B is better but can crowd RAM; 1.5B is safer for always-on. Source: https://rpubs.com/harpomaxx/rpi5llm |
+| **Research** (synthesis w/ tools) | Gemma 3 1B | Q4_K_M | 2048–4096 | 11.53 | 1393.8 MB | Qwen 2.5 1.5B | Q4_K_M | 2048 | 9.97 | 1849.3 MB | Research should lean on tools; small model does synthesis and citation formatting. Source: https://rpubs.com/harpomaxx/rpi5llm |
 
-- Quantization:
-  - **Primary:** `Q4_K_M`
-  - **If you need more speed/less RAM:** `Q3_K_S`
-- Context (`-c`): **1024–2048**
-  - For strict <5s, start at **1024**.
-- Output cap (`-n`): **128–512**
+### Extra “tool caller” options (Qwen3 smalls)
 
-#### 7B models (borderline)
+Pamir’s ARM A76 llama.cpp measurements (not exactly Pi 5, but similar CPU class) provide additional points:
 
-- Quantization:
-  - **Minimum practical:** `Q3_K_S` (or other 3-bit K-quants)
-  - `Q4_K_M` often pushes memory too close to the edge with any meaningful context.
-- Context (`-c`): **512–1024**
-- Output cap (`-n`): **<=256**
+- Qwen 3 1.7B **Q8**: **8.69 tok/s**, **1.20 GB** RAM
+- Qwen 3 1.7B **Q4_K_M**: **5.42 tok/s**, **1.90 GB** RAM
+- Qwen 3 0.6B **Q8**: **21.48 tok/s**, **0.53 GB** RAM
 
-### Why context is expensive (KV cache)
-
-KV cache memory scales roughly with:
-
-- **layers × heads × head_dim × 2 (K+V) × context_tokens × bytes_per_element**
-
-On Pi 5 4GB, the practical takeaway is: **keep `-c` small** unless you *must* retain long history. For “JSON transform” tasks, you almost never need long history.
+Source: https://pamir-ai.hashnode.dev/qwen-3-on-a-raspberry-pi-5-small-models-big-agent-energy
 
 ---
 
-## 4) Rough performance expectations (tokens/sec)
+## 3) 4GB reliability rules (Do / Don’t)
 
-These are **order-of-magnitude** numbers for Pi 5 CPU in typical `llama.cpp` builds (NEON, aarch64), using a single request (no batching).
+### Do
 
-> Notes:
-> - Tokens/sec varies heavily with build flags, thread count, quant, prompt length, and whether you’re prompt-processing vs generating.
-> - Grammar-constrained decoding reduces throughput (see below).
+- **Set context explicitly** for every runtime invocation.
+  - Maintainer advice and KV-cache notes: https://github.com/ggml-org/llama.cpp/discussions/9784
 
-### Ballpark generation throughput (decode)
+- **Prefer K-quants, especially `Q4_K_M`.**
+  - `Q4_K_M` recommended; `Q2_K` not recommended: https://github.com/ggml-org/llama.cpp/discussions/2094
 
-- **~3B–4B, Q4_K_M, context 1k:** ~**8–18 tok/s**
-- **~3B–4B, Q3_K_S, context 1k:** ~**10–22 tok/s**
-- **~7B, Q3_K_S, context 1k:** ~**3–8 tok/s**
+- **Keep one model loaded at a time** on 4GB.
+  - Stratosphere post uses settings like `OLLAMA_MAX_LOADED_MODELS=1` to conserve memory; the principle applies generally. Source: https://www.stratosphereips.org/blog/2025/6/5/how-well-do-llms-perform-on-a-raspberry-pi-5
 
-### Prompt processing is slower than decode
+### Don’t
 
-If your prompt (including schema/examples) is large, the “time-to-first-token” will dominate. This is why **prompt minimization** matters more than squeezing 1–2 tok/s from quant choice.
+- **Don’t rely on advertised max context (8K/128K) on 4GB.**
+  - Phi-3.5-mini advertises **128K**: https://huggingface.co/QuantFactory/Phi-3.5-mini-instruct-GGUF
+  - But KV cache will dominate without caps: https://github.com/ggml-org/llama.cpp/discussions/9784
 
----
+- **Don’t use `Q2_K` unless you must fit at all costs.**
+  - Explicit “not recommended”: https://github.com/ggml-org/llama.cpp/discussions/2094
 
-## 5) Practical recommendations to hit <5s
-
-### A) Model size caps
-
-- **Best cap:** **≤4B** parameters (Phi/Qwen/Llama 3B class)
-- **Hard cap for sanity:** avoid **7B** on 4GB if you care about consistent low latency
-
-### B) Minimize prompt tokens (this matters most)
-
-For JSON→JSON transforms:
-
-- Use **a short system instruction** (“return only JSON; obey schema/grammar; no commentary”).
-- Use **one compact schema** (or grammar). Avoid long prose.
-- Avoid multi-shot examples; use **0–1 minimal example**.
-- Keep input JSON compact (no pretty printing).
-
-### C) Use `llama.cpp` as a server
-
-Running `llama.cpp` once and sending requests avoids repeated model load overhead and lets you tune threads. Use the built-in server:
-
-- [`llama.cpp` HTTP server](https://github.com/ggerganov/llama.cpp/tree/master/examples/server)
-
-### D) Grammar-constrained decoding overhead
-
-Using GBNF grammars (or JSON-only grammars) makes outputs much more reliable, but costs throughput.
-
-- Typical overhead: **~10–35% slower** decode (sometimes more if grammar is complex or highly restrictive).
-- Recommendation: Use grammar for **final output**, keep grammar minimal:
-  - prefer a grammar that enforces **JSON object shape + key set + numeric arrays**
-  - avoid elaborate whitespace/permissive branches
-
-If you can tolerate occasional repair, an alternative is:
-
-1) generate “almost JSON” with low temperature
-2) run a deterministic JSON repair + validate
-
-…but for automation, grammar is usually worth it.
+- **Don’t plan on SmolLM2 1.7B or Llama 3.2 3B on 4GB** if the benchmarked configuration matches yours.
+  - They measured **5318.2 MB** and **4659.3 MB** RAM in the Pi 5 table. Source: https://rpubs.com/harpomaxx/rpi5llm
 
 ---
 
-## 6) Shortlist (best 2–3 choices) for Pi 5 4GB
+## 4) Why some popular models are excluded (or treated as optional)
 
-### Best choices
+### SmolLM2 1.7B
 
-1) **Phi-3.5 Mini Instruct (GGUF, Q4_K_M, ctx 1024–2048)**
-- Most likely to meet **<5s** while keeping acceptable transform quality.
+- Excluded for **4GB** because a Pi 5 benchmark table shows **5318.2 MB** RAM at `Q4_K_M`.
+- The Stratosphere post also notes a high footprint (over 5 GB).
 
-2) **Qwen2.5 3B Instruct (GGUF, Q4_K_M, ctx ~1024)**
-- Faster and smaller; use grammar to keep JSON strict.
+Sources:
+- https://rpubs.com/harpomaxx/rpi5llm
+- https://www.stratosphereips.org/blog/2025/6/5/how-well-do-llms-perform-on-a-raspberry-pi-5
 
-3) **Llama 3.2 3B Instruct (GGUF, Q4_K_M, ctx ~1024)**
-- Good ecosystem behavior; strong “instruction” feel in a small model.
+### Llama 3.2 3B
 
-### Not recommended list (too big / too slow / too RAM-hungry)
+- Excluded for **4GB** because it measured **4659.3 MB** RAM in the Pi 5 table.
 
-- **DeepSeek-R1-Distill 7B/14B/32B**
-- **Qwen2.5 7B+** (especially 14B/32B/72B)
-- **Mistral 7B–12B** class
-- **Llama 3.1 8B** (borderline; will struggle to consistently hit <5s)
+Source: https://rpubs.com/harpomaxx/rpi5llm
 
----
+### Phi family (Phi-3 small / some variants)
 
-## 7) Concrete download pointers (model repos)
+- Treated as **optional** because llama.cpp support has seen architecture/shape issues:
+  - Issue reports conversion working for some variants but inference failing with tensor shape mismatch, and `Phi3SmallForCausalLM` not being supported by tooling at the time.
 
-You typically want **GGUF** quants for `llama.cpp`. Easiest route:
+Source: https://github.com/ggml-org/llama.cpp/issues/7439
 
-- Hugging Face search for “**GGUF**” variants of the exact instruct model.
-- Prefer well-known quant publishers (e.g., **bartowski**, **TheBloke**, **lmstudio-community**, etc.).
+- Also: Phi-3.5-mini advertises **128K** context, which is not usable on 4GB without aggressive ctx caps.
 
-### Suggested starting points
-
-- Phi family (look for Phi-3.5 Mini Instruct GGUF)
-  - Microsoft org: https://huggingface.co/microsoft
-  - Search query: `phi-3.5 mini instruct gguf`
-
-- Qwen2.5 Instruct (choose 1.5B or 3B)
-  - Qwen org: https://huggingface.co/Qwen
-  - Search query: `qwen2.5 3b instruct gguf`
-
-- Llama 3.x small (choose 3B if available as GGUF)
-  - Meta Llama org: https://huggingface.co/meta-llama
-  - Search query: `llama 3.2 3b instruct gguf`
-
-> Pin the exact GGUF repo/filename you deploy in production (don’t rely on “latest”).
+Source: https://huggingface.co/QuantFactory/Phi-3.5-mini-instruct-GGUF
 
 ---
 
-## 8) `llama.cpp` command lines (ARM64 / Pi 5)
+## Appendix A: Pi 5 benchmark numbers (Q4_K_M)
 
-These examples assume:
+From https://rpubs.com/harpomaxx/rpi5llm:
 
-- you already built `llama.cpp` on the Pi (aarch64)
-- you have a GGUF at `./models/<model>.gguf`
+| Model | Quant | RAM (MB) | tok/s |
+|---|---|---:|---:|
+| gemma3:1b | Q4_K_M | 1393.8 | 11.53 |
+| llama3.2:1b-instruct | Q4_K_M | 2415.8 | 11.22 |
+| qwen2.5:1.5b | Q4_K_M | 1849.3 | 9.97 |
+| qwen2.5:3b | Q4_K_M | 3025.9 | 5.2 |
+| llama3.2:3b | Q4_K_M | 4659.3 | 4.69 |
+| smollm2:1.7b-instruct | Q4_K_M | 5318.2 | 8.23 |
+| granite3.1-dense:2b | Q4_K_M | 3697.7 | 5.81 |
 
-### A) Run the HTTP server (recommended)
+## Appendix B: ARM A76 (Pamir) numbers (llama.cpp)
 
-```bash
-./llama-server \
-  -m ./models/model.Q4_K_M.gguf \
-  -t 4 \
-  -c 1024 \
-  --host 0.0.0.0 \
-  --port 8080 \
-  --temp 0 \
-  --top-p 1 \
-  --repeat-penalty 1.1
-```
+From https://pamir-ai.hashnode.dev/qwen-3-on-a-raspberry-pi-5-small-models-big-agent-energy:
 
-Notes:
+| Model | Quant | RAM (GB) | tok/s (4 threads) |
+|---|---|---:|---:|
+| Qwen 3 0.6B | Q8 | 0.53 | 21.48 |
+| Qwen 3 1.7B | Q8 | 1.20 | 8.69 |
+| Qwen 3 1.7B | Q4_K_M | 1.90 | 5.42 |
+| Qwen 2.5 3B instruct | Q4_K_M | 1.3 | 5.21 |
 
-- `-t 4` is a good starting point on Pi 5; try `-t 3..6` and keep what yields lowest tail latency.
-- Keep `-c` small (1024) for consistent RAM headroom.
+## Appendix C: Implementation knobs (llama.cpp)
 
-### B) Run server with grammar-constrained decoding (strict JSON)
-
-If you have a JSON grammar file (GBNF) such as `./grammars/your_schema.gbnf`:
-
-```bash
-./llama-server \
-  -m ./models/model.Q4_K_M.gguf \
-  -t 4 \
-  -c 1024 \
-  --temp 0 \
-  --top-p 1 \
-  --repeat-penalty 1.1 \
-  --grammar-file ./grammars/your_schema.gbnf
-```
-
-Practical tips:
-
-- Grammar + `--temp 0` is the “automation” mode.
-- Expect ~10–35% slower decode vs no grammar.
-
-### C) One-shot CLI generation (debugging)
-
-```bash
-./llama-cli \
-  -m ./models/model.Q4_K_M.gguf \
-  -t 4 \
-  -c 1024 \
-  -n 256 \
-  --temp 0 \
-  --top-p 1 \
-  -p "You are a JSON transformer. Return ONLY JSON. Input: {...}"
-```
-
----
-
-## 9) Deployment pattern that consistently meets <5s
-
-1) Use a **3B–4B instruct model** in `Q4_K_M`.
-2) Keep `-c 1024` (or `2048` only if required).
-3) Use `--temp 0`, moderate repeat penalty.
-4) Enforce strictness with **GBNF grammar** (accepting throughput hit).
-5) Keep the schema/grammar concise and the prompt minimal.
-6) Cap output tokens (`-n`) to prevent runaway generations.
-
-This combination is the most reliable way to hit **sub-5s** JSON transforms on **Raspberry Pi 5 4GB**.
+- Always set `-c N` to cap context and control KV cache memory.
+  - Source: https://github.com/ggml-org/llama.cpp/discussions/9784
+- Prefer `Q4_K_M` (or `Q5_K_*` if you have headroom) and avoid `Q2_K`.
+  - Source: https://github.com/ggml-org/llama.cpp/discussions/2094
