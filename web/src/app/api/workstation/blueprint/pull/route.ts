@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '~/server/db';
 import { blueprint, syncLog } from '~/server/db/schemas/blueprint';
+import { syncLogger } from '~/lib/syncLogger';
 import { verifyDeviceToken } from '~/lib/device-auth';
 import { verifyHMACSignature } from '~/lib/hmac-verify';
 import { replayProtection } from '~/middleware/replay-protection';
@@ -100,6 +101,14 @@ export async function POST(request: NextRequest) {
       createdAt: new Date()
     });
 
+    syncLogger.info('blueprint.pull.success', {
+      blueprintId,
+      deviceId,
+      workstationId: claims.workstationId,
+      versionBefore: localVersion,
+      versionAfter: bp.version,
+    });
+
     return NextResponse.json({
       success: true,
       blueprint: {
@@ -112,6 +121,9 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
+    syncLogger.error('blueprint.pull.error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.error('Pull blueprint error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

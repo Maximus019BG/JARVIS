@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '~/server/db';
 import { blueprint, syncLog } from '~/server/db/schemas/blueprint';
+import { syncLogger } from '~/lib/syncLogger';
 import { verifyDeviceToken } from '~/lib/device-auth';
 import { verifyHMACSignature } from '~/lib/hmac-verify';
 import { replayProtection } from '~/middleware/replay-protection';
@@ -139,6 +140,15 @@ export async function POST(request: NextRequest) {
       createdAt: now
     });
 
+    syncLogger.info('blueprint.resolve.success', {
+      blueprintId,
+      deviceId,
+      workstationId: claims.workstationId,
+      resolution,
+      versionBefore: existing.version,
+      versionAfter: newVersion,
+    });
+
     return NextResponse.json({
       success: true,
       blueprintId,
@@ -147,6 +157,9 @@ export async function POST(request: NextRequest) {
       hash: newHash
     });
   } catch (error) {
+    syncLogger.error('blueprint.resolve.error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.error('Resolve conflict error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

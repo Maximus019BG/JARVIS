@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '~/server/db';
 import { blueprint, syncLog } from '~/server/db/schemas/blueprint';
+import { syncLogger } from '~/lib/syncLogger';
 import { verifyDeviceToken } from '~/lib/device-auth';
 import { verifyHMACSignature } from '~/lib/hmac-verify';
 import { idempotency, storeIdempotencyResponse } from '~/middleware/idempotency';
@@ -135,6 +136,14 @@ export async function POST(request: NextRequest) {
       createdAt: now
     });
 
+    syncLogger.info('blueprint.push.success', {
+      blueprintId,
+      deviceId,
+      workstationId: claims.workstationId,
+      versionBefore: existing?.version,
+      versionAfter: newVersion,
+    });
+
     const response = NextResponse.json({
       success: true,
       blueprintId,
@@ -148,6 +157,9 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
+    syncLogger.error('blueprint.push.error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.error('Push blueprint error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
