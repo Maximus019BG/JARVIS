@@ -35,7 +35,7 @@ Replace the Textual TUI with a chat-driven system where users interact via natur
   - `planner.py`: Plans complex tasks
   - `executor.py`: Executes simple commands
 - `llm/`: LLM wrappers for different models
-  - `llama_wrapper.py`: Wrapper for Llama 3 3B via Ollama
+  - `gemma_wrapper.py`: Wrapper for Gemma 3 1B via Ollama
   - (future: other LLM wrappers)
 - `memory/`: Memory management for conversation history and state
 - `skills/`: Higher-level behaviors and composite tools

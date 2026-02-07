@@ -13,7 +13,7 @@ Features:
 
 Configuration via environment variables:
 - AI_PROVIDER: google | ollama (default: ollama)
-- OLLAMA_MODEL: Model name for Ollama (default: llama3.2:3b)
+- OLLAMA_MODEL: Model name for Ollama (default: gemma3:1b)
 - TTS_ENGINE: pyttsx3 | gtts | disabled (default: disabled)
 - See .env.example for full configuration options
 """

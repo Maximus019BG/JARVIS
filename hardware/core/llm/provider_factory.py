@@ -79,9 +79,9 @@ class LLMProviderFactory:
     @staticmethod
     def _create_ollama_provider(config: AIConfig) -> LLMProvider:
         """Create Ollama provider."""
-        from core.llm.llama_wrapper import (
+        from core.llm.gemma_wrapper import (
             OLLAMA_AVAILABLE,
-            LlamaWrapper,
+            GemmaWrapper,
         )
 
         if not OLLAMA_AVAILABLE:
@@ -89,7 +89,7 @@ class LLMProviderFactory:
                 "No LLM provider available. Install ollama or google-generativeai."
             )
 
-        return LlamaWrapper(model_name=config.ollama_model)
+        return GemmaWrapper(model_name=config.ollama_model)
 
     @staticmethod
     def _create_google_provider(config: AIConfig) -> LLMProvider:

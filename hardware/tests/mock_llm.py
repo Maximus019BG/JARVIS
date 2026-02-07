@@ -4,8 +4,8 @@ import asyncio
 from typing import Any
 
 
-class MockLlamaWrapper:
-    """Mock implementation of LlamaWrapper for testing."""
+class MockGemmaWrapper:
+    """Mock implementation of GemmaWrapper for testing."""
 
     def __init__(self, responses: list[str] | None = None):
         self.responses = responses or ["Mock response"]

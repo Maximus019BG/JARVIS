@@ -7,7 +7,7 @@ import asyncio
 
 from core.chat_handler import ChatHandler
 from core.tool_registry import ToolRegistry
-from tests.mock_llm import MockLlamaWrapper
+from tests.mock_llm import MockGemmaWrapper
 from tools.create_blueprint_tool import CreateBlueprintTool
 from tools.help_tool import HelpTool
 
@@ -20,7 +20,7 @@ def test_end_to_end() -> None:
     registry.register_tool(HelpTool(registry))
     registry.register_tool(CreateBlueprintTool())
 
-    mock_llm = MockLlamaWrapper()
+    mock_llm = MockGemmaWrapper()
     chat_handler = ChatHandler(registry, llm=mock_llm)
 
     # Test basic conversation
