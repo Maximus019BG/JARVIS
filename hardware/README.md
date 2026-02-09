@@ -50,7 +50,7 @@ hardware/
 1. Install Python 3.13+.
 2. Install [uv](https://github.com/astral-sh/uv) for dependency management.
 3. Install dependencies: `uv sync`
-4. (Optional) Install Ollama for Smart Mode AI chat: Follow [Ollama installation](https://ollama.com/) and pull the model: `ollama pull llama3.2:3b`
+4. (Optional) Install Ollama for Smart Mode AI chat: Follow [Ollama installation](https://ollama.com/) and pull the model: `ollama pull gemma3:1b`
 5. Run the app: `python app.py`
 
 ## Code Quality

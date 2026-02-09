@@ -255,7 +255,7 @@ def create_agent_team(model_name: str | None = None) -> OrchestratorAgent:
         OrchestratorAgent with all specialized agents registered.
 
     Example:
-        >>> team = create_agent_team("llama3.2:3b")
+        >>> team = create_agent_team("gemma3:1b")
         >>> response = await team.orchestrate("Build a REST API for user management")
     """
     factory = get_agent_factory(model_name=model_name)

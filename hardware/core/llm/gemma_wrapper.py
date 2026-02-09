@@ -1,4 +1,4 @@
-"""Wrapper for Llama 3.2 3B model using Ollama."""
+"""Wrapper for Gemma 3 1B model using Ollama."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ except ImportError:
     ollama = None
 
 
-class LlamaWrapper:
-    """Wrapper for interacting with Llama 3.2 3B via Ollama."""
+class GemmaWrapper:
+    """Wrapper for interacting with Gemma 3 1B via Ollama."""
 
-    def __init__(self, model_name: str = "llama3.2:3b"):
+    def __init__(self, model_name: str = "gemma3:1b"):
         self.model_name = model_name
         if not OLLAMA_AVAILABLE:
             raise ImportError(

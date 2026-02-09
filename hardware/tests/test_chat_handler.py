@@ -8,7 +8,7 @@ import pytest
 from core.base_tool import ToolResult
 from core.chat_handler import ChatHandler
 from core.tool_registry import ToolRegistry
-from tests.mock_llm import MockLlamaWrapper
+from tests.mock_llm import MockGemmaWrapper
 
 
 class TestChatHandler:
@@ -51,7 +51,7 @@ class TestChatHandler:
     @pytest.fixture
     def mock_llm(self):
         """Mock LLM wrapper."""
-        return MockLlamaWrapper()
+        return MockGemmaWrapper()
 
     @pytest.fixture
     def tool_registry(self):

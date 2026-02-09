@@ -1,6 +1,6 @@
 # Plan: Structured tool results (Critique #7)
 
-Goal: Breaking/clean migration where [`BaseTool.execute()`](hardware/core/base_tool.py:54) returns a structured `ToolResult` only (no raw strings), then the execution plumbing ([`ToolCallExecutor.execute_tool_call()`](hardware/core/tool_execution.py:235)), chat coordination ([`ChatHandler.process_message()`](hardware/core/chat_handler.py:360)), and LLM provider integration ([`LLMProvider`](hardware/core/llm/provider_factory.py:19), [`LlamaWrapper.continue_conversation()`](hardware/core/llm/llama_wrapper.py:57)) are updated to consume and emit that structure. Finally, update all tool implementations and tests.
+Goal: Breaking/clean migration where [`BaseTool.execute()`](hardware/core/base_tool.py:54) returns a structured `ToolResult` only (no raw strings), then the execution plumbing ([`ToolCallExecutor.execute_tool_call()`](hardware/core/tool_execution.py:235)), chat coordination ([`ChatHandler.process_message()`](hardware/core/chat_handler.py:360)), and LLM provider integration ([`LLMProvider`](hardware/core/llm/provider_factory.py:19), [`GemmaWrapper.continue_conversation()`](hardware/core/llm/gemma_wrapper.py:57)) are updated to consume and emit that structure. Finally, update all tool implementations and tests.
 
 This plan intentionally **does not include code changes**; it enumerates concrete edits + migration order.
 
@@ -123,10 +123,10 @@ Required keys in each entry:
 Optional keys:
 - `raw: dict[str, Any]` (full structured ToolResult for logs/debug; not sent to model unless provider supports it)
 
-### 4.2 Update `LlamaWrapper.continue_conversation` to consume new keys
+### 4.2 Update `GemmaWrapper.continue_conversation` to consume new keys
 
 Edit:
-- [`hardware/core/llm/llama_wrapper.py`](hardware/core/llm/llama_wrapper.py:57)
+- [`hardware/core/llm/gemma_wrapper.py`](hardware/core/llm/gemma_wrapper.py:57)
 
 Actions:
 - Update the loop that appends tool messages:
@@ -242,7 +242,7 @@ Inspect and update if they rely on string tool results:
 
 5) Update provider protocol + implementations
    - [`hardware/core/llm/provider_factory.py`](hardware/core/llm/provider_factory.py:19)
-   - [`hardware/core/llm/llama_wrapper.py`](hardware/core/llm/llama_wrapper.py:57)
+   - [`hardware/core/llm/gemma_wrapper.py`](hardware/core/llm/gemma_wrapper.py:57)
 
 6) Update test mocks for providers
    - [`hardware/tests/mock_llm.py`](hardware/tests/mock_llm.py:1)

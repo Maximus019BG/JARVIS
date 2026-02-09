@@ -56,7 +56,7 @@ class AIConfig(BaseSettings):
     google_api_key: SecretStr | None = None
 
     # Ollama
-    ollama_model: str = "llama3.2:3b"
+    ollama_model: str = "gemma3:1b"
     ollama_host: str = "http://localhost:11434"
 
     max_tokens: int = 4096
