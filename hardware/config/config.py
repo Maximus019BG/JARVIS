@@ -162,6 +162,51 @@ class SyncApiConfig(BaseSettings):
     base_url: str = Field(default="https://api.jarvis.example.com", alias="BASE_URL")
 
 
+class AudioInputBackend(str, Enum):
+    """Supported speech-to-text (STT) backends for audio input."""
+
+    VOSK = "vosk"
+
+
+class AudioInputConfig(BaseSettings):
+    """Audio input (speech-to-text) configuration.
+
+    Environment variables (all prefixed with AUDIO_INPUT_):
+        AUDIO_INPUT_ENABLED: Enable audio input feature
+        AUDIO_INPUT_BACKEND: STT backend to use (currently: vosk)
+        AUDIO_INPUT_MODE: How audio is captured. Only 'push_to_talk' is supported.
+        AUDIO_INPUT_VOSK_MODEL_PATH: Filesystem path to a Vosk model directory
+        AUDIO_INPUT_SAMPLE_RATE: Audio capture sample rate
+        AUDIO_INPUT_MAX_RECORD_SECONDS: Safety cap for recording duration
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="AUDIO_INPUT_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    enabled: bool = Field(default=False, description="Enable audio input (STT)")
+    backend: AudioInputBackend = Field(default=AudioInputBackend.VOSK)
+
+    # Keep only push-to-talk initially to protect Pi performance.
+    mode: str = Field(default="push_to_talk")
+
+    # Vosk settings
+    vosk_model_path: str | None = Field(default=None, alias="VOSK_MODEL_PATH")
+
+    # Audio capture settings (used by the capture backend)
+    sample_rate: int = Field(default=16000, ge=8000, le=48000)
+    max_record_seconds: int = Field(default=10, ge=1, le=60)
+
+    def validate_mode(self) -> None:
+        if self.mode != "push_to_talk":
+            raise ValueError(
+                f"Unsupported AUDIO_INPUT_MODE={self.mode!r}. Only 'push_to_talk' is supported."
+            )
+
+
 class AppConfig(BaseSettings):
     """Main application configuration aggregating all sub-configs."""
 
@@ -201,6 +246,7 @@ class AppConfig(BaseSettings):
     # Sub-configurations
     ai: AIConfig = Field(default_factory=AIConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    audio_input: AudioInputConfig = Field(default_factory=AudioInputConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     theme: ThemeConfig = Field(default_factory=ThemeConfig)
     sync_api: SyncApiConfig = Field(default_factory=SyncApiConfig)
@@ -216,6 +262,7 @@ class AppConfig(BaseSettings):
     def validate_all(self) -> None:
         """Validate all configuration settings."""
         self.ai.validate_provider()
+        self.audio_input.validate_mode()
         # Ensure data directory exists
         self.data_dir.mkdir(parents=True, exist_ok=True)
 

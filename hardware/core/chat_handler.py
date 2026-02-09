@@ -141,6 +141,9 @@ class ChatHandler:
         print(
             "Type 'quit' to exit, 'status' for system status, or 'help' for commands.\n"
         )
+        print(
+            "Tip: type '/mic' to record audio (if AUDIO_INPUT_ENABLED=true).\n"
+        )
 
         # Announce startup with TTS
         self._speak_sync("JARVIS initialized. How can I help you?")
@@ -155,6 +158,11 @@ class ChatHandler:
                 logger.info("Chat interrupted by user")
                 print("\n")
                 break
+
+            if user_input.lower() in ("/mic", "/audio"):
+                user_input = self._capture_audio_or_explain()
+                if not user_input:
+                    continue
 
             if not user_input:
                 continue
@@ -275,6 +283,7 @@ class ChatHandler:
         print("  reflect  - Show memory insights")
         print("  clear    - Clear conversation context")
         print("  quit     - Exit JARVIS")
+        print("  /mic     - Record audio and transcribe (if enabled)")
         print("")
         print("Tips:")
         print("  - Ask me to code, plan, design, or research")
@@ -442,6 +451,45 @@ class ChatHandler:
         finally:
             total_time = time.time() - start_time
             logger.info("Message processing completed in %.2fs", total_time)
+
+    def _capture_audio_or_explain(self) -> str:
+        """Capture audio (if enabled) and return transcript.
+
+        Returns empty string if capture/transcription didn't produce usable text.
+        """
+
+        from config.config import get_config
+
+        config = get_config()
+        if not config.audio_input.enabled:
+            print(
+                "Audio input is disabled. Set AUDIO_INPUT_ENABLED=true in .env to enable.\n"
+            )
+            return ""
+
+        try:
+            from core.audio_input.audio_input_manager import AudioInputManager
+
+            manager = AudioInputManager(config.audio_input)
+        except Exception as exc:
+            print(f"Audio input is enabled but failed to initialize: {exc}\n")
+            return ""
+
+        print(
+            f"Recording (mode={config.audio_input.mode}, max={config.audio_input.max_record_seconds}s)..."
+        )
+        outcome = manager.capture_and_transcribe()
+        if not outcome.ok:
+            print(f"Audio input error: {outcome.error}\n")
+            return ""
+
+        text = (outcome.text or "").strip()
+        if not text:
+            print("(No speech recognized)\n")
+            return ""
+
+        print(f"Heard: {text}\n")
+        return text
 
     def execute_tool_call(self, tool_call: dict[str, Any]) -> ToolResult:
         """Execute a tool call from the LLM."""
