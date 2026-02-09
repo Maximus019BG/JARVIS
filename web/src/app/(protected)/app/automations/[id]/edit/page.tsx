@@ -56,6 +56,7 @@ export default function EditAutomationPage() {
   if (!activeWorkstation) return null;
 
   const save = async () => {
+    const id = params?.id as string;
     if (!activeWorkstation?.id || !id) return;
     setLoading(true);
     try {
