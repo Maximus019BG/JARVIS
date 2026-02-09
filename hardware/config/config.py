@@ -159,7 +159,7 @@ class SyncApiConfig(BaseSettings):
         extra="ignore",
     )
 
-    base_url: str = Field(default="https://api.jarvis.example.com", alias="BASE_URL")
+    base_url: str = Field(default="https://jarvisweb.cloud", alias="BASE_URL")
 
 
 class AudioInputBackend(str, Enum):
