@@ -86,6 +86,8 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
     "@eslint/eslintrc": "^3.3.3",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/jest": "^29.5.14",
@@ -93,6 +95,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.11",
     "@types/react-dom": "^19.2.3",
+    "babel-jest": "^30.2.0",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
