@@ -60,5 +60,12 @@ export async function GET(
   if (!record)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json(record);
+  // For milestone 1: keep response backward compatible but add versioning info.
+  return NextResponse.json({
+    ...record,
+    versioning: {
+      status: record.status,
+      publishedVersion: record.publishedVersion,
+    },
+  });
 }
