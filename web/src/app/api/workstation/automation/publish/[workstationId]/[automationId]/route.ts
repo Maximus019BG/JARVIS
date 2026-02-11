@@ -3,16 +3,15 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { auth } from "~/lib/auth";
-import { decodeId, encodeId, getEncryptionSecret } from "~/lib/crypto-utils";
+import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
+import { editorGraphToDefinition } from "~/lib/automations/definition";
 import { automation } from "~/server/db/schemas/automation";
 import { automationVersion } from "~/server/db/schemas/automation-version";
 import { workstation } from "~/server/db/schemas/workstation";
 
 const publishSchema = z.object({
-  // For milestone 1, we publish whatever the latest draft graph is.
-  // In later milestones, this can include validation result, definition, compiledPlan, etc.
-  definition: z.any().optional(),
+  // Publish always derives/stores normalized definition from latest editor graph.
   compiledPlan: z.any().optional(),
 });
 
@@ -80,13 +79,21 @@ export async function POST(
       ? JSON.parse(automationRecord.metadata)
       : { nodes: [], edges: [] };
 
+    const legacyDefinitionResult = editorGraphToDefinition(legacyGraph);
+    if (legacyDefinitionResult.errors.length) {
+      return NextResponse.json(
+        { error: "Invalid workflow", details: legacyDefinitionResult.errors },
+        { status: 400 },
+      );
+    }
+
     // Create version 1
     await db.insert(automationVersion).values({
       id: crypto.randomUUID(),
       automationId: decodedAutomationId,
       version: 1,
       editorGraph: legacyGraph,
-      definition: body.definition ?? null,
+      definition: legacyDefinitionResult.definition,
       compiledPlan: body.compiledPlan ?? null,
       createdBy: session.user.id,
       createdAt: new Date(),
@@ -97,6 +104,25 @@ export async function POST(
 
   if (versionToPublish == null)
     return NextResponse.json({ error: "No version to publish" }, { status: 400 });
+
+  // Update the existing latest version to include normalized definition for the published artifact.
+  if (latestVersion) {
+    const normalized = editorGraphToDefinition(latestVersion.editorGraph as any);
+    if (normalized.errors.length) {
+      return NextResponse.json(
+        { error: "Invalid workflow", details: normalized.errors },
+        { status: 400 },
+      );
+    }
+
+    await db
+      .update(automationVersion)
+      .set({
+        definition: normalized.definition,
+        compiledPlan: body.compiledPlan ?? latestVersion.compiledPlan,
+      })
+      .where(eq(automationVersion.id, latestVersion.id));
+  }
 
   await db
     .update(automation)
@@ -115,6 +141,5 @@ export async function POST(
   return NextResponse.json({
     success: true,
     publishedVersion: versionToPublish,
-    publishedVersionId: encodeId(String(versionToPublish), secret),
   });
 }

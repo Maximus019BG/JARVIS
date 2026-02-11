@@ -7,9 +7,11 @@ import { Input } from "~/components/ui/input";
 import { useActiveWorkstation } from "~/lib/workstation-hooks";
 import { automationsApi } from "~/lib/api/automations";
 import AutomationCanvas, {
+  type AutomationCanvasHandle,
   type CanvasState,
 } from "~/components/automations/automation-canvas";
 import AutomationPalette from "~/components/automations/automation-palette";
+import type { AutomationNodeType } from "~/lib/automations/node-registry";
 
 export default function CreateAutomationPage() {
   const router = useRouter();
@@ -23,9 +25,7 @@ export default function CreateAutomationPage() {
   const handleCanvasChange = React.useCallback((v: CanvasState) => {
     setCanvas(v);
   }, []);
-  const canvasRef = React.useRef<{
-    createNode: (type: "trigger" | "action" | "condition") => void;
-  } | null>(null);
+  const canvasRef = React.useRef<AutomationCanvasHandle | null>(null);
 
   if (!activeWorkstation) return null;
 
@@ -69,9 +69,7 @@ export default function CreateAutomationPage() {
 
       <div className="grid grid-cols-[220px_1fr] gap-4">
         <AutomationPalette
-          onAdd={(type: "trigger" | "action" | "condition") =>
-            canvasRef.current?.createNode(type)
-          }
+          onAdd={(type: AutomationNodeType) => canvasRef.current?.createNode(type)}
         />
         <div className="min-h-[80vh]">
           <AutomationCanvas

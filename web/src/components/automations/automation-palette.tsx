@@ -3,25 +3,31 @@
 import React from "react";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
+import {
+  nodeRegistryList,
+  type AutomationNodeType,
+} from "~/lib/automations/node-registry";
 
 export type PaletteItem = {
   id: string;
   label: string;
-  type: "trigger" | "action" | "condition";
+  type: AutomationNodeType;
+  category: string;
 };
 
-const items: PaletteItem[] = [
-  { id: "trigger-http", label: "HTTP Trigger", type: "trigger" },
-  { id: "action-log", label: "Log Action", type: "action" },
-  { id: "condition-branch", label: "Condition", type: "condition" },
-];
+const items: PaletteItem[] = nodeRegistryList.map((n) => ({
+  id: n.type,
+  label: n.label,
+  type: n.type,
+  category: n.category,
+}));
 
 export default function AutomationPalette({
   className,
   onAdd,
 }: {
   className?: string;
-  onAdd?: (type: "trigger" | "action" | "condition") => void;
+  onAdd?: (type: AutomationNodeType) => void;
 }) {
   return (
     <div className={cn("bg-popover rounded-lg border p-2", className)}>

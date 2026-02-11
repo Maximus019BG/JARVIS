@@ -27,13 +27,17 @@ import {
 } from "~/components/ui/dropdown-menu";
 // DropdownMenu intentionally not used in this file (context menus use ContextMenu)
 
-export type AutomationNodeData = {
-  label: string;
-  type: "action" | "trigger" | "condition";
-};
-export type CanvasState = { nodes: Node<AutomationNodeData>[]; edges: Edge[] };
+import {
+  getNodeRegistryItem,
+  type AutomationNodeType,
+} from "~/lib/automations/node-registry";
+import NodeConfigPanel, {
+  type EditorNodeData,
+} from "~/components/automations/node-config-panel";
+
+export type CanvasState = { nodes: Node<EditorNodeData>[]; edges: Edge[] };
 export type AutomationCanvasHandle = {
-  createNode: (type: AutomationNodeData["type"]) => void;
+  createNode: (type: AutomationNodeType) => void;
 };
 
 type AutomationCanvasProps = {
@@ -46,9 +50,7 @@ const AutomationCanvas = React.forwardRef<
   AutomationCanvasProps
 >(function AutomationCanvas({ value, onChange }, ref) {
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
-  const [nodes, setNodes] = useState<Node<AutomationNodeData>[]>(
-    value?.nodes ?? [],
-  );
+  const [nodes, setNodes] = useState<Node<EditorNodeData>[]>(value?.nodes ?? []);
   const [edges, setEdges] = useState<Edge[]>(value?.edges ?? []);
   const [context, setContext] = useState<{ x: number; y: number } | null>(null);
   const [nodeContext, setNodeContext] = useState<{
@@ -56,6 +58,8 @@ const AutomationCanvas = React.forwardRef<
     x: number;
     y: number;
   } | null>(null);
+
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isSyncingFromProp = useRef(false);
   const lastEmittedRef = useRef<CanvasState | null>(null);
@@ -133,27 +137,28 @@ const AutomationCanvas = React.forwardRef<
     lastEmittedRef.current = current;
   }, [nodes, edges, onChange, value]);
 
-  const createNodeAt = (
-    x: number,
-    y: number,
-    type: AutomationNodeData["type"],
-  ) => {
+  const createNodeAt = (x: number, y: number, type: AutomationNodeType) => {
     const id = `${type}-${Date.now()}`;
-    const newNode: Node<AutomationNodeData> = {
+    const registryItem = getNodeRegistryItem(type);
+
+    const newNode: Node<EditorNodeData> = {
       id,
       position: rfInstance ? rfInstance.project({ x, y }) : { x, y },
       data: {
-        label: `${type.charAt(0).toUpperCase() + type.slice(1)} node`,
-        type,
+        nodeType: type,
+        label: registryItem.label,
+        params: { ...(registryItem.defaultParams as any) },
       },
       style: { padding: 12 },
     };
+
     setNodes((ns) => ns.concat(newNode));
+    setSelectedNodeId(id);
     return newNode;
   };
 
   React.useImperativeHandle(ref, () => ({
-    createNode: (type: AutomationNodeData["type"]) => {
+    createNode: (type: AutomationNodeType) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const x = rect.width / 2;
@@ -174,7 +179,7 @@ const AutomationCanvas = React.forwardRef<
     setNodeContext({ id: node.id, x: e.clientX, y: e.clientY });
   }, []);
 
-  const addActionNode = (type: AutomationNodeData["type"]) => {
+  const addActionNode = (type: AutomationNodeType) => {
     if (!context || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = context.x - rect.left;
@@ -184,6 +189,7 @@ const AutomationCanvas = React.forwardRef<
   };
 
   const editNode = (id: string) => {
+    setSelectedNodeId(id);
     setNodeContext(null);
   };
   const deleteNode = (id: string) => {
@@ -206,7 +212,7 @@ const AutomationCanvas = React.forwardRef<
         const item = JSON.parse(data) as {
           id: string;
           label: string;
-          type: "trigger" | "action" | "condition";
+          type: AutomationNodeType;
         };
         const rect = containerRef.current.getBoundingClientRect();
         const x = event.clientX - rect.left;
@@ -218,30 +224,63 @@ const AutomationCanvas = React.forwardRef<
     },
     [createNodeAt],
   );
+  const selected = selectedNodeId
+    ? nodes.find((n) => n.id === selectedNodeId) ?? null
+    : null;
+
   return (
-    <div
-      className="bg-popover rounded-lg border p-2"
-      ref={containerRef}
-      onContextMenu={onCanvasContextMenu}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-    >
-      <div className="h-[80vh] w-full">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onPaneContextMenu={(e) => onCanvasContextMenu(e as any)}
-          onInit={setRfInstance}
-          onNodeContextMenu={onNodeContextMenu as any}
-          fitView
-        >
-          <Background gap={12} color="#2a2a2a" />
-          <MiniMap />
-          <Controls />
-        </ReactFlow>
+    <div className="flex rounded-lg border bg-popover" ref={containerRef}>
+      <div
+        className="flex-1 p-2"
+        onContextMenu={onCanvasContextMenu}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        <div className="h-[80vh] w-full">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onPaneContextMenu={(e) => onCanvasContextMenu(e as any)}
+            onInit={setRfInstance}
+            onNodeContextMenu={onNodeContextMenu as any}
+            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            fitView
+          >
+            <Background gap={12} color="#2a2a2a" />
+            <MiniMap />
+            <Controls />
+          </ReactFlow>
+        </div>
+
+        <NodeConfigPanel
+          selected={
+            selected
+              ? { id: selected.id, data: selected.data as EditorNodeData }
+              : null
+          }
+          onClose={() => setSelectedNodeId(null)}
+          onUpdateLabel={(nodeId, nextLabel) => {
+            setNodes((ns) =>
+              ns.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...(n.data as any), label: nextLabel } }
+                  : n,
+              ),
+            );
+          }}
+          onUpdateParams={(nodeId, nextParams) => {
+            setNodes((ns) =>
+              ns.map((n) =>
+                n.id === nodeId
+                  ? { ...n, data: { ...(n.data as any), params: nextParams } }
+                  : n,
+              ),
+            );
+          }}
+        />
       </div>
 
       <DropdownMenu
@@ -253,21 +292,30 @@ const AutomationCanvas = React.forwardRef<
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="min-w-[10rem]"
+          className="min-w-[14rem]"
           style={
             context
               ? { left: context.x, top: context.y, position: "fixed" }
               : undefined
           }
         >
-          <DropdownMenuItem onSelect={() => addActionNode("action")}>
-            Add Node
+          <DropdownMenuItem onSelect={() => addActionNode("manualTrigger")}>
+            Add Manual Trigger
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => addActionNode("trigger")}>
-            Add Trigger
+          <DropdownMenuItem onSelect={() => addActionNode("webhookTrigger")}>
+            Add Webhook Trigger
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => addActionNode("condition")}>
-            Add Condition
+          <DropdownMenuItem onSelect={() => addActionNode("set")}>
+            Add Set
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => addActionNode("if")}>
+            Add If
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => addActionNode("merge")}>
+            Add Merge
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => addActionNode("log")}>
+            Add Log
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
