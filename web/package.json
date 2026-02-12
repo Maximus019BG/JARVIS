@@ -18,9 +18,7 @@
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
-    "automation:worker": "node --import ./src/env.js ./scripts/automation-worker.ts",
-    "automation:worker:once": "node --import ./src/env.js ./scripts/automation-worker.ts --once"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
