@@ -76,15 +76,18 @@ const AutomationCanvas = React.forwardRef<
     if (aNodes.length !== bNodes.length) return false;
     if (aEdges.length !== bEdges.length) return false;
     for (let i = 0; i < aNodes.length; i++) {
-      const an = aNodes[i] as Node<AutomationNodeData>;
-      const bn = bNodes[i] as Node<AutomationNodeData>;
+      const an = aNodes[i] as Node<EditorNodeData>;
+      const bn = bNodes[i] as Node<EditorNodeData>;
       if (an.id !== bn.id) return false;
       if (
         an.position?.x !== bn.position?.x ||
         an.position?.y !== bn.position?.y
       )
         return false;
-      if (an.data?.label !== bn.data?.label || an.data?.type !== bn.data?.type)
+      if (
+        an.data?.label !== bn.data?.label ||
+        an.data?.nodeType !== bn.data?.nodeType
+      )
         return false;
     }
     for (let i = 0; i < aEdges.length; i++) {

@@ -15,6 +15,8 @@ import { useEffect } from "react";
 export default function EditAutomationPage() {
   const router = useRouter();
   const params = useParams();
+  const id = params?.id as string;
+
   const { data: activeWorkstation } = useActiveWorkstation();
   const [automation, setAutomation] = React.useState<Automation | null>(null);
   const [name, setName] = React.useState("");
@@ -27,9 +29,9 @@ export default function EditAutomationPage() {
     [],
   );
   const [loading, setLoading] = React.useState(false);
+
   useEffect(() => {
     const load = async () => {
-      const id = params?.id as string;
       if (!activeWorkstation?.id || !id) return;
       try {
         const res = await automationsApi.get(activeWorkstation.id, id);
@@ -51,12 +53,11 @@ export default function EditAutomationPage() {
       }
     };
     void load();
-  }, [activeWorkstation?.id, params?.id]);
+  }, [activeWorkstation?.id, id]);
 
   if (!activeWorkstation) return null;
 
   const save = async () => {
-    const id = params?.id as string;
     if (!activeWorkstation?.id || !id) return;
     setLoading(true);
     try {
