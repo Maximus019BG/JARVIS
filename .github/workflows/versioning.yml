@@ -17,20 +17,34 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.repository.default_branch }}
 
-      - name: Update Ref
+      # Debug/info: helps confirm what ref triggered the workflow, and what refs exist.
+      - name: Log refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "github.ref=${GITHUB_REF}"
+          echo "github.ref_name=${GITHUB_REF_NAME}"
+          echo "github.sha=${GITHUB_SHA}"
+          echo "--- show-ref (heads/tags) ---"
+          git show-ref --heads --tags | sed -n '1,200p'
+
+      # Move a constant tag (e.g. "latest") to the commit of the pushed version tag.
+      # This avoids ambiguous names like "master" which can exist as both a branch and a tag.
+      - name: Update latest tag
         uses: EndBug/latest-tag@latest
         with:
-          ref: ${{ github.ref_name }}
+          ref: latest
+          description: "Latest release"
 
       - name: Create Release
         uses: "marvinpinto/action-automatic-releases@latest"
         id: auto_release
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          title: "${{ env.RELEASE_VERSION }}"
+          title: "${{ github.ref_name }}"
           prerelease: false
+          automatic_release_tag: "${{ github.ref_name }}"
