@@ -116,3 +116,10 @@ Whether you’re prototyping hardware, writing firmware, or managing project wor
 - Mini projector (HD or higher)  
 - Microphone + speaker  
 - Internet connectivity
+
+> ⚠️ **Build Tool Requirement**
+>
+> This repository does **not** support `pip install -r requirements.txt`.
+> All dependency management is handled via **`uv`** using `pyproject.toml` and `uv.lock`.
+>
+> Attempts to install dependencies without `uv` may fail or produce inconsistent environments.

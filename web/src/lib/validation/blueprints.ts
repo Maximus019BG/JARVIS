@@ -11,7 +11,7 @@ export const blueprintSaveSchema = z.object({
     .optional(),
 
   // Arbitrary JSON payload describing the blueprint
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
 });
 
 export type BlueprintSaveInput = z.infer<typeof blueprintSaveSchema>;
