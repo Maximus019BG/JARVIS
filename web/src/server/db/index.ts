@@ -14,6 +14,10 @@ import * as automationRun from "~/server/db/schemas/automation-run";
 import * as automationRunStep from "~/server/db/schemas/automation-run-step";
 import * as automationJob from "~/server/db/schemas/automation-job";
 import * as automationTrigger from "~/server/db/schemas/automation-trigger";
+import * as device from "~/server/db/schemas/device";
+import * as nonce from "~/server/db/schemas/nonce";
+import * as syncLog from "~/server/db/schemas/sync_log";
+import * as idempotencyKey from "~/server/db/schemas/idempotency_key";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -36,6 +40,10 @@ export const schema = {
   ...automationRunStep,
   ...automationJob,
   ...automationTrigger,
+  ...device,
+  ...nonce,
+  ...syncLog,
+  ...idempotencyKey,
 };
 
 export const db = drizzle(conn, {

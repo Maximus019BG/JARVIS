@@ -22,7 +22,7 @@ export const env = createEnv({
         }
         return parsed;
       })
-      .default("60"), // in minutes
+      .default(60), // in minutes
     BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: z
       .string()
       .transform((val) => {
@@ -32,7 +32,7 @@ export const env = createEnv({
         }
         return parsed;
       })
-      .default("1440"), // in minutes (1 day)
+      .default(1440), // in minutes (1 day)
     GITHUB_CLIENT_ID: z.string().min(1),
     GITHUB_CLIENT_SECRET: z.string().min(1),
     GOOGLE_CLIENT_ID: z.string().min(1),
