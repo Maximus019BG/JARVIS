@@ -34,6 +34,14 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+          # Reduce scan runtime/noise for this monorepo.
+          config: |
+            paths-ignore:
+              - legacy/**
+              - doc/**
+              - **/*.md
+              - web/public/**
+              - web/drizzle/**
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
