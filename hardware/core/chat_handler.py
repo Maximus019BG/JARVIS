@@ -82,6 +82,9 @@ class ChatHandler:
         self._session_started = False
         self._message_count = 0
 
+        # Track last tool results for engine integration
+        self._last_tool_results: list[ToolResult] = []
+
         # Cache for tool schemas (frequently accessed, rarely changes)
         self._tool_schema_cache: list[dict[str, Any]] | None = None
         self._tool_schema_cache_version = 0
@@ -441,8 +444,10 @@ class ChatHandler:
                 )
 
                 tool_results: list[dict[str, Any]] = []
+                self._last_tool_results = []
                 for tool_call in tool_calls:
                     result = self.execute_tool_call(tool_call)
+                    self._last_tool_results.append(result)
                     tool_results.append(
                         {
                             "tool_call_id": tool_call.get("id", ""),

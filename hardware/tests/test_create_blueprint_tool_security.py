@@ -46,24 +46,32 @@ def test_create_blueprint_calls_validate_file_access_and_writes(
     fake = _FakeSecurityManager()
 
     # Ensure the tool writes to a temp location, not the repo.
-    fake.validated_return = tmp_path / "data" / "blueprints" / "MyBlueprint.json"
+    fake.validated_return = tmp_path / "data" / "blueprints" / "MyBlueprint.jarvis"
 
     import tools.create_blueprint_tool as mod
 
     monkeypatch.setattr(mod, "get_security_manager", lambda: fake)
 
     tool = CreateBlueprintTool()
-    result = tool.execute(blueprint_name="MyBlueprint", theme={"primary": "#000"})
+    result = tool.execute(blueprint_name="MyBlueprint")
 
     assert result.ok is True
     assert len(fake.validate_calls) == 1
-    assert fake.validate_calls[0] == Path("data") / "blueprints" / "MyBlueprint.json"
+    assert fake.validate_calls[0] == Path("data") / "blueprints" / "MyBlueprint.jarvis"
 
     out_path = fake.validated_return
     assert out_path.exists()
     payload = json.loads(out_path.read_text(encoding="utf-8"))
-    assert "theme" in payload
-    assert "profile" in payload
+    # .jarvis format should have these fields
+    assert "jarvis_version" in payload
+    assert "type" in payload
+    assert "name" in payload
+    assert "components" in payload
+    assert "connections" in payload
+    assert "sync" in payload
+    assert "security" in payload
+    assert "hash" in payload
+    assert payload["name"] == "MyBlueprint"
 
 
 def test_create_blueprint_denied_path_returns_toolresult_fail(
@@ -89,7 +97,7 @@ def test_create_blueprint_uses_sanitized_filename_in_path(
 ):
     fake = _FakeSecurityManager()
     fake.sanitize_map = {"../evil": "evil"}
-    fake.validated_return = tmp_path / "data" / "blueprints" / "evil.json"
+    fake.validated_return = tmp_path / "data" / "blueprints" / "evil.jarvis"
 
     import tools.create_blueprint_tool as mod
 
@@ -101,7 +109,7 @@ def test_create_blueprint_uses_sanitized_filename_in_path(
     assert result.ok is True
     assert len(fake.validate_calls) == 1
     called_path = fake.validate_calls[0]
-    assert called_path.name == "evil.json"
+    assert called_path.name == "evil.jarvis"
     assert ".." not in str(called_path)
 
     assert fake.validated_return.exists()

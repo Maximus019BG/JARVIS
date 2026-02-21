@@ -79,6 +79,18 @@ class ComponentSpec(BaseModel):
         default_factory=list, description="Child component IDs"
     )
 
+    @field_validator("position", "rotation", mode="before")
+    @classmethod
+    def _coerce_xyz(cls, v: Any) -> tuple[float, float, float]:
+        """Accept both tuple/list and {x, y, z} dict formats."""
+        if isinstance(v, dict):
+            return (
+                float(v.get("x", 0.0)),
+                float(v.get("y", 0.0)),
+                float(v.get("z", 0.0)),
+            )
+        return v
+
 
 class ConnectionType(str, Enum):
     """Types of connections between components."""
@@ -98,13 +110,23 @@ class ConnectionType(str, Enum):
 class Connection(BaseModel):
     """Connection specification between components."""
 
-    from_id: str = Field(min_length=1, description="Source component ID")
-    to_id: str = Field(min_length=1, description="Target component ID")
+    from_id: str = Field(
+        min_length=1,
+        description="Source component ID",
+        alias="from",
+    )
+    to_id: str = Field(
+        min_length=1,
+        description="Target component ID",
+        alias="to",
+    )
     type: str = Field(default="custom", description="Connection type")
     properties: dict[str, Any] = Field(
         default_factory=dict, description="Connection properties"
     )
     notes: str | None = Field(default=None, description="Additional notes")
+
+    model_config = {"populate_by_name": True}
 
 
 class SyncMetadata(BaseModel):
@@ -316,7 +338,7 @@ class BlueprintParser:
         # Update modification time
         blueprint.modified = datetime.now().isoformat()
 
-        data = blueprint.model_dump(mode="json")
+        data = blueprint.model_dump(mode="json", by_alias=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
 

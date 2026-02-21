@@ -41,6 +41,7 @@ from tools.apply_theme_tool import ApplyThemeTool
 from tools.create_blueprint_tool import CreateBlueprintTool
 from tools.edit_profile_tool import EditProfileTool
 from tools.help_tool import HelpTool
+from tools.import_blueprint_tool import ImportBlueprintTool
 from tools.live_assistance_tool import LiveAssistanceTool
 from tools.load_blueprint_tool import LoadBlueprintTool
 from tools.quit_tool import QuitTool
@@ -94,6 +95,7 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     # Blueprint tools
     registry.register_tool(LoadBlueprintTool())
     registry.register_tool(CreateBlueprintTool())
+    registry.register_tool(ImportBlueprintTool())
 
     # Assistance tools
     registry.register_tool(LiveAssistanceTool())

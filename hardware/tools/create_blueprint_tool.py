@@ -1,8 +1,16 @@
-"""Tool to create new blueprints."""
+"""Tool to create new .jarvis blueprints.
+
+Creates blueprints in the full .jarvis format with components, connections,
+materials, sync/security metadata, and opens the blueprint engine for
+interactive editing via the IMX500 camera gesture system.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +18,26 @@ from core.base_tool import BaseTool, ToolResult
 from core.security import SecurityError, get_security_manager
 
 
+def _generate_blueprint_id(name: str) -> str:
+    """Generate a unique blueprint ID from the name."""
+    slug = name.lower().replace(" ", "_").replace("-", "_")
+    short_uuid = uuid.uuid4().hex[:6]
+    return f"bp_{slug}_{short_uuid}"
+
+
+def _compute_hash(data: dict[str, Any]) -> str:
+    """Compute a SHA-256 content hash for change detection."""
+    content_str = json.dumps(data, sort_keys=True, default=str)
+    return hashlib.sha256(content_str.encode()).hexdigest()
+
+
 class CreateBlueprintTool(BaseTool):
-    """Tool for creating blueprints."""
+    """Tool for creating blueprints in .jarvis format.
+
+    Creates a full .jarvis blueprint file with the proper schema including
+    components, connections, materials, dimensions, sync/security metadata,
+    and signals the TUI to open the blueprint engine for interactive editing.
+    """
 
     @property
     def name(self) -> str:
@@ -19,13 +45,24 @@ class CreateBlueprintTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Creates a new blueprint with the given name and optional configuration."
+        return (
+            "Creates a new .jarvis blueprint with the given name and optional "
+            "type (part, assembly, building, system, circuit, mechanism). "
+            "Opens the blueprint engine grid for interactive drawing via the "
+            "IMX500 camera gesture system."
+        )
 
     def execute(
         self,
         blueprint_name: str = "",
-        theme: dict[str, str] | None = None,
-        profile: dict[str, str] | None = None,
+        blueprint_type: str = "part",
+        description: str = "",
+        dimensions: dict[str, Any] | None = None,
+        materials: list[dict[str, Any]] | None = None,
+        components: list[dict[str, Any]] | None = None,
+        connections: list[dict[str, Any]] | None = None,
+        notes: list[str] | None = None,
+        tags: list[str] | None = None,
     ) -> ToolResult:
         name = blueprint_name.strip()
         if not name:
@@ -34,27 +71,89 @@ class CreateBlueprintTool(BaseTool):
                 error_type="ValidationError",
             )
 
-        # Use defaults if not provided.
-        if theme is None:
-            # Keep backwards compatibility with existing config module.
-            from config.config import ThemeManager
+        valid_types = {"part", "assembly", "building", "system", "circuit", "mechanism"}
+        bp_type = blueprint_type.lower().strip()
+        if bp_type not in valid_types:
+            bp_type = "part"
 
-            theme = ThemeManager.DEFAULT_THEME
-        if profile is None:
-            profile = {}
+        now = datetime.now().isoformat() + "Z"
+        bp_id = _generate_blueprint_id(name)
 
-        data: dict[str, Any] = {"theme": theme, "profile": profile}
+        # Build the full .jarvis structure
+        data: dict[str, Any] = {
+            "jarvis_version": "1.0",
+            "id": bp_id,
+            "type": bp_type,
+            "name": name,
+            "description": description or f"New {bp_type} blueprint",
+            "created": now,
+            "author": "JARVIS Blueprint Agent",
+            "version": 1,
+            "hash": "",
+            "sync": {
+                "status": "local_only",
+                "lastSyncedAt": None,
+                "serverVersion": None,
+                "conflictState": None,
+                "workstationId": None,
+                "deviceId": None,
+            },
+            "security": {
+                "classification": "internal",
+                "accessLevel": "read_write",
+                "allowedDevices": [],
+                "signatureRequired": True,
+                "signature": None,
+                "signedBy": None,
+                "signedAt": None,
+                "integrityVerified": False,
+                "encryptionEnabled": False,
+                "encryptionAlgorithm": None,
+            },
+            "dimensions": dimensions or {
+                "length": 0,
+                "width": 0,
+                "height": 0,
+                "unit": "mm",
+            },
+            "materials": materials or [],
+            "components": components or [],
+            "connections": connections or [],
+            "specifications": {},
+            "manufacturing": {},
+            "assembly_instructions": [],
+            "notes": notes or [],
+            "tags": tags or [],
+            "revisions": [
+                {
+                    "version": "1.0",
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "changes": "Initial design",
+                }
+            ],
+        }
+
+        # Compute and set the content hash
+        data["hash"] = _compute_hash(data)
 
         security = get_security_manager()
         safe_name = security.sanitize_filename(name)
-        intended_path = Path("data") / "blueprints" / f"{safe_name}.json"
+        intended_path = Path("data") / "blueprints" / f"{safe_name}.jarvis"
 
         try:
             validated_path = security.validate_file_access(intended_path)
             validated_path.parent.mkdir(parents=True, exist_ok=True)
-            validated_path.write_text(json.dumps(data, indent=4), encoding="utf-8")
+            validated_path.write_text(
+                json.dumps(data, indent=2, default=str), encoding="utf-8"
+            )
+
             return ToolResult.ok_result(
-                f"Blueprint '{safe_name}' created successfully."
+                f"Blueprint '{safe_name}' created successfully as .jarvis file. "
+                f"Opening blueprint engine for interactive editing.",
+                blueprint_path=str(validated_path),
+                blueprint_id=bp_id,
+                blueprint_name=name,
+                open_engine=True,
             )
         except SecurityError as exc:
             return ToolResult.fail(
@@ -90,15 +189,46 @@ class CreateBlueprintTool(BaseTool):
                     "type": "string",
                     "description": "The name of the blueprint to create",
                 },
-                "theme": {
-                    "type": "object",
-                    "description": "Theme configuration as a dictionary of color values",
-                    "additionalProperties": {"type": "string"},
+                "blueprint_type": {
+                    "type": "string",
+                    "enum": [
+                        "part", "assembly", "building",
+                        "system", "circuit", "mechanism",
+                    ],
+                    "description": "Type of blueprint (default: part)",
                 },
-                "profile": {
+                "description": {
+                    "type": "string",
+                    "description": "Description of the blueprint",
+                },
+                "dimensions": {
                     "type": "object",
-                    "description": "Profile configuration as a dictionary",
-                    "additionalProperties": {"type": "string"},
+                    "description": "Overall dimensions with length, width, height, unit",
+                },
+                "materials": {
+                    "type": "array",
+                    "description": "List of materials used in the blueprint",
+                    "items": {"type": "object"},
+                },
+                "components": {
+                    "type": "array",
+                    "description": "List of components in the blueprint",
+                    "items": {"type": "object"},
+                },
+                "connections": {
+                    "type": "array",
+                    "description": "List of connections between components",
+                    "items": {"type": "object"},
+                },
+                "notes": {
+                    "type": "array",
+                    "description": "Design notes",
+                    "items": {"type": "string"},
+                },
+                "tags": {
+                    "type": "array",
+                    "description": "Searchable tags",
+                    "items": {"type": "string"},
                 },
             },
             "required": ["blueprint_name"],
