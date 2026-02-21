@@ -8,6 +8,7 @@ dependencies = [
     # LLM Providers
     "ollama>=0.4.0",
     "google-generativeai>=0.8.0",
+    "groq>=0.9.0",
     # Async & Web
     "aiohttp>=3.11.0",
     "aiofiles>=24.1.0",

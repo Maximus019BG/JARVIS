@@ -74,6 +74,9 @@ class LLMProviderFactory:
         if provider_type == AIProvider.GOOGLE:
             return LLMProviderFactory._create_google_provider(config)
 
+        if provider_type == AIProvider.GROQ:
+            return LLMProviderFactory._create_groq_provider(config)
+
         raise ValueError(f"Unknown AI provider: {provider_type}")
 
     @staticmethod
@@ -113,6 +116,30 @@ class LLMProviderFactory:
         )
         return GoogleAIWrapper(
             api_key=api_key,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
+
+    @staticmethod
+    def _create_groq_provider(config: AIConfig) -> LLMProvider:
+        """Create Groq provider."""
+        from core.llm.groq_wrapper import (
+            GROQ_AVAILABLE,
+            GroqWrapper,
+        )
+
+        if not GROQ_AVAILABLE:
+            raise ValueError(
+                "Groq provider is not available. Install groq with: pip install groq"
+            )
+
+        config.validate_provider()
+        api_key = (
+            config.groq_api_key.get_secret_value() if config.groq_api_key else ""
+        )
+        return GroqWrapper(
+            api_key=api_key,
+            model_name=config.groq_model,
             temperature=config.temperature,
             max_tokens=config.max_tokens,
         )

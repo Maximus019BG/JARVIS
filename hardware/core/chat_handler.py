@@ -378,12 +378,30 @@ class ChatHandler:
         self._tool_schema_cache_version = current_version
         return self._tool_schema_cache
 
+    # Heuristic patterns that suggest tool usage might be needed
+    _TOOL_HINT_RE = re.compile(
+        r"\b(?:file|read|write|save|load|create|blueprint|execute|run|shell|search"
+        r"|remember|recall|forget|memory|code|script|theme|profile|stats|sync"
+        r"|send|update|resolve|conflict|web|fetch|summarize|extract)\b",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _message_needs_tools(message: str) -> bool:
+        """Cheaply predict whether a message is likely to need tool calling.
+
+        Short, simple questions (e.g. "what is python") skip sending tool
+        schemas to the LLM, dramatically reducing inference time on small models.
+        """
+        return bool(ChatHandler._TOOL_HINT_RE.search(message))
+
     async def process_message(self, message: str) -> str:
         """Process user message and return response using AI with tool calling.
 
         Performance improvements:
         - Cached tool schemas to reduce repeated serialization
         - Optimized context building
+        - Skip tool schemas for simple questions (huge speedup on small models)
 
         Args:
             message: User message to process.
@@ -393,8 +411,11 @@ class ChatHandler:
         """
         start_time = time.time()
         try:
-            # Use cached tool schemas for better performance
-            tools = self._get_cached_tool_schemas()
+            # Only send tool schemas when the message plausibly needs them
+            if self._message_needs_tools(message):
+                tools = self._get_cached_tool_schemas()
+            else:
+                tools = []
 
             self.memory.add_message("user", message)
             history = self.memory.get_history()

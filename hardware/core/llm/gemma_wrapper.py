@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # Standard library imports
 import asyncio
+import logging
 from typing import Any
 
 try:
@@ -13,6 +14,8 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
     ollama = None
+
+logger = logging.getLogger(__name__)
 
 
 class GemmaWrapper:
@@ -24,7 +27,8 @@ class GemmaWrapper:
             raise ImportError(
                 "Ollama is not installed. Install it with: pip install ollama"
             )
-        self.client = ollama.Client()
+        self.client = ollama.AsyncClient()
+        self._supports_tools: bool | None = None  # auto-detected on first call
 
     async def chat_with_tools(
         self,
@@ -47,11 +51,28 @@ class GemmaWrapper:
         # Add current user message
         messages.append({"role": "user", "content": message})
 
-        # Make the call to Ollama with tools
-        response = await self.client.chat(
-            model=self.model_name, messages=messages, tools=tools, stream=False
-        )
+        # Try with tools first; fall back to plain chat if not supported
+        if self._supports_tools is not False and tools:
+            try:
+                response = await self.client.chat(
+                    model=self.model_name, messages=messages, tools=tools, stream=False
+                )
+                self._supports_tools = True
+                return response
+            except Exception as exc:
+                if "does not support tools" in str(exc):
+                    logger.warning(
+                        "%s does not support tool calling, falling back to plain chat",
+                        self.model_name,
+                    )
+                    self._supports_tools = False
+                else:
+                    raise
 
+        # Plain chat (no tools)
+        response = await self.client.chat(
+            model=self.model_name, messages=messages, stream=False
+        )
         return response
 
     async def continue_conversation(
@@ -81,11 +102,13 @@ class GemmaWrapper:
                 }
             )
 
-        response = await self.client.chat(
-            model=self.model_name,
-            messages=conversation_history,
-            tools=tools,
-            stream=False,
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": conversation_history,
+            "stream": False,
+        }
+        if self._supports_tools and tools:
+            kwargs["tools"] = tools
 
+        response = await self.client.chat(**kwargs)
         return response["message"]["content"]

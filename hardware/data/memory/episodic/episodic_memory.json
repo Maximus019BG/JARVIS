@@ -1,0 +1,179 @@
+{
+  "version": "1.0",
+  "saved_at": "2026-02-21T16:45:33.898727",
+  "episode_counter": 5,
+  "session_counter": 4,
+  "current_session_id": null,
+  "last_episode_id": null,
+  "episodes": [
+    {
+      "id": "ep_20260221_000001",
+      "event_type": "conversation",
+      "description": "[user] what is python",
+      "timestamp": "2026-02-21T16:19:47.878275",
+      "context": {
+        "role": "user",
+        "length": 14
+      },
+      "participants": [],
+      "location": "",
+      "preceding_event_id": null,
+      "following_event_id": null,
+      "related_event_ids": [],
+      "outcome": "",
+      "success": null,
+      "importance": 0.3,
+      "metadata": {},
+      "tags": []
+    },
+    {
+      "id": "ep_20260221_000002",
+      "event_type": "conversation",
+      "description": "[user] what is python",
+      "timestamp": "2026-02-21T16:22:24.430898",
+      "context": {
+        "role": "user",
+        "length": 14
+      },
+      "participants": [],
+      "location": "",
+      "preceding_event_id": null,
+      "following_event_id": null,
+      "related_event_ids": [],
+      "outcome": "",
+      "success": null,
+      "importance": 0.3,
+      "metadata": {},
+      "tags": []
+    },
+    {
+      "id": "ep_20260221_000003",
+      "event_type": "conversation",
+      "description": "[user] hi",
+      "timestamp": "2026-02-21T16:30:38.239858",
+      "context": {
+        "role": "user",
+        "length": 2
+      },
+      "participants": [],
+      "location": "",
+      "preceding_event_id": null,
+      "following_event_id": null,
+      "related_event_ids": [],
+      "outcome": "",
+      "success": null,
+      "importance": 0.3,
+      "metadata": {},
+      "tags": []
+    },
+    {
+      "id": "ep_20260221_000004",
+      "event_type": "conversation",
+      "description": "[user] what is python",
+      "timestamp": "2026-02-21T16:45:04.795763",
+      "context": {
+        "role": "user",
+        "length": 14
+      },
+      "participants": [],
+      "location": "",
+      "preceding_event_id": null,
+      "following_event_id": "ep_20260221_000005",
+      "related_event_ids": [],
+      "outcome": "",
+      "success": null,
+      "importance": 0.3,
+      "metadata": {},
+      "tags": []
+    },
+    {
+      "id": "ep_20260221_000005",
+      "event_type": "conversation",
+      "description": "[assistant] Python is a high-level, interpreted programming language that is widely used for various purposes su",
+      "timestamp": "2026-02-21T16:45:06.481149",
+      "context": {
+        "role": "assistant",
+        "length": 1795
+      },
+      "participants": [],
+      "location": "",
+      "preceding_event_id": "ep_20260221_000004",
+      "following_event_id": null,
+      "related_event_ids": [],
+      "outcome": "",
+      "success": null,
+      "importance": 0.3,
+      "metadata": {},
+      "tags": []
+    }
+  ],
+  "sessions": [
+    {
+      "id": "sess_20260221_0001",
+      "name": "chat_session",
+      "start_time": "2026-02-21T16:19:38.936505",
+      "end_time": "2026-02-21T16:22:07.502607",
+      "episode_ids": [
+        "ep_20260221_000001"
+      ],
+      "summary": "",
+      "goals": [
+        "Assist user with tasks",
+        "Remember important information"
+      ],
+      "outcomes": [],
+      "metadata": {}
+    },
+    {
+      "id": "sess_20260221_0002",
+      "name": "chat_session",
+      "start_time": "2026-02-21T16:22:07.504281",
+      "end_time": "2026-02-21T16:30:31.305305",
+      "episode_ids": [
+        "ep_20260221_000002"
+      ],
+      "summary": "",
+      "goals": [
+        "Assist user with tasks",
+        "Remember important information"
+      ],
+      "outcomes": [],
+      "metadata": {}
+    },
+    {
+      "id": "sess_20260221_0003",
+      "name": "chat_session",
+      "start_time": "2026-02-21T16:30:31.305758",
+      "end_time": "2026-02-21T16:44:57.153347",
+      "episode_ids": [
+        "ep_20260221_000003"
+      ],
+      "summary": "",
+      "goals": [
+        "Assist user with tasks",
+        "Remember important information"
+      ],
+      "outcomes": [],
+      "metadata": {}
+    },
+    {
+      "id": "sess_20260221_0004",
+      "name": "chat_session",
+      "start_time": "2026-02-21T16:44:57.153831",
+      "end_time": "2026-02-21T16:45:33.898620",
+      "episode_ids": [
+        "ep_20260221_000004",
+        "ep_20260221_000005"
+      ],
+      "summary": "Chat session with 1 messages",
+      "goals": [
+        "Assist user with tasks",
+        "Remember important information"
+      ],
+      "outcomes": [
+        "Session completed normally"
+      ],
+      "metadata": {}
+    }
+  ]
+}
