@@ -241,7 +241,7 @@ def main() -> None:
         memory_manager = None
         print("  ⚠ Using basic memory")
 
-    # Create chat handler and start
+    # Create chat handler
     enable_tts = config.tts.engine.value != "disabled"
     chat_handler = ChatHandler(
         tool_registry=registry,
@@ -254,8 +254,21 @@ def main() -> None:
 
     print("=" * 60 + "\n")
 
-    logger.info("Starting chat")
-    chat_handler.start_chat()
+    # Launch TUI
+    logger.info("Launching TUI")
+    from core.tui.app import JarvisTUI
+
+    agent_names_list = (
+        orchestrator.get_registered_agents() if orchestrator else []
+    )
+    tui = JarvisTUI(
+        chat_handler=chat_handler,
+        orchestrator=orchestrator,
+        agent_names=agent_names_list,
+        tool_count=len(registry.get_all_tools()),
+        memory_active=memory_manager is not None,
+    )
+    tui.run()
 
 
 if __name__ == "__main__":

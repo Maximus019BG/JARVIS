@@ -30,6 +30,7 @@ dependencies = [
     "orjson>=3.10.0",
     # Vision (opencv is cross-platform)
     "opencv-python-headless>=4.9.0",
+    "textual>=8.0.0",
 ]
 
 # NOTE: Vision dependencies (mediapipe, picamera2) are NOT listed here because:

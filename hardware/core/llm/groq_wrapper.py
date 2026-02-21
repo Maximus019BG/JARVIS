@@ -50,6 +50,7 @@ def _convert_tool_calls_to_ollama_format(
     for tc in tool_calls:
         entry: dict[str, Any] = {
             "id": tc.id,
+            "type": "function",
             "function": {
                 "name": tc.function.name,
                 "arguments": tc.function.arguments,  # JSON string
