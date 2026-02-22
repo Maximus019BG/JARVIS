@@ -132,16 +132,36 @@ class Connection(BaseModel):
 class SyncMetadata(BaseModel):
     """Sync state metadata for cloud synchronization."""
 
+    model_config = {"extra": "allow", "populate_by_name": True}
+
     synced: bool = Field(default=False, description="Whether synced to cloud")
-    last_sync: str | None = Field(default=None, description="Last sync timestamp")
-    sync_version: int = Field(default=0, description="Sync version number")
-    conflict_state: str | None = Field(default=None, description="Conflict state")
+    last_sync: str | None = Field(
+        default=None,
+        description="Last sync timestamp",
+        alias="lastSyncedAt",
+    )
+    sync_version: int | None = Field(
+        default=0,
+        description="Sync version number",
+        alias="serverVersion",
+    )
+    conflict_state: str | None = Field(
+        default=None,
+        description="Conflict state",
+        alias="conflictState",
+    )
     server_hash: str | None = Field(default=None, description="Server content hash")
-    device_id: str | None = Field(default=None, description="Originating device ID")
+    device_id: str | None = Field(
+        default=None,
+        description="Originating device ID",
+        alias="deviceId",
+    )
 
 
 class SecurityMetadata(BaseModel):
     """Security and access control metadata."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
 
     owner: str | None = Field(default=None, description="Blueprint owner")
     permissions: list[str] = Field(
@@ -153,7 +173,9 @@ class SecurityMetadata(BaseModel):
     )
     signature: str | None = Field(default=None, description="Content signature")
     encryption_algorithm: str | None = Field(
-        default=None, description="Encryption algorithm used"
+        default=None,
+        description="Encryption algorithm used",
+        alias="encryptionAlgorithm",
     )
 
 
@@ -163,6 +185,8 @@ class Blueprint(BaseModel):
     This is the main data structure for blueprint files, supporting
     complex assemblies with components, connections, and metadata.
     """
+
+    model_config = {"extra": "allow", "populate_by_name": True}
 
     jarvis_version: str = Field(default="1.0", description="Schema version")
     type: BlueprintType = Field(

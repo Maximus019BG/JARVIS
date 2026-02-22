@@ -13,6 +13,7 @@ from core.blueprint.engine import (
     ViewState,
 )
 from core.blueprint.parser import BlueprintType
+from core.blueprint.transforms import TransformType
 
 
 class TestViewState:
@@ -310,3 +311,96 @@ class TestBlueprintEngine:
 
         assert result is True
         assert engine.is_modified is True
+
+    # ─── Additional coverage ──────────────────────────────────────
+
+    def test_add_component_no_blueprint(self, engine: BlueprintEngine) -> None:
+        """add_component auto-creates blueprint if None."""
+        cid = engine.add_component("Part A", "box", dimensions=(10, 20, 30))
+        assert cid is not None
+        assert engine.blueprint is not None
+
+    def test_add_then_remove_component(self, engine: BlueprintEngine) -> None:
+        """Remove a component previously added."""
+        engine.new_blueprint("Test", BlueprintType.PART)
+        cid = engine.add_component("Part X")
+        assert cid is not None
+        assert engine.remove_component(cid)
+        assert engine.is_modified
+
+    def test_remove_component_no_blueprint(self, engine: BlueprintEngine) -> None:
+        assert engine.remove_component("nope") is False
+
+    def test_remove_nonexistent_component(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("T", BlueprintType.PART)
+        assert engine.remove_component("ghost") is False
+
+    @pytest.mark.asyncio
+    async def test_delete_selected(
+        self, engine: BlueprintEngine, sample_blueprint_file: Path
+    ) -> None:
+        await engine.load(sample_blueprint_file)
+        engine.select_component("box1")
+        deleted = engine.delete_selected()
+        assert deleted >= 1
+
+    def test_off_handler(self, engine: BlueprintEngine) -> None:
+        """off() removes a handler so it no longer fires."""
+        calls: list[str] = []
+
+        def h(eng, ev, data):
+            calls.append(ev)
+
+        engine.on("mode_changed", h)
+        engine.off("mode_changed", h)
+        engine.set_mode(InteractionMode.PAN)
+        assert calls == []
+
+    def test_get_status(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("Status Test", BlueprintType.PART)
+        status = engine.get_status()
+        assert status["blueprint"] == "Status Test"
+        assert status["mode"] == "select"
+        assert status["can_undo"] is False
+
+    @pytest.mark.asyncio
+    async def test_select_at_point_miss(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("T", BlueprintType.PART)
+        engine.add_component("C1", position=(500, 500, 0), dimensions=(10, 10, 0))
+        result = engine.select_at_point(0.0, 0.0)  # far from component
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_save_no_blueprint(self, engine: BlueprintEngine) -> None:
+        assert await engine.save() is False
+
+    @pytest.mark.asyncio
+    async def test_load_nonexistent(self, engine: BlueprintEngine) -> None:
+        result = await engine.load("nonexistent_file_xyz.jarvis")
+        assert result is False
+
+    def test_interactive_transform_no_selection(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("T", BlueprintType.PART)
+        assert engine.begin_interactive_transform(TransformType.TRANSLATE, 0, 0) is False
+
+    def test_cancel_interactive_transform(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("T", BlueprintType.PART)
+        engine.cancel_interactive_transform()  # should not raise
+
+    def test_transform_rotate_mode(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("T", BlueprintType.PART)
+        cid = engine.add_component("R")
+        node = engine.scene.get_node_by_component(cid)
+        engine.selection.select(node.id)
+        engine.set_mode(InteractionMode.ROTATE)
+        result = engine.transform_selection(dx=45)
+        assert result is True
+
+    def test_transform_scale_mode(self, engine: BlueprintEngine) -> None:
+        engine.new_blueprint("T", BlueprintType.PART)
+        cid = engine.add_component("S")
+        node = engine.scene.get_node_by_component(cid)
+        engine.selection.select(node.id)
+        engine.set_mode(InteractionMode.SCALE)
+        result = engine.transform_selection(dx=0.5)
+        assert result is True

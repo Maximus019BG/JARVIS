@@ -131,21 +131,26 @@ class GroqWrapper:
     ) -> str:
         """Continue conversation after tool execution.
 
-        Appends tool results to the history and asks the model for a final response.
+        Tool results are expected to already be in ``conversation_history``
+        (added by the caller).  We sanitise the messages and send them.
         """
-        # Add tool results as tool-role messages (OpenAI/Groq format)
-        for result in tool_results:
-            conversation_history.append(
-                {
-                    "role": "tool",
-                    "content": result["content"],
-                    "tool_call_id": result["tool_call_id"],
-                }
-            )
+        # Sanitise tool_calls in history for Groq compatibility
+        messages = []
+        for msg in conversation_history:
+            if msg.get("tool_calls"):
+                msg = dict(msg)
+                sanitised = []
+                for tc in msg["tool_calls"]:
+                    tc = dict(tc)
+                    tc.setdefault("type", "function")
+                    tc.setdefault("id", f"call_{id(tc)}")
+                    sanitised.append(tc)
+                msg["tool_calls"] = sanitised
+            messages.append(msg)
 
         kwargs: dict[str, Any] = {
             "model": self.model_name,
-            "messages": conversation_history,
+            "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
@@ -188,7 +193,22 @@ class GroqWrapper:
         conversation_history: list[dict[str, Any]] | None,
         user_message: str,
     ) -> list[dict[str, Any]]:
-        """Build the messages list for the API call."""
-        messages = list(conversation_history or [])
+        """Build the messages list for the API call.
+
+        Sanitises history entries so that assistant messages with ``tool_calls``
+        always include the ``type`` field required by Groq/OpenAI.
+        """
+        messages: list[dict[str, Any]] = []
+        for msg in conversation_history or []:
+            if msg.get("tool_calls"):
+                msg = dict(msg)  # shallow copy to avoid mutating memory
+                sanitised = []
+                for tc in msg["tool_calls"]:
+                    tc = dict(tc)
+                    tc.setdefault("type", "function")
+                    tc.setdefault("id", f"call_{id(tc)}")
+                    sanitised.append(tc)
+                msg["tool_calls"] = sanitised
+            messages.append(msg)
         messages.append({"role": "user", "content": user_message})
         return messages

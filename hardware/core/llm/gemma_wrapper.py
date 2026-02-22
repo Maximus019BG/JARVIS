@@ -86,22 +86,13 @@ class GemmaWrapper:
         Args:
             tool_results: List of tool call results.
                 Each entry must include `tool_call_id` and `content`.
-            conversation_history: Full conversation history
+            conversation_history: Full conversation history (already includes
+                tool results added by the caller).
             tools: Available tools
 
         Returns:
             Final response from LLM
         """
-        # Add tool results as tool messages
-        for result in tool_results:
-            conversation_history.append(
-                {
-                    "role": "tool",
-                    "content": result["content"],
-                    "tool_call_id": result["tool_call_id"],
-                }
-            )
-
         kwargs: dict[str, Any] = {
             "model": self.model_name,
             "messages": conversation_history,

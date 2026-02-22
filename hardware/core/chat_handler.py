@@ -456,6 +456,16 @@ class ChatHandler:
                         }
                     )
 
+                # Store tool results in memory so the conversation history
+                # stays valid for APIs that require tool results after
+                # assistant messages with tool_calls (e.g. Groq/OpenAI).
+                for tr in tool_results:
+                    self.memory.add_message(
+                        "tool",
+                        tr["content"],
+                        tool_call_id=tr["tool_call_id"],
+                    )
+
                 final_response = await self.llm.continue_conversation(
                     tool_results,
                     self.memory.get_history(),

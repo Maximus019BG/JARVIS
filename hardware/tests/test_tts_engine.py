@@ -109,3 +109,97 @@ class TestTTSEngineFactory:
 
         assert isinstance(engine, TTSEngine)
         assert engine.is_available()
+
+    def test_create_default_config(self):
+        engine = TTSEngineFactory.create()
+        assert isinstance(engine, TTSEngine)
+
+    def test_create_pyttsx3_fallback_to_disabled(self):
+        from config.config import TTSConfig, TTSEngine as TTSEngineEnum
+        cfg = TTSConfig(engine=TTSEngineEnum.PYTTSX3)
+        engine = TTSEngineFactory.create(cfg)
+        assert isinstance(engine, TTSEngine)
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage for PyTTSX3Engine
+# ---------------------------------------------------------------------------
+
+class TestPyTTSX3EngineExtra:
+    def test_speak_sync_unavailable_raises(self):
+        engine = PyTTSX3Engine.__new__(PyTTSX3Engine)
+        engine._engine = None
+        engine._available = False
+        with pytest.raises(TTSError, match="not available"):
+            engine.speak_sync("test")
+
+    def test_speak_sync_engine_error(self):
+        engine = PyTTSX3Engine.__new__(PyTTSX3Engine)
+        engine._engine = MagicMock()
+        engine._available = True
+        engine._engine.say.side_effect = RuntimeError("boom")
+        with pytest.raises(TTSError, match="speak failed"):
+            engine.speak_sync("test")
+
+    def test_speak_sync_success(self):
+        engine = PyTTSX3Engine.__new__(PyTTSX3Engine)
+        engine._engine = MagicMock()
+        engine._available = True
+        engine.speak_sync("hello")
+        engine._engine.say.assert_called_once_with("hello")
+        engine._engine.runAndWait.assert_called_once()
+
+    def test_is_available_false_when_engine_none(self):
+        engine = PyTTSX3Engine.__new__(PyTTSX3Engine)
+        engine._engine = None
+        engine._available = True
+        assert engine.is_available() is False
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage for GTTSEngine
+# ---------------------------------------------------------------------------
+
+class TestGTTSEngineExtra:
+    def test_speak_sync_raises_unavailable(self):
+        engine = GTTSEngine.__new__(GTTSEngine)
+        engine._available = False
+        with pytest.raises(TTSError, match="not available"):
+            engine.speak_sync("test")
+
+    def test_speak_async_raises_unavailable(self):
+        import asyncio
+        engine = GTTSEngine.__new__(GTTSEngine)
+        engine._available = False
+        with pytest.raises(TTSError, match="not available"):
+            asyncio.run(engine.speak("test"))
+
+    def test_init_pygame_error(self):
+        engine = GTTSEngine.__new__(GTTSEngine)
+        engine._available = True
+        engine._pygame_initialized = False
+        engine._pygame = MagicMock()
+        engine._pygame.mixer.init.side_effect = RuntimeError("no audio")
+        with pytest.raises(TTSError, match="pygame mixer"):
+            engine._init_pygame()
+
+    def test_init_pygame_success(self):
+        engine = GTTSEngine.__new__(GTTSEngine)
+        engine._available = True
+        engine._pygame_initialized = False
+        engine._pygame = MagicMock()
+        engine._init_pygame()
+        assert engine._pygame_initialized is True
+
+
+# ---------------------------------------------------------------------------
+# TTSError
+# ---------------------------------------------------------------------------
+
+class TestTTSErrorExtra:
+    def test_is_exception(self):
+        assert issubclass(TTSError, Exception)
+
+    def test_message(self):
+        e = TTSError("broken")
+        assert str(e) == "broken"

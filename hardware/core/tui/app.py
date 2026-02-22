@@ -605,6 +605,16 @@ class JarvisTUI(App):
                 self._handle_tool_result_for_engine(tr)
             self.chat_handler._last_tool_results = []
 
+            # If no tool opened the engine, check whether the response itself
+            # contains a .jarvis JSON block (e.g. from the Blueprint Agent via
+            # the orchestrator path) and save + open it.
+            if not self.blueprint_active:
+                bp_data = self._extract_blueprint_json(response)
+                if bp_data:
+                    saved_path = self._save_extracted_blueprint(bp_data)
+                    if saved_path:
+                        self._open_blueprint_pane(blueprint_path=saved_path)
+
         except Exception as exc:
             logger.exception("Error processing message")
             try:
@@ -684,6 +694,94 @@ class JarvisTUI(App):
         self._append_assistant(reflection)
 
     # ── Blueprint Engine Management ──────────────────────────────
+
+    @staticmethod
+    def _extract_blueprint_json(text: str) -> dict[str, Any] | None:
+        """Try to extract a .jarvis JSON object from a text response.
+
+        Looks for JSON blocks (fenced or bare) that contain ``jarvis_version``
+        and ``name`` — the minimum markers for a valid .jarvis file.
+        Returns the first matching dict or ``None``.
+        """
+        import json as _json
+        import re as _re
+
+        # Try fenced code blocks first (```json ... ``` or ``` ... ```)
+        for m in _re.finditer(r"```(?:json)?\s*\n(.*?)```", text, _re.DOTALL):
+            try:
+                obj = _json.loads(m.group(1))
+                if isinstance(obj, dict) and "name" in obj:
+                    return obj
+            except (ValueError, TypeError):
+                continue
+
+        # Fallback: look for the outermost { … } that is valid JSON
+        depth = 0
+        start = None
+        for i, ch in enumerate(text):
+            if ch == "{":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0 and start is not None:
+                    candidate = text[start : i + 1]
+                    try:
+                        obj = _json.loads(candidate)
+                        if isinstance(obj, dict) and "name" in obj:
+                            return obj
+                    except (ValueError, TypeError):
+                        pass
+                    start = None
+
+        return None
+
+    def _save_extracted_blueprint(self, data: dict[str, Any]) -> str | None:
+        """Save an extracted blueprint dict to disk and return the path.
+
+        Adds missing .jarvis metadata and saves into ``data/blueprints/``.
+        Returns the absolute path string on success, ``None`` on failure.
+        """
+        import json as _json
+        from datetime import datetime
+        from pathlib import Path
+
+        name = data.get("name", "untitled").strip()
+        if not name:
+            return None
+
+        data.setdefault("jarvis_version", "1.0")
+        data.setdefault("type", "part")
+        data.setdefault("created", datetime.now().isoformat())
+        data.setdefault("description", "")
+        data.setdefault("components", [])
+        data.setdefault("connections", [])
+
+        # Ensure every component has an id
+        for i, comp in enumerate(data.get("components", [])):
+            if isinstance(comp, dict) and "id" not in comp:
+                comp["id"] = f"comp_{i:03d}"
+
+        safe_name = (
+            name.lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
+
+        bp_dir = Path("data") / "blueprints"
+        bp_dir.mkdir(parents=True, exist_ok=True)
+        path = bp_dir / f"{safe_name}.jarvis"
+
+        try:
+            path.write_text(
+                _json.dumps(data, indent=2, default=str), encoding="utf-8"
+            )
+            logger.info("Saved extracted blueprint to %s", path)
+            return str(path.resolve())
+        except Exception as exc:
+            logger.error("Failed to save extracted blueprint: %s", exc)
+            return None
 
     def _open_blueprint_pane(self, blueprint_path: str | None = None) -> None:
         """Open the blueprint engine pane in split view.
@@ -765,7 +863,9 @@ class JarvisTUI(App):
     def _handle_tool_result_for_engine(self, result: Any) -> None:
         """Check if a tool result signals to open the blueprint engine.
 
-        Called after tool execution to detect create/load blueprint results.
+        Called after tool execution to detect create/load/edit blueprint results.
+        Opens the engine pane if needed, and reloads the file if the engine
+        already has a blueprint open (e.g. after ``edit_blueprint``).
         """
         if not hasattr(result, "error_details") or not result.error_details:
             return
@@ -781,6 +881,7 @@ class JarvisTUI(App):
             if not self.blueprint_active:
                 self._open_blueprint_pane(blueprint_path=bp_path)
             elif bp_path:
+                # Engine already open — reload file (handles edits)
                 self._load_blueprint_into_engine(bp_path)
 
     # ── Session cleanup ───────────────────────────────────────────

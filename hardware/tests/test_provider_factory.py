@@ -69,3 +69,39 @@ class TestLLMProviderFactory:
 
             assert call_count == 2  # Tried twice
             assert isinstance(result, MagicMock)
+
+
+# ---------------------------------------------------------------------------
+# Extra coverage for uncovered branches
+# ---------------------------------------------------------------------------
+
+class TestProviderFactoryExtra:
+    def test_unknown_provider_raises(self):
+        cfg = AIConfig()
+        cfg.provider = "nonexistent_xyz"
+        with pytest.raises(ValueError, match="Unknown AI provider"):
+            LLMProviderFactory.create(cfg)
+
+    def test_create_groq_provider_not_available(self):
+        cfg = AIConfig(provider=AIProvider.GROQ)
+        with patch("core.llm.groq_wrapper.GROQ_AVAILABLE", False):
+            with pytest.raises(ValueError, match="Groq provider"):
+                LLMProviderFactory._create_groq_provider(cfg)
+
+    def test_create_ollama_provider_not_available(self):
+        cfg = AIConfig(provider=AIProvider.OLLAMA)
+        with patch("core.llm.gemma_wrapper.OLLAMA_AVAILABLE", False):
+            with pytest.raises(ValueError, match="No LLM provider"):
+                LLMProviderFactory._create_ollama_provider(cfg)
+
+    def test_create_with_default_config(self):
+        mock_wrapper = MagicMock()
+        with patch.object(LLMProviderFactory, "create", return_value=mock_wrapper):
+            result = LLMProviderFactory.create()
+        assert result is mock_wrapper
+
+    def test_both_retries_fail(self):
+        with patch.object(LLMProviderFactory, "create",
+                          side_effect=ValueError("fail")):
+            with pytest.raises(ValueError):
+                LLMProviderFactory.create_with_fallback()
