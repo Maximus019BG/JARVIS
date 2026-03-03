@@ -342,7 +342,7 @@ class JarvisTUI(App):
     """
 
     TITLE = "JARVIS"
-    SUB_TITLE = "AI-Powered Hardware Assistant"
+    SUB_TITLE = "Agentic Hardware Assistant"
     CSS = CSS
 
     BINDINGS = [

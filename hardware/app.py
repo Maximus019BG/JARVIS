@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JARVIS - AI-Powered Hardware Assistant.
+"""JARVIS - Agentic Hardware Assistant.
 
 A chat-driven application that uses a multi-agent system to handle complex tasks.
 
