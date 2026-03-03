@@ -43,6 +43,7 @@ from tools.create_blueprint_tool import CreateBlueprintTool
 from tools.edit_profile_tool import EditProfileTool
 from tools.help_tool import HelpTool
 from tools.import_blueprint_tool import ImportBlueprintTool
+from tools.list_blueprints_tool import ListBlueprintsTool
 from tools.live_assistance_tool import LiveAssistanceTool
 from tools.load_blueprint_tool import LoadBlueprintTool
 from tools.quit_tool import QuitTool
@@ -94,6 +95,7 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     registry.register_tool(QuitTool())
 
     # Blueprint tools
+    registry.register_tool(ListBlueprintsTool())
     registry.register_tool(LoadBlueprintTool())
     registry.register_tool(CreateBlueprintTool())
     registry.register_tool(BlueprintEditTool())
@@ -188,7 +190,7 @@ def main() -> None:
     logger.info("Starting %s", config.app_name)
 
     print("\n" + "=" * 60)
-    print("  🤖 JARVIS - AI-Powered Hardware Assistant")
+    print("  🤖 JARVIS - Agentic Hardware Assistant")
     print("=" * 60)
 
     # Setup security

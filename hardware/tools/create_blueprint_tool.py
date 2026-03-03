@@ -61,6 +61,11 @@ class CreateBlueprintTool(BaseTool):
         materials: list[dict[str, Any]] | None = None,
         components: list[dict[str, Any]] | None = None,
         connections: list[dict[str, Any]] | None = None,
+        lines: list[dict[str, Any]] | None = None,
+        circles: list[dict[str, Any]] | None = None,
+        rects: list[dict[str, Any]] | None = None,
+        arcs: list[dict[str, Any]] | None = None,
+        texts: list[dict[str, Any]] | None = None,
         notes: list[str] | None = None,
         tags: list[str] | None = None,
     ) -> ToolResult:
@@ -119,6 +124,11 @@ class CreateBlueprintTool(BaseTool):
             "materials": materials or [],
             "components": components or [],
             "connections": connections or [],
+            "lines": lines or [],
+            "circles": circles or [],
+            "rects": rects or [],
+            "arcs": arcs or [],
+            "texts": texts or [],
             "specifications": {},
             "manufacturing": {},
             "assembly_instructions": [],
@@ -218,6 +228,31 @@ class CreateBlueprintTool(BaseTool):
                 "connections": {
                     "type": "array",
                     "description": "List of connections between components",
+                    "items": {"type": "object"},
+                },
+                "lines": {
+                    "type": "array",
+                    "description": "Drawing lines (percentage coords 0-100): [{x1, y1, x2, y2, color, style, label}]",
+                    "items": {"type": "object"},
+                },
+                "circles": {
+                    "type": "array",
+                    "description": "Drawing circles (percentage coords 0-100): [{cx, cy, r, color, fill, label}]",
+                    "items": {"type": "object"},
+                },
+                "rects": {
+                    "type": "array",
+                    "description": "Drawing rectangles (percentage coords 0-100): [{x, y, w, h, color, fill, label}]",
+                    "items": {"type": "object"},
+                },
+                "arcs": {
+                    "type": "array",
+                    "description": "Drawing arcs (percentage coords 0-100): [{cx, cy, r, start_angle, end_angle, color, label}]",
+                    "items": {"type": "object"},
+                },
+                "texts": {
+                    "type": "array",
+                    "description": "Drawing text labels (percentage coords 0-100): [{x, y, text, color, bold}]",
                     "items": {"type": "object"},
                 },
                 "notes": {

@@ -65,16 +65,35 @@ class LoadBlueprintTool(BaseTool):
                 continue
 
         if resolved is None:
+            # List available blueprints so the agent can suggest alternatives
+            available = sorted(
+                f.stem for f in base_dir.glob("*.jarvis") if f.is_file()
+            )
+            avail_str = (
+                " Available blueprints: " + ", ".join(available)
+                if available
+                else " No blueprints found in data/blueprints/."
+            )
             return ToolResult.fail(
                 f"Blueprint '{blueprint_name}' not found. "
                 f"Looked for {blueprint_name}.jarvis and {blueprint_name}.json "
-                f"in data/blueprints/.",
+                f"in data/blueprints/.{avail_str}",
                 error_type="NotFound",
             )
 
         try:
             with resolved.open("r", encoding="utf-8") as f:
                 data: dict[str, Any] = json.load(f)
+
+            # ── Auto-fix corrupt blueprints ──────────────────────
+            from core.blueprint.fixer import fix_blueprint_dict
+
+            fixes = fix_blueprint_dict(data)
+            if fixes:
+                # Write the fixed version back to disk
+                resolved.write_text(
+                    json.dumps(data, indent=2, default=str), encoding="utf-8"
+                )
 
             # Determine if this is a .jarvis-format blueprint
             is_jarvis_format = "jarvis_version" in data
@@ -84,16 +103,39 @@ class LoadBlueprintTool(BaseTool):
                 bp_type = data.get("type", "part")
                 bp_id = data.get("id", "")
                 component_count = len(data.get("components", []))
+                drawing_count = sum(
+                    len(data.get(k, []))
+                    for k in ("lines", "circles", "rects", "arcs", "texts")
+                )
+
+                fix_msg = ""
+                if fixes:
+                    fix_msg = (
+                        f" Auto-fixed {len(fixes)} issue(s): "
+                        + "; ".join(fixes[:3])
+                        + ("..." if len(fixes) > 3 else "")
+                        + "."
+                    )
+
+                dims = data.get("dimensions", {})
+                dim_str = ""
+                if dims and isinstance(dims, dict):
+                    l, w, h = dims.get("length", 0), dims.get("width", 0), dims.get("height", 0)
+                    unit = dims.get("unit", "mm")
+                    if l or w or h:
+                        dim_str = f" Size: {l}x{w}x{h}{unit}."
 
                 return ToolResult.ok_result(
                     f"Blueprint '{bp_name}' loaded ({bp_type}, "
-                    f"{component_count} components). "
+                    f"{component_count} components, {drawing_count} drawings).{dim_str}"
+                    f"{fix_msg} "
                     f"Opening blueprint engine for interactive editing.",
                     blueprint_path=str(resolved),
                     blueprint_name=bp_name,
                     blueprint_id=bp_id,
                     blueprint_type=bp_type,
                     component_count=component_count,
+                    drawing_count=drawing_count,
                     open_engine=True,
                 )
             else:

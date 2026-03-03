@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json as _json
 import re
 import time
 from typing import TYPE_CHECKING, Any
@@ -33,6 +34,32 @@ logger = get_logger(__name__)
 
 
 # NOTE: ORCHESTRATION_KEYWORDS moved to core.orchestration (imported above)
+
+# ── System prompt ────────────────────────────────────────────────────
+_SYSTEM_PROMPT = """You are JARVIS, an AI-powered hardware design assistant running in a terminal.
+
+You help users with:
+- Blueprint design, viewing, and editing (.jarvis files)
+- Coding, planning, research, and general questions
+- File operations, shell commands, and web search
+
+IMPORTANT RULES:
+1. When the user asks about available blueprints, ALWAYS call the list_blueprints tool first. NEVER guess or make up blueprint names.
+2. When asked to open/load a blueprint, use the load_blueprint tool with the exact filename (without extension).
+3. Only mention tools and capabilities you actually have. If you don't know something, say so.
+4. Be concise and helpful.
+
+BLUEPRINT DRAWING STANDARD:
+When creating or editing blueprints, use DRAWING PRIMITIVES for all visual shapes.
+All coordinates are PERCENTAGES (0-100) of the viewport.
+- lines: [{x1, y1, x2, y2, color, style, label}] — outlines, edges, structure
+- circles: [{cx, cy, r, color, fill, label}] — pivots, holes, round features
+- rects: [{x, y, w, h, color, fill, label}] — housings, panels, frames
+- arcs: [{cx, cy, r, start_angle, end_angle, color, label}] — curves, ranges of motion
+- texts: [{x, y, text, color, bold}] — labels, titles, dimensions
+NEVER put visual shapes (line, circle, rect) in the components array.
+Components are ONLY for real physical parts (servo, motor, bracket, sensor, etc.).
+"""
 
 
 class ChatHandler:
@@ -88,6 +115,9 @@ class ChatHandler:
         # Cache for tool schemas (frequently accessed, rarely changes)
         self._tool_schema_cache: list[dict[str, Any]] | None = None
         self._tool_schema_cache_version = 0
+
+        # Whether to ensure a system prompt is present in history
+        self._system_prompt_injected = False
 
     @property
     def llm(self) -> LLMProvider:
@@ -381,11 +411,91 @@ class ChatHandler:
         self._tool_schema_cache_version = current_version
         return self._tool_schema_cache
 
+    def _build_system_prompt(self, tools: list[dict[str, Any]]) -> str:
+        """Build the system prompt, appending available tool descriptions."""
+        prompt = _SYSTEM_PROMPT
+        if tools:
+            tool_lines = []
+            for t in tools:
+                fn = t.get("function", {})
+                name = fn.get("name", "?")
+                desc = fn.get("description", "")
+                params = fn.get("parameters", {}).get("properties", {})
+                param_names = ", ".join(params.keys()) if params else "(none)"
+                tool_lines.append(f"  - {name}({param_names}): {desc}")
+            prompt += "\nAvailable tools:\n" + "\n".join(tool_lines) + "\n"
+            prompt += (
+                "\nWhen you need to use a tool, output a JSON block like:\n"
+                '```tool_call\n{"name": "tool_name", "arguments": {"param": "value"}}\n```\n'
+            )
+        return prompt
+
+    def _ensure_system_prompt(self, history: list[dict[str, Any]], tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Ensure the system prompt is the first message in history."""
+        sys_prompt = self._build_system_prompt(tools)
+        # Check if first message is already a system message
+        if history and history[0].get("role") == "system":
+            # Update it in case tools changed
+            history[0] = {"role": "system", "content": sys_prompt}
+        else:
+            history.insert(0, {"role": "system", "content": sys_prompt})
+        return history
+
+    @staticmethod
+    def _extract_text_tool_calls(text: str) -> list[dict[str, Any]] | None:
+        """Parse tool call JSON blocks from plain text LLM output.
+
+        Looks for fenced blocks like:
+            ```tool_call
+            {"name": "list_blueprints", "arguments": {}}
+            ```
+        or inline JSON with a "name" and "arguments" key.
+
+        Returns a list of tool_call dicts (Ollama format) or None.
+        """
+        calls: list[dict[str, Any]] = []
+
+        # Pattern 1: fenced code blocks
+        for m in re.finditer(
+            r"```(?:tool_call|json)?\s*\n?(\{.*?\})\s*```", text, re.DOTALL
+        ):
+            try:
+                obj = _json.loads(m.group(1))
+                if isinstance(obj, dict) and "name" in obj:
+                    calls.append({
+                        "function": {
+                            "name": obj["name"],
+                            "arguments": obj.get("arguments", {}),
+                        }
+                    })
+            except (ValueError, TypeError):
+                continue
+
+        # Pattern 2: bare JSON with tool-call shape (fallback)
+        if not calls:
+            for m in re.finditer(
+                r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}',
+                text,
+            ):
+                try:
+                    args = _json.loads(m.group(2))
+                    calls.append({
+                        "function": {
+                            "name": m.group(1),
+                            "arguments": args,
+                        }
+                    })
+                except (ValueError, TypeError):
+                    continue
+
+        return calls if calls else None
+
     # Heuristic patterns that suggest tool usage might be needed
     _TOOL_HINT_RE = re.compile(
-        r"\b(?:file|read|write|save|load|create|blueprint|execute|run|shell|search"
+        r"\b(?:file|read|write|save|load|create|blueprints?|execute|run|shell|search"
         r"|remember|recall|forget|memory|code|script|theme|profile|stats|sync"
-        r"|send|update|resolve|conflict|web|fetch|summarize|extract)\b",
+        r"|send|update|resolve|conflict|web|fetch|summarize|extract|list|open"
+        r"|show|display|available|import)\b",
         re.IGNORECASE,
     )
 
@@ -423,6 +533,9 @@ class ChatHandler:
             self.memory.add_message("user", message)
             history = self.memory.get_history()
 
+            # Ensure system prompt is present with tool descriptions
+            history = self._ensure_system_prompt(history, tools)
+
             # Enhance message with memory context if available
             enhanced_message = message
             if self._memory_manager:
@@ -436,6 +549,18 @@ class ChatHandler:
             assistant_message = llm_response.get("message", {})
 
             tool_calls = assistant_message.get("tool_calls")
+
+            # If native tool calling didn't fire, check for text-based tool calls
+            if not tool_calls and tools:
+                content_text = assistant_message.get("content", "")
+                text_calls = self._extract_text_tool_calls(content_text)
+                if text_calls:
+                    tool_calls = text_calls
+                    logger.info(
+                        "Parsed %d text-based tool call(s) from response",
+                        len(text_calls),
+                    )
+
             if tool_calls:
                 self.memory.add_message(
                     "assistant",

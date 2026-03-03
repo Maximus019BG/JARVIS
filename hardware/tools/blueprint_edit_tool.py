@@ -72,7 +72,9 @@ class BlueprintEditTool(BaseTool):
             "Edit an existing .jarvis blueprint.  "
             "Actions: add_component, remove_component, modify_component, "
             "add_connection, remove_connection, set_dimensions, "
-            "set_name, add_note, add_tag, list."
+            "set_name, add_note, add_tag, "
+            "add_line, add_circle, add_rect, add_arc, add_text, "
+            "clear_drawings, list."
         )
 
     def schema_parameters(self) -> dict[str, Any]:
@@ -99,6 +101,12 @@ class BlueprintEditTool(BaseTool):
                         "set_name",
                         "add_note",
                         "add_tag",
+                        "add_line",
+                        "add_circle",
+                        "add_rect",
+                        "add_arc",
+                        "add_text",
+                        "clear_drawings",
                         "list",
                     ],
                     "description": "Edit action to perform on the blueprint.",
@@ -151,6 +159,18 @@ class BlueprintEditTool(BaseTool):
                     "type": "string",
                     "description": "Tag to add (add_tag action).",
                 },
+                "drawing": {
+                    "type": "object",
+                    "description": (
+                        "Drawing primitive for add_line/add_circle/add_rect/"
+                        "add_arc/add_text. All coords are percentages 0-100. "
+                        "Line: {x1,y1,x2,y2,color,style,label}. "
+                        "Circle: {cx,cy,r,color,fill,label}. "
+                        "Rect: {x,y,w,h,color,fill,label}. "
+                        "Arc: {cx,cy,r,start_angle,end_angle,color,label}. "
+                        "Text: {x,y,text,color,bold}."
+                    ),
+                },
             },
             "required": ["blueprint_path", "action"],
         }
@@ -201,6 +221,12 @@ class BlueprintEditTool(BaseTool):
             "set_name": self._set_name,
             "add_note": self._add_note,
             "add_tag": self._add_tag,
+            "add_line": self._add_line,
+            "add_circle": self._add_circle,
+            "add_rect": self._add_rect,
+            "add_arc": self._add_arc,
+            "add_text": self._add_text,
+            "clear_drawings": self._clear_drawings,
             "list": self._list,
         }
 
@@ -393,6 +419,87 @@ class BlueprintEditTool(BaseTool):
         tags.append(tag)
         return f"Added tag: {tag}"
 
+    # ── Drawing primitive handlers ───────────────────────────────
+
+    def _get_drawing(self, kwargs: dict) -> dict | None:
+        """Extract the drawing primitive object from kwargs."""
+        return kwargs.get("drawing") or kwargs.get("component")
+
+    def _add_line(self, data: dict, kwargs: dict) -> str:
+        d = self._get_drawing(kwargs)
+        if not d or not isinstance(d, dict):
+            return "Error: 'drawing' object with {x1, y1, x2, y2} is required."
+        for key in ("x1", "y1", "x2", "y2"):
+            if key not in d:
+                return f"Error: line drawing must have '{key}' (percentage 0-100)."
+        d.setdefault("color", "cyan")
+        d.setdefault("style", "solid")
+        d.setdefault("label", "")
+        data.setdefault("lines", []).append(d)
+        return f"Added line ({d['x1']},{d['y1']})->({d['x2']},{d['y2']}) color={d['color']}."
+
+    def _add_circle(self, data: dict, kwargs: dict) -> str:
+        d = self._get_drawing(kwargs)
+        if not d or not isinstance(d, dict):
+            return "Error: 'drawing' object with {cx, cy, r} is required."
+        for key in ("cx", "cy", "r"):
+            if key not in d:
+                return f"Error: circle drawing must have '{key}' (percentage 0-100)."
+        d.setdefault("color", "cyan")
+        d.setdefault("fill", False)
+        d.setdefault("label", "")
+        data.setdefault("circles", []).append(d)
+        return f"Added circle at ({d['cx']},{d['cy']}) r={d['r']} color={d['color']}."
+
+    def _add_rect(self, data: dict, kwargs: dict) -> str:
+        d = self._get_drawing(kwargs)
+        if not d or not isinstance(d, dict):
+            return "Error: 'drawing' object with {x, y, w, h} is required."
+        for key in ("x", "y", "w", "h"):
+            if key not in d:
+                return f"Error: rect drawing must have '{key}' (percentage 0-100)."
+        d.setdefault("color", "cyan")
+        d.setdefault("fill", False)
+        d.setdefault("label", "")
+        data.setdefault("rects", []).append(d)
+        return f"Added rect at ({d['x']},{d['y']}) {d['w']}x{d['h']} color={d['color']}."
+
+    def _add_arc(self, data: dict, kwargs: dict) -> str:
+        d = self._get_drawing(kwargs)
+        if not d or not isinstance(d, dict):
+            return "Error: 'drawing' object with {cx, cy, r, start_angle, end_angle} is required."
+        for key in ("cx", "cy", "r"):
+            if key not in d:
+                return f"Error: arc drawing must have '{key}' (percentage 0-100)."
+        d.setdefault("start_angle", 0)
+        d.setdefault("end_angle", 180)
+        d.setdefault("color", "cyan")
+        d.setdefault("label", "")
+        data.setdefault("arcs", []).append(d)
+        return f"Added arc at ({d['cx']},{d['cy']}) r={d['r']} {d['start_angle']}°-{d['end_angle']}°."
+
+    def _add_text(self, data: dict, kwargs: dict) -> str:
+        d = self._get_drawing(kwargs)
+        if not d or not isinstance(d, dict):
+            return "Error: 'drawing' object with {x, y, text} is required."
+        for key in ("x", "y", "text"):
+            if key not in d:
+                return f"Error: text drawing must have '{key}'."
+        d.setdefault("color", "white")
+        d.setdefault("bold", False)
+        data.setdefault("texts", []).append(d)
+        return f"Added text '{d['text']}' at ({d['x']},{d['y']})."
+
+    def _clear_drawings(self, data: dict, _kwargs: dict) -> str:
+        counts = {}
+        for key in ("lines", "circles", "rects", "arcs", "texts"):
+            counts[key] = len(data.get(key, []))
+            data[key] = []
+        total = sum(counts.values())
+        return f"Cleared {total} drawing primitives ({counts})."
+
+    # ── List handler ─────────────────────────────────────────────
+
     def _list(self, data: dict, _kwargs: dict) -> str:
         lines = [f"Blueprint: {data.get('name', '?')} ({data.get('type', '?')})"]
 
@@ -434,5 +541,23 @@ class BlueprintEditTool(BaseTool):
         tags = data.get("tags", [])
         if tags:
             lines.append(f"\nTags: {', '.join(tags)}")
+
+        # Drawing primitives summary
+        draw_lines = data.get("lines", [])
+        draw_circles = data.get("circles", [])
+        draw_rects = data.get("rects", [])
+        draw_arcs = data.get("arcs", [])
+        draw_texts = data.get("texts", [])
+        total_drawings = (
+            len(draw_lines) + len(draw_circles) + len(draw_rects)
+            + len(draw_arcs) + len(draw_texts)
+        )
+        if total_drawings:
+            lines.append(
+                f"\nDrawing Primitives ({total_drawings}):"
+                f"  {len(draw_lines)} lines, {len(draw_circles)} circles, "
+                f"{len(draw_rects)} rects, {len(draw_arcs)} arcs, "
+                f"{len(draw_texts)} texts"
+            )
 
         return "\n".join(lines)

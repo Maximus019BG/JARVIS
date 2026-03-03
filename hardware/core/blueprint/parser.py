@@ -129,6 +129,78 @@ class Connection(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+# ── Drawing Primitives (percentage-based coordinates 0–100) ─────────
+
+
+class DrawingLine(BaseModel):
+    """A line segment on the blueprint canvas.
+
+    Coordinates are percentages (0–100) of the viewport so the
+    drawing scales with window size.
+    """
+
+    id: str = Field(default="", description="Optional line ID")
+    x1: float = Field(ge=0, le=100, description="Start X as percentage")
+    y1: float = Field(ge=0, le=100, description="Start Y as percentage")
+    x2: float = Field(ge=0, le=100, description="End X as percentage")
+    y2: float = Field(ge=0, le=100, description="End Y as percentage")
+    color: str = Field(default="cyan", description="Rich color name or hex")
+    style: str = Field(
+        default="solid",
+        description="Line style: solid, dashed, dotted",
+    )
+    label: str = Field(default="", description="Optional label shown at midpoint")
+
+
+class DrawingCircle(BaseModel):
+    """A circle on the blueprint canvas (percentage coords)."""
+
+    id: str = Field(default="", description="Optional circle ID")
+    cx: float = Field(ge=0, le=100, description="Centre X %")
+    cy: float = Field(ge=0, le=100, description="Centre Y %")
+    r: float = Field(gt=0, le=50, description="Radius as % of width")
+    color: str = Field(default="cyan", description="Color")
+    fill: bool = Field(default=False, description="Whether to fill")
+    label: str = Field(default="", description="Optional label")
+
+
+class DrawingRect(BaseModel):
+    """A rectangle on the blueprint canvas (percentage coords)."""
+
+    id: str = Field(default="", description="Optional rect ID")
+    x: float = Field(ge=0, le=100, description="Top-left X %")
+    y: float = Field(ge=0, le=100, description="Top-left Y %")
+    w: float = Field(gt=0, le=100, description="Width %")
+    h: float = Field(gt=0, le=100, description="Height %")
+    color: str = Field(default="cyan", description="Color")
+    fill: bool = Field(default=False, description="Whether to fill")
+    label: str = Field(default="", description="Optional label")
+
+
+class DrawingArc(BaseModel):
+    """An arc / curve on the blueprint canvas (percentage coords)."""
+
+    id: str = Field(default="", description="Optional arc ID")
+    cx: float = Field(ge=0, le=100, description="Centre X %")
+    cy: float = Field(ge=0, le=100, description="Centre Y %")
+    r: float = Field(gt=0, le=50, description="Radius %")
+    start_angle: float = Field(default=0.0, description="Start angle degrees")
+    end_angle: float = Field(default=180.0, description="End angle degrees")
+    color: str = Field(default="cyan", description="Color")
+    label: str = Field(default="", description="Optional label")
+
+
+class DrawingText(BaseModel):
+    """A text label placed on the blueprint canvas."""
+
+    id: str = Field(default="", description="Optional text ID")
+    x: float = Field(ge=0, le=100, description="X position %")
+    y: float = Field(ge=0, le=100, description="Y position %")
+    text: str = Field(min_length=1, description="The text to display")
+    color: str = Field(default="white", description="Color")
+    bold: bool = Field(default=False, description="Bold text")
+
+
 class SyncMetadata(BaseModel):
     """Sync state metadata for cloud synchronization."""
 
@@ -219,6 +291,32 @@ class Blueprint(BaseModel):
     )
     notes: list[str] = Field(default_factory=list, description="Design notes")
     tags: list[str] = Field(default_factory=list, description="Searchable tags")
+
+    # ── Drawing overlay ───────────────────────────────────────────
+    # Coordinates are percentages (0–100) of the viewport so the
+    # whole file is treated as a visual component with lines, shapes,
+    # and labels rendered on top of the grid.
+    lines: list[DrawingLine] = Field(
+        default_factory=list,
+        description="Lines to draw (percentage-based coordinates)",
+    )
+    circles: list[DrawingCircle] = Field(
+        default_factory=list,
+        description="Circles to draw (percentage-based coordinates)",
+    )
+    rects: list[DrawingRect] = Field(
+        default_factory=list,
+        description="Rectangles to draw (percentage-based coordinates)",
+    )
+    arcs: list[DrawingArc] = Field(
+        default_factory=list,
+        description="Arcs to draw (percentage-based coordinates)",
+    )
+    texts: list[DrawingText] = Field(
+        default_factory=list,
+        description="Text labels to draw (percentage-based coordinates)",
+    )
+
     sync: SyncMetadata = Field(
         default_factory=SyncMetadata, description="Sync metadata"
     )
@@ -337,6 +435,20 @@ class BlueprintParser:
         Raises:
             BlueprintValidationError: If content is invalid.
         """
+        # ── Auto-fix corrupt blueprints before validation ────────
+        from core.blueprint.fixer import fix_blueprint_dict
+
+        fixes = fix_blueprint_dict(data)
+        if fixes:
+            import logging
+            _log = logging.getLogger(__name__)
+            _log.info(
+                "Auto-fixed %d issue(s) in blueprint '%s': %s",
+                len(fixes),
+                data.get("name", "?"),
+                "; ".join(fixes),
+            )
+
         try:
             return Blueprint.model_validate(data)
         except Exception as e:

@@ -132,7 +132,9 @@ BLUEPRINT OUTPUT FORMAT (.jarvis):
     {
       "id": "part_001",
       "name": "Sub-component",
+      "type": "servo|motor|bracket|sensor|housing|joint|structural",
       "quantity": 1,
+      "position": {"x": 0, "y": 0},
       "specifications": {}
     }
   ],
@@ -140,13 +142,43 @@ BLUEPRINT OUTPUT FORMAT (.jarvis):
     {
       "from": "part_001",
       "to": "part_002",
-      "type": "bolt|weld|glue|snap"
+      "type": "bolt|weld|glue|snap|pin|wire"
     }
+  ],
+  "lines": [
+    {"x1": 10, "y1": 50, "x2": 90, "y2": 50, "color": "cyan", "style": "solid", "label": "edge"}
+  ],
+  "circles": [
+    {"cx": 50, "cy": 50, "r": 5, "color": "yellow", "fill": false, "label": "pivot"}
+  ],
+  "rects": [
+    {"x": 20, "y": 30, "w": 60, "h": 40, "color": "green", "fill": false, "label": "housing"}
+  ],
+  "arcs": [
+    {"cx": 50, "cy": 50, "r": 10, "start_angle": 0, "end_angle": 90, "color": "magenta", "label": "range"}
+  ],
+  "texts": [
+    {"x": 50, "y": 5, "text": "Title", "color": "white", "bold": true}
   ],
   "specifications": {},
   "notes": []
 }
 ```
+
+DRAWING PRIMITIVES (CRITICAL):
+All visual shapes MUST go in the drawing arrays (lines, circles, rects, arcs, texts).
+All coordinates are PERCENTAGES (0-100) of the viewport — they scale with window size.
+NEVER put visual shapes like "line" or "circle" in the components array.
+Components are for real physical parts (servos, motors, brackets, sensors, etc.).
+Drawing primitives are for visual representation:
+- lines: outlines, edges, dimensions arrows, structure lines
+- circles: pivots, holes, joints, round features
+- rects: housings, panels, frames, rectangular features
+- arcs: ranges of motion, curves, rounded corners
+- texts: labels, titles, annotations, dimensions
+
+When the user asks you to draw or create something, populate the drawing arrays to visually represent it.
+Every blueprint should have at least some lines/rects/circles to show its shape.
 
 Be precise with measurements. When unsure, provide reasonable estimates with notes."""
 
