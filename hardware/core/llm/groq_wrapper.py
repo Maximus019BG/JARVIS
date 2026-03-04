@@ -61,7 +61,19 @@ def _convert_tool_calls_to_ollama_format(
 
 
 class GroqWrapper:
-    """Wrapper for interacting with Groq's API (Llama 3, Mixtral, etc.)."""
+    """Wrapper for interacting with Groq's API (Llama 3, Mixtral, etc.).
+
+    Automatically falls back to alternate free-tier models when rate-limited.
+    """
+
+    # Groq free-tier models to try in order when rate-limited.
+    # Each model has its own independent rate limit on the free tier.
+    FALLBACK_MODELS: list[str] = [
+        "llama-3.3-70b-versatile",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "qwen/qwen3-32b",
+        "llama-3.1-8b-instant",
+    ]
 
     def __init__(
         self,
@@ -82,6 +94,45 @@ class GroqWrapper:
         self.max_tokens = max_tokens
         self.client = AsyncGroq(api_key=api_key)
 
+        # Build fallback chain: primary model first, then others (no duplicates)
+        self._fallback_models: list[str] = [model_name]
+        for m in self.FALLBACK_MODELS:
+            if m != model_name:
+                self._fallback_models.append(m)
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """Check if an exception is a Groq rate-limit (429) error."""
+        cls_name = type(exc).__name__
+        if "RateLimitError" in cls_name:
+            return True
+        for attr in ("status_code", "code", "http_status"):
+            if hasattr(exc, attr) and getattr(exc, attr) == 429:
+                return True
+        return False
+
+    async def _call_with_fallback(self, kwargs: dict[str, Any]) -> Any:
+        """Call the Groq API, falling back to other models on rate-limit."""
+        last_exc: Exception | None = None
+        for model in self._fallback_models:
+            kwargs["model"] = model
+            try:
+                response = await self.client.chat.completions.create(**kwargs)
+                if model != self.model_name:
+                    logger.info(
+                        "Groq: fell back to model %s (primary rate-limited)", model
+                    )
+                return response
+            except Exception as exc:
+                if self._is_rate_limit_error(exc):
+                    logger.warning(
+                        "Groq rate-limited on %s, trying next model…", model
+                    )
+                    last_exc = exc
+                    continue
+                raise  # non-rate-limit errors propagate immediately
+        raise last_exc or RuntimeError("All Groq fallback models rate-limited")
+
     async def chat_with_tools(
         self,
         message: str,
@@ -92,6 +143,8 @@ class GroqWrapper:
 
         Returns a dict matching the format chat_handler expects:
             {"message": {"content": "...", "tool_calls": [...]}}
+
+        Automatically falls back to alternate Groq models if rate-limited.
         """
         messages = self._build_messages(conversation_history, message)
 
@@ -106,7 +159,7 @@ class GroqWrapper:
             kwargs["tools"] = [_convert_tool_schema_to_openai(t) for t in tools]
             kwargs["tool_choice"] = "auto"
 
-        response = await self.client.chat.completions.create(**kwargs)
+        response = await self._call_with_fallback(kwargs)
         choice = response.choices[0]
 
         # Build response in the format chat_handler expects (Ollama-compatible)
@@ -158,7 +211,7 @@ class GroqWrapper:
         if tools:
             kwargs["tools"] = [_convert_tool_schema_to_openai(t) for t in tools]
 
-        response = await self.client.chat.completions.create(**kwargs)
+        response = await self._call_with_fallback(kwargs)
         return response.choices[0].message.content or ""
 
     async def chat(
@@ -169,7 +222,10 @@ class GroqWrapper:
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> str | None:
-        """Simple chat without tools (used by orchestration router classifier)."""
+        """Simple chat without tools (used by orchestration router classifier).
+
+        Automatically falls back to alternate Groq models if rate-limited.
+        """
         messages: list[dict[str, Any]] = []
 
         if system_prompt:
@@ -180,12 +236,14 @@ class GroqWrapper:
 
         messages.append({"role": "user", "content": message})
 
-        response = await self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature if temperature is not None else self.temperature,
-            max_tokens=max_tokens or self.max_tokens,
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature if temperature is not None else self.temperature,
+            "max_tokens": max_tokens or self.max_tokens,
+        }
+
+        response = await self._call_with_fallback(kwargs)
         return response.choices[0].message.content
 
     @staticmethod

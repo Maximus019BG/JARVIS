@@ -293,6 +293,67 @@ def _render_grid_with_components(
                     chars[r][c] = char_d
                 styles[r][c] = color
 
+    # ── Helper: draw a smooth line using Braille characters ─────
+    def _bresenham_braille(c0: int, r0: int, c1: int, r1: int, color: str, style: str = "solid") -> None:
+        """Draw a line using Unicode Braille patterns (U+2800-U+28FF).
+
+        Each character cell provides a 2×4 sub-pixel grid, producing
+        much smoother lines than box-drawing characters.
+        """
+        BRAILLE_BASE = 0x2800
+        # Bit positions for (row, col) within a braille cell:
+        #        col0   col1
+        # row0:  0x01   0x08
+        # row1:  0x02   0x10
+        # row2:  0x04   0x20
+        # row3:  0x40   0x80
+        DOT_BITS = [
+            [0x01, 0x08],
+            [0x02, 0x10],
+            [0x04, 0x20],
+            [0x40, 0x80],
+        ]
+
+        # Work in sub-pixel space (each char cell = 2 wide × 4 tall)
+        sx0, sy0 = c0 * 2, r0 * 4
+        sx1, sy1 = c1 * 2, r1 * 4
+
+        steps = max(abs(sx1 - sx0), abs(sy1 - sy0), 1)
+
+        # Collect braille bitmasks per character cell
+        cells: dict[tuple[int, int], int] = {}
+
+        for i in range(steps + 1):
+            if style == "dashed" and (i // 6) % 2 == 1:
+                continue
+            if style == "dotted" and (i // 3) % 2 == 1:
+                continue
+
+            t = i / steps
+            sx = int(sx0 + (sx1 - sx0) * t + 0.5)
+            sy = int(sy0 + (sy1 - sy0) * t + 0.5)
+
+            cc = sx // 2   # character column
+            cr = sy // 4   # character row
+            dc = sx % 2    # dot column within cell
+            dr = sy % 4    # dot row within cell
+
+            if 0 <= cr < height and 0 <= cc < width:
+                key = (cc, cr)
+                if key not in cells:
+                    # Inherit existing braille bits if cell already has one
+                    existing = chars[cr][cc]
+                    if len(existing) == 1 and 0x2800 <= ord(existing) <= 0x28FF:
+                        cells[key] = ord(existing) - BRAILLE_BASE
+                    else:
+                        cells[key] = 0
+                cells[key] |= DOT_BITS[dr][dc]
+
+        # Write braille characters to the buffer
+        for (cc, cr), bits in cells.items():
+            chars[cr][cc] = chr(BRAILLE_BASE + bits)
+            styles[cr][cc] = color
+
     # ── 2. Draw connection lines ─────────────────────────────────
     for conn in connections:
         fc, fr = w2s(conn.from_x, conn.from_y)
@@ -401,7 +462,7 @@ def _render_grid_with_components(
         sc1, sr1 = pct2s(dl.x2, dl.y2)
         safe = _safe_color(dl.color)
         line_color = f"bold {safe}"
-        _bresenham(sc0, sr0, sc1, sr1, "─", "│", "╲", line_color, dl.style)
+        _bresenham_braille(sc0, sr0, sc1, sr1, line_color, dl.style)
         # Draw label at midpoint
         if dl.label:
             mc = (sc0 + sc1) // 2 - len(dl.label) // 2
@@ -610,17 +671,19 @@ class BlueprintStatusBar(Static):
         components: int = 0,
         selected: int = 0,
         blueprint_name: str = "",
+        render_mode: str = "char",
     ) -> None:
         zoom_pct = int(zoom * 100)
         grid_str = "ON" if grid else "OFF"
         snap_str = "ON" if snap else "OFF"
         sel_str = f" | Selected: {selected}" if selected > 0 else ""
         name_str = f" [{blueprint_name}]" if blueprint_name else ""
+        rmode_str = f" | Render: {render_mode.upper()}"
 
         self._status_text = (
             f"Mode: {mode.upper()} | Zoom: {zoom_pct}% | "
             f"Grid: {grid_str} | Snap: {snap_str} | "
-            f"Components: {components}{sel_str}{name_str}"
+            f"Components: {components}{sel_str}{name_str}{rmode_str}"
         )
         self.update(self._status_text)
 
@@ -628,7 +691,12 @@ class BlueprintStatusBar(Static):
 # ── Viewport ─────────────────────────────────────────────────────────
 
 class BlueprintViewport(Static):
-    """The main grid/canvas viewport for the blueprint engine."""
+    """The main grid/canvas viewport for the blueprint engine.
+
+    Supports two render modes:
+    - ``"char"``: Unicode character-based rendering (braille lines, box-drawing)
+    - ``"pixel"``: Framebuffer pixel rendering shown via half-block chars (▀█)
+    """
 
     viewport_width = reactive(60)
     viewport_height = reactive(20)
@@ -646,6 +714,8 @@ class BlueprintViewport(Static):
         self._draw_arcs: list[_RenderDrawArc] = []
         self._draw_texts: list[_RenderDrawText] = []
         self._dim_info: str = ""
+        self._render_mode: str = "char"  # "char" or "pixel"
+        self._blueprint: Any = None  # parsed Blueprint for pixel mode
 
     def set_view_state(
         self,
@@ -682,8 +752,30 @@ class BlueprintViewport(Static):
         self._draw_texts = texts or []
         self._dim_info = dim_info
 
+    def set_blueprint(self, blueprint: Any) -> None:
+        """Store the parsed Blueprint object (needed for pixel render mode)."""
+        self._blueprint = blueprint
+
+    @property
+    def render_mode(self) -> str:
+        """Current render mode: 'char' or 'pixel'."""
+        return self._render_mode
+
+    def toggle_render_mode(self) -> str:
+        """Toggle between char and pixel render modes. Returns new mode."""
+        self._render_mode = "pixel" if self._render_mode == "char" else "char"
+        self.refresh_view()
+        return self._render_mode
+
     def refresh_view(self) -> None:
         """Re-render the grid with all current state."""
+        if self._render_mode == "pixel" and self._blueprint is not None:
+            self._refresh_pixel_view()
+        else:
+            self._refresh_char_view()
+
+    def _refresh_char_view(self) -> None:
+        """Character-based render (braille lines, box-drawing)."""
         markup = _render_grid_with_components(
             self.viewport_width,
             self.viewport_height,
@@ -701,6 +793,46 @@ class BlueprintViewport(Static):
             dim_info=self._dim_info,
         )
         self.update(markup)
+
+    def _refresh_pixel_view(self) -> None:
+        """Pixel-based render using half-block characters (▀█)."""
+        try:
+            from core.blueprint.framebuffer_tui import (
+                render_blueprint_to_frame,
+                frame_to_halfblock_markup,
+            )
+        except ImportError:
+            # numpy not available — fall back to char mode
+            self._refresh_char_view()
+            return
+
+        if self._blueprint is None:
+            self._refresh_char_view()
+            return
+
+        # Render at higher pixel resolution, then downsample to terminal size
+        # Each terminal column = 1 pixel wide, each row = 2 pixels tall
+        px_w = max(self.viewport_width, 10)
+        px_h = max(self.viewport_height, 5) * 2  # 2 pixels per char row
+
+        # Use a larger internal buffer for quality, then it resamples down
+        internal_w = max(px_w, 400)
+        internal_h = max(px_h, 200)
+
+        try:
+            frame = render_blueprint_to_frame(
+                self._blueprint,
+                internal_w,
+                internal_h,
+                show_grid=True,
+                line_thickness=max(2, internal_w // 200),
+                text_scale=max(1, internal_w // 200),
+            )
+            markup = frame_to_halfblock_markup(frame, self.viewport_width, self.viewport_height)
+            self.update(markup)
+        except Exception:
+            # If pixel rendering fails, fall back gracefully
+            self._refresh_char_view()
 
     def on_mount(self) -> None:
         self.refresh_view()
@@ -720,7 +852,7 @@ class BlueprintToolbar(Static):
         yield Label(
             "▎ [S]elect  [L]ine  [R]ect  [C]ircle  "
             "[F]reehand  [P]an  [Z]oom  [U]ndo  "
-            "[G]rid  [N]snap",
+            "[G]rid  [N]snap  F5:pixel/char",
         )
 
 
@@ -879,6 +1011,7 @@ class BlueprintEngineWidget(Static):
         )
         viewport.set_components(render_comps, render_conns)
         viewport.set_drawings(_lines, _circles, _rects, _arcs, _texts, dim_info=dim_info)
+        viewport.set_blueprint(bp)
         viewport.refresh_view()
 
         # Update status bar
@@ -894,6 +1027,7 @@ class BlueprintEngineWidget(Static):
             components=component_count,
             selected=self._engine.selection.count,
             blueprint_name=bp_name,
+            render_mode=viewport._render_mode,
         )
 
         # Update header label in the parent pane

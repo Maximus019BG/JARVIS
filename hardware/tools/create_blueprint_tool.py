@@ -148,6 +148,9 @@ class CreateBlueprintTool(BaseTool):
 
         security = get_security_manager()
         safe_name = security.sanitize_filename(name)
+        # Strip .jarvis suffix if the LLM included it in the name
+        if safe_name.lower().endswith(".jarvis"):
+            safe_name = safe_name[:-7]
         intended_path = Path("data") / "blueprints" / f"{safe_name}.jarvis"
 
         try:

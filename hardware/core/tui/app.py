@@ -350,6 +350,7 @@ class JarvisTUI(App):
         Binding("ctrl+l", "clear_chat", "Clear chat", show=True),
         Binding("ctrl+s", "show_status", "Status", show=True),
         Binding("ctrl+b", "toggle_blueprint", "Toggle Blueprint", show=True),
+        Binding("f5", "toggle_render_mode", "Pixel/Char", show=True),
         Binding("escape", "focus_input", "Focus input", show=False),
     ]
 
@@ -403,6 +404,7 @@ class JarvisTUI(App):
                 yield Label("  /clear   – reset", classes="sidebar-item")
                 yield Label("  /help    – help", classes="sidebar-item")
                 yield Label("  /blueprint – toggle", classes="sidebar-item")
+                yield Label("  /view     – render", classes="sidebar-item")
                 yield Label("  /quit    – exit", classes="sidebar-item")
 
             # Split container: blueprint pane (left) + chat pane (right)
@@ -479,6 +481,20 @@ class JarvisTUI(App):
         else:
             self._open_blueprint_pane()
 
+    def action_toggle_render_mode(self) -> None:
+        """Toggle blueprint viewport between char and pixel render modes."""
+        if not self.blueprint_active:
+            self._append_system("Open the blueprint pane first (Ctrl+B or /blueprint).")
+            return
+        try:
+            from core.tui.blueprint_widget import BlueprintViewport
+            viewport = self.query_one("#bp-viewport", BlueprintViewport)
+            mode = viewport.toggle_render_mode()
+            self._append_system(f"Render mode: {mode}")
+        except Exception as exc:
+            logger.exception("Failed to toggle render mode")
+            self._append_error(f"Render mode toggle failed: {exc}")
+
     def action_show_status(self) -> None:
         """Show system status as a chat message."""
         lines = ["**JARVIS System Status**\n"]
@@ -543,6 +559,14 @@ class JarvisTUI(App):
             return
         if text.lower() in ("/blueprint",):
             self.action_toggle_blueprint()
+            return
+        if text.lower().startswith("/load"):
+            parts = text.strip().split(None, 1)
+            name = parts[1].strip() if len(parts) > 1 else ""
+            self._load_blueprint_by_name(name)
+            return
+        if text.lower() in ("/view", "/pixel", "/render"):
+            self.action_toggle_render_mode()
             return
 
         self._append_user(text)
@@ -670,13 +694,15 @@ class JarvisTUI(App):
             "| `/status` | System status |\n"
             "| `/reflect` | Memory insights |\n"
             "| `/clear` | Clear conversation |\n"
-            "| `/blueprint` | Toggle blueprint engine |\n"
+            "| `/blueprint` | Toggle blueprint engine |\n"            "| `/load [name]` | Load a blueprint file |\\n"            "| `/view` | Toggle pixel/char render |\n"
             "| `/quit` | Exit JARVIS |\n\n"
             "*Tips:* Ask me to create or load a blueprint to open the "
             "split-pane editor with the grid on the left and chat on "
             "the right. Use Ctrl+B to toggle the blueprint pane.\n\n"
             "*Blueprint:* You can import other blueprints to combine "
-            "them together – they'll be added as movable groups."
+            "them together \u2013 they\u2019ll be added as movable groups.\n\n"
+            "*Render:* Press F5 or type `/view` to switch between "
+            "character (braille) and pixel (half-block) rendering."
         )
         self._append_assistant(help_md)
 
@@ -768,6 +794,9 @@ class JarvisTUI(App):
             .replace(" ", "_")
             .replace("-", "_")
         )
+        # Strip .jarvis suffix to avoid double extensions
+        if safe_name.endswith(".jarvis"):
+            safe_name = safe_name[:-7]
 
         bp_dir = Path("data") / "blueprints"
         bp_dir.mkdir(parents=True, exist_ok=True)
@@ -788,6 +817,7 @@ class JarvisTUI(App):
 
         Args:
             blueprint_path: Optional path to load a blueprint.
+                If *None*, auto-loads the most recently modified .jarvis file.
         """
         try:
             bp_pane = self.query_one("#blueprint-pane", Vertical)
@@ -815,10 +845,16 @@ class JarvisTUI(App):
 
         if blueprint_path:
             self._load_blueprint_into_engine(blueprint_path)
+        elif self._engine and self._engine.state.blueprint is None:
+            # Auto-load most recently modified .jarvis file
+            auto = self._find_latest_blueprint()
+            if auto:
+                self._load_blueprint_into_engine(auto)
 
         self._append_system(
             "Blueprint engine opened. Grid on the left, chat on the right. "
-            "Use Ctrl+B or /blueprint to toggle."
+            "Use Ctrl+B or /blueprint to toggle.  "
+            "Press F5 or type /view to switch char↔pixel rendering."
         )
 
     def _close_blueprint_pane(self) -> None:
@@ -833,6 +869,53 @@ class JarvisTUI(App):
         split.remove_class("split-active")
         self.blueprint_active = False
         self._append_system("Blueprint engine closed.")
+
+    def _find_latest_blueprint(self) -> str | None:
+        """Return the path of the most recently modified .jarvis file, or None."""
+        from pathlib import Path as _Path
+        bp_dir = _Path("data/blueprints")
+        if not bp_dir.is_dir():
+            return None
+        # Filter out double-extension files like .jarvis.jarvis
+        jarvis_files = [
+            p for p in bp_dir.glob("*.jarvis")
+            if not p.stem.endswith(".jarvis")
+        ]
+        jarvis_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return str(jarvis_files[0]) if jarvis_files else None
+
+    def _load_blueprint_by_name(self, name: str) -> None:
+        """Slash command handler: /load [name].
+
+        Opens the blueprint pane and loads the named file. If no name given,
+        loads the most recently modified blueprint.
+        """
+        from pathlib import Path as _Path
+        if name:
+            # Try exact path, then data/blueprints/<name>, then <name>.jarvis
+            candidates = [
+                _Path(name),
+                _Path("data/blueprints") / name,
+                _Path("data/blueprints") / f"{name}.jarvis",
+            ]
+            bp_path = None
+            for c in candidates:
+                if c.exists():
+                    bp_path = str(c)
+                    break
+            if not bp_path:
+                self._append_error(f"Blueprint not found: {name}")
+                return
+        else:
+            bp_path = self._find_latest_blueprint()
+            if not bp_path:
+                self._append_error("No .jarvis files found in data/blueprints/")
+                return
+
+        if not self.blueprint_active:
+            self._open_blueprint_pane(blueprint_path=bp_path)
+        else:
+            self._load_blueprint_into_engine(bp_path)
 
     @work(thread=False)
     async def _load_blueprint_into_engine(self, path: str) -> None:
