@@ -32,7 +32,7 @@ class Dimension(BaseModel):
 
     length: float = Field(ge=0, description="Length in specified unit")
     width: float = Field(ge=0, description="Width in specified unit")
-    height: float = Field(ge=0, description="Height in specified unit")
+    height: float = Field(default=0, ge=0, description="Height in specified unit")
     unit: str = Field(default="mm", description="Unit of measurement")
 
     @field_validator("unit")
@@ -82,13 +82,19 @@ class ComponentSpec(BaseModel):
     @field_validator("position", "rotation", mode="before")
     @classmethod
     def _coerce_xyz(cls, v: Any) -> tuple[float, float, float]:
-        """Accept both tuple/list and {x, y, z} dict formats."""
+        """Accept both tuple/list and {x, y, z} dict formats.
+
+        Also pads 2-element lists/tuples with a 0.0 z-component so that
+        LLMs generating 2D layouts (circuits, floor plans) don't break.
+        """
         if isinstance(v, dict):
             return (
                 float(v.get("x", 0.0)),
                 float(v.get("y", 0.0)),
                 float(v.get("z", 0.0)),
             )
+        if isinstance(v, (list, tuple)) and len(v) == 2:
+            return (float(v[0]), float(v[1]), 0.0)
         return v
 
 

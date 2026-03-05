@@ -620,8 +620,17 @@ class JarvisTUI(App):
             # Route to orchestrator or direct LLM
             # When a blueprint is open, ALWAYS go direct so the LLM can
             # call edit_blueprint for drawing / component / reset changes.
-            # Orchestrator doesn't use edit_blueprint and will just chat.
-            if self.blueprint_active:
+            # Also bypass orchestrator when the user wants to CREATE a new
+            # blueprint/circuit/plan — the create_blueprint tool handles that
+            # and the orchestrator would just chat about it without drawing.
+            _CREATE_DESIGN_RE = re.compile(
+                r"\b(?:create|make|draw|design|sketch|build)\b.*"
+                r"\b(?:schema(?:tic)?|circuit|electric|diagram|plan|layout"
+                r"|blueprint|bedroom|room|floor|bulb|battery|wiring)\b",
+                re.IGNORECASE,
+            )
+            wants_create_design = bool(_CREATE_DESIGN_RE.search(text))
+            if self.blueprint_active or wants_create_design:
                 use_orchestrator = False
             else:
                 # Call the async router directly to avoid asyncio.run()
@@ -636,10 +645,12 @@ class JarvisTUI(App):
                 self._update_status("Multi-agent processing…")
                 response = await self.chat_handler._process_with_orchestrator(text)
             else:
-                # When a blueprint is open, always include tool schemas so the
-                # LLM can call edit_blueprint for drawing / component changes.
+                # When a blueprint is open or user wants to create a design,
+                # always include tool schemas so the LLM can call
+                # edit_blueprint / create_blueprint.
                 response = await self.chat_handler.process_message(
-                    text, force_tools=self.blueprint_active,
+                    text,
+                    force_tools=self.blueprint_active or wants_create_design,
                 )
 
             # Record response in memory

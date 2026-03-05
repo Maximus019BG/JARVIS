@@ -63,13 +63,58 @@ When a blueprint is open in the engine, the user can describe changes in natural
 BLUEPRINT DRAWING STANDARD:
 When creating or editing blueprints, use DRAWING PRIMITIVES for all visual shapes.
 All coordinates are PERCENTAGES (0-100) of the viewport.
-- lines: [{x1, y1, x2, y2, color, style, label}] — outlines, edges, structure
-- circles: [{cx, cy, r, color, fill, label}] — pivots, holes, round features
-- rects: [{x, y, w, h, color, fill, label}] — housings, panels, frames
+- lines: [{x1, y1, x2, y2, color, style, label}] — outlines, edges, structure, wires
+- circles: [{cx, cy, r, color, fill, label}] — pivots, holes, round features, bulbs
+- rects: [{x, y, w, h, color, fill, label}] — housings, panels, frames, batteries, rooms
 - arcs: [{cx, cy, r, start_angle, end_angle, color, label}] — curves, ranges of motion
-- texts: [{x, y, text, color, bold}] — labels, titles, dimensions
+- texts: [{x, y, text, color, bold}] — labels, titles, dimensions, values
 NEVER put visual shapes (line, circle, rect) in the components array.
 Components are ONLY for real physical parts (servo, motor, bracket, sensor, etc.).
+
+CREATING NEW BLUEPRINTS:
+When the user asks to create/draw/design a new diagram or plan, use create_blueprint
+with ALL drawing primitives in ONE call. Include lines, circles, rects, arcs, and texts
+arrays directly. Pick blueprint_type from: circuit, building, part, assembly, system, mechanism.
+
+Be CREATIVE and DETAILED. Think about what the user is asking for and compose a proper
+visual diagram using the primitives. Here are composition patterns:
+
+ELECTRICAL CIRCUIT SCHEMATICS (type: "circuit"):
+- Battery: rect for body + texts for +/- terminals and voltage label
+- Bulb: circle for the bulb + small lines for filament inside + texts for label
+- Wires: lines connecting components; use color="yellow" for live, "cyan" for neutral
+- Switch: small gap in a line with a diagonal line for the lever
+- Parallel circuit: split wire into two paths going to separate loads, then merge back
+- Series circuit: components connected end-to-end in one loop
+- Ground symbol: short horizontal lines of decreasing width
+Example 1-bulb circuit layout (percentage coords, top-to-bottom flow):
+  Battery rect at top-center, bulb circle at bottom-center,
+  wire lines down left side and up right side forming a loop.
+
+FLOOR PLANS / ROOM LAYOUTS (type: "building"):
+- Walls: rects for the room perimeter (thick outline)
+- Doors: small arcs (quarter-circle, 0-90°) at wall openings
+- Windows: pairs of parallel short lines on walls
+- Furniture: rects for bed, desk, wardrobe + text labels
+- Bathroom fixtures: small rects + circles for sink/toilet
+Example bedroom layout:
+  Outer rect for room walls, rect for bed (largest piece),
+  rect for wardrobe, rect for desk, arc for door swing, texts for labels.
+
+MECHANICAL / HARDWARE DIAGRAMS (type: "part" or "assembly"):
+- Joints: circles at pivot points
+- Links/arms: lines or rects connecting joints
+- Fasteners: small circles for bolts/screws
+- Housing: rects for enclosures
+- Motion arcs: arcs showing range of movement
+
+Always make diagrams visually clear with proper spacing, labels, and colors:
+- Use color="red" for important/power elements
+- Use color="cyan" for structure/outlines
+- Use color="yellow" for wires/connections
+- Use color="green" for labels/annotations
+- Use color="white" for text labels
+- Center the diagram in the viewport (keep margins ~5-10%)
 """
 
 
@@ -538,7 +583,10 @@ class ChatHandler:
         r"|add|remove|delete|modify|edit|change|move|draw|place|put|set|clear"
         r"|rename|resize|rotate|connect|disconnect|reset|restore|blank|wipe"
         r"|line|circle|rect(?:angle)?|arc|text|component|connection|dimension"
-        r"|color|position|label|name)\b",
+        r"|color|position|label|name"
+        # Creative / domain-specific triggers
+        r"|schema(?:tic)?|circuit|electric(?:al|ity)?|bulb|battery|wir(?:e|ing)"
+        r"|plan|floor|bedroom|room|layout|diagram|design|sketch)\b",
         re.IGNORECASE,
     )
 
