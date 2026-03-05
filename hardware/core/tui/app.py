@@ -8,6 +8,7 @@ and chat on the right when a blueprint is being edited.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING, Any
 
 from textual import on, work
@@ -33,6 +34,16 @@ if TYPE_CHECKING:
     from core.chat_handler import ChatHandler
 
 logger = get_logger(__name__)
+
+# ── Regex for natural-language "open <blueprint>" commands ────────────
+_OPEN_BLUEPRINT_RE = re.compile(
+    r'^(?:open|load|show|display|view)\s+'
+    r'(?:the\s+)?'
+    r'(?:blueprint\s+)?'
+    r'(.+?)'
+    r'(?:\s+blueprint)?$',
+    re.IGNORECASE,
+)
 
 # ── Accent colour tokens ─────────────────────────────────────────────
 # "Greenish-blue" ≈ teal / cyan-ish
@@ -569,6 +580,17 @@ class JarvisTUI(App):
             self.action_toggle_render_mode()
             return
 
+        # Natural-language "open <blueprint>" shortcut
+        open_match = _OPEN_BLUEPRINT_RE.match(text)
+        if open_match:
+            bp_query = open_match.group(1).strip()
+            found = self._fuzzy_find_blueprint(bp_query)
+            if found:
+                self._append_user(text)
+                self._load_blueprint_by_name(found)
+                return
+            # No match — fall through to the AI for a natural response
+
         self._append_user(text)
         self._send_message(text)
 
@@ -608,7 +630,11 @@ class JarvisTUI(App):
                 self._update_status("Multi-agent processing…")
                 response = await self.chat_handler._process_with_orchestrator(text)
             else:
-                response = await self.chat_handler.process_message(text)
+                # When a blueprint is open, always include tool schemas so the
+                # LLM can call edit_blueprint for drawing / component changes.
+                response = await self.chat_handler.process_message(
+                    text, force_tools=self.blueprint_active,
+                )
 
             # Record response in memory
             if self.chat_handler._memory_manager:
@@ -624,10 +650,17 @@ class JarvisTUI(App):
 
             self._append_assistant(response)
 
-            # Check if any tool results signal to open the blueprint engine
+            # Check if any tool results signal to open/reload the blueprint engine
             for tr in getattr(self.chat_handler, "_last_tool_results", []):
                 self._handle_tool_result_for_engine(tr)
             self.chat_handler._last_tool_results = []
+
+            # If engine is already open, auto-refresh to pick up any
+            # file-based edits (e.g. edit_blueprint wrote to disk).
+            if self.blueprint_active and self._engine is not None:
+                current_path = self._engine.state.file_path
+                if current_path and current_path.exists():
+                    self._load_blueprint_into_engine(str(current_path))
 
             # If no tool opened the engine, check whether the response itself
             # contains a .jarvis JSON block (e.g. from the Blueprint Agent via
@@ -696,9 +729,13 @@ class JarvisTUI(App):
             "| `/clear` | Clear conversation |\n"
             "| `/blueprint` | Toggle blueprint engine |\n"            "| `/load [name]` | Load a blueprint file |\\n"            "| `/view` | Toggle pixel/char render |\n"
             "| `/quit` | Exit JARVIS |\n\n"
-            "*Tips:* Ask me to create or load a blueprint to open the "
-            "split-pane editor with the grid on the left and chat on "
-            "the right. Use Ctrl+B to toggle the blueprint pane.\n\n"
+            "*Tips:* Just say **\"open duck\"** (or any blueprint name) to "
+            "search and load it instantly. The blueprint engine opens "
+            "in split-pane view — grid on the left, chat on the right.\n\n"
+            "*Editing:* Once the blueprint is open, just describe the "
+            "changes you want (e.g. \"add a wing\", \"remove eye1\"). "
+            "The AI will apply the edits and the engine will update "
+            "in real-time.\n\n"
             "*Blueprint:* You can import other blueprints to combine "
             "them together \u2013 they\u2019ll be added as movable groups.\n\n"
             "*Render:* Press F5 or type `/view` to switch between "
@@ -884,11 +921,69 @@ class JarvisTUI(App):
         jarvis_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return str(jarvis_files[0]) if jarvis_files else None
 
+    def _fuzzy_find_blueprint(self, query: str) -> str | None:
+        """Fuzzy-search local blueprints by name.
+
+        Returns the best matching blueprint *stem* (no extension) or None.
+        Matches against file stems and the "name" field inside each .jarvis file.
+        """
+        import json as _json
+        from pathlib import Path as _Path
+
+        bp_dir = _Path("data/blueprints")
+        if not bp_dir.is_dir():
+            return None
+
+        query_lower = query.lower().strip()
+        if not query_lower:
+            return None
+
+        candidates: list[tuple[int, str]] = []  # (score, stem)
+
+        for fp in bp_dir.glob("*.jarvis"):
+            if fp.stem.endswith(".jarvis"):
+                continue  # skip double-extension files
+            stem = fp.stem
+            stem_lower = stem.lower()
+
+            # Also read the display name from inside the file
+            display_name = stem
+            try:
+                data = _json.loads(fp.read_text(encoding="utf-8"))
+                display_name = data.get("name", stem)
+            except Exception:
+                pass
+            display_lower = display_name.lower()
+
+            # Score: exact match > starts-with > contains > display name match
+            if query_lower == stem_lower or query_lower == display_lower:
+                candidates.append((100, stem))
+            elif stem_lower.startswith(query_lower) or display_lower.startswith(query_lower):
+                candidates.append((80, stem))
+            elif query_lower in stem_lower or query_lower in display_lower:
+                candidates.append((60, stem))
+            # Simple character-level fuzzy: check if all query chars appear in order
+            elif self._chars_in_order(query_lower, stem_lower) or self._chars_in_order(query_lower, display_lower):
+                candidates.append((30, stem))
+
+        if not candidates:
+            return None
+
+        # Return the best match
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+
+    @staticmethod
+    def _chars_in_order(query: str, target: str) -> bool:
+        """Check if all characters of query appear in target in order."""
+        it = iter(target)
+        return all(c in it for c in query)
+
     def _load_blueprint_by_name(self, name: str) -> None:
-        """Slash command handler: /load [name].
+        """Slash command handler: /load [name] or natural-language open.
 
         Opens the blueprint pane and loads the named file. If no name given,
-        loads the most recently modified blueprint.
+        loads the most recently modified blueprint.  Supports fuzzy matching.
         """
         from pathlib import Path as _Path
         if name:
@@ -903,8 +998,30 @@ class JarvisTUI(App):
                 if c.exists():
                     bp_path = str(c)
                     break
+
+            # If exact match failed, try fuzzy search
             if not bp_path:
-                self._append_error(f"Blueprint not found: {name}")
+                fuzzy_match = self._fuzzy_find_blueprint(name)
+                if fuzzy_match:
+                    candidate = _Path("data/blueprints") / f"{fuzzy_match}.jarvis"
+                    if candidate.exists():
+                        bp_path = str(candidate)
+                        self._append_system(f"Matched: {fuzzy_match}")
+
+            if not bp_path:
+                # List available blueprints as suggestions
+                bp_dir = _Path("data/blueprints")
+                available = sorted(
+                    f.stem for f in bp_dir.glob("*.jarvis")
+                    if f.is_file() and not f.stem.endswith(".jarvis")
+                ) if bp_dir.is_dir() else []
+                if available:
+                    self._append_error(
+                        f"Blueprint '{name}' not found. "
+                        f"Available: {', '.join(available)}"
+                    )
+                else:
+                    self._append_error(f"Blueprint '{name}' not found.")
                 return
         else:
             bp_path = self._find_latest_blueprint()

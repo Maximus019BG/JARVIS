@@ -52,6 +52,14 @@ IMPORTANT RULES:
 6. When the user asks you to make a change, just DO IT immediately. Do NOT ask for confirmation, do NOT ask "are you sure?", do NOT ask for permission. Execute the requested action right away. The user already decided what they want.
 7. Keep responses short and action-oriented. No unnecessary preamble.
 
+LIVE BLUEPRINT EDITING:
+When a blueprint is open in the engine, the user can describe changes in natural language.
+- Use the edit_blueprint tool to apply changes (add_component, remove_component, modify_component, add_line, add_circle, add_rect, etc.)
+- The engine will auto-refresh after each edit — changes appear in real-time on the grid.
+- You can chain multiple edit_blueprint calls for complex changes.
+- Always use the currently loaded blueprint's path when editing.
+- After making edits, briefly describe what changed so the user can verify on the grid.
+
 BLUEPRINT DRAWING STANDARD:
 When creating or editing blueprints, use DRAWING PRIMITIVES for all visual shapes.
 All coordinates are PERCENTAGES (0-100) of the viewport.
@@ -474,20 +482,47 @@ class ChatHandler:
             except (ValueError, TypeError):
                 continue
 
-        # Pattern 2: bare JSON with tool-call shape (fallback)
+        # Pattern 2: bare JSON with tool-call shape (fallback).
+        # Use brace-counting instead of regex to handle nested objects
+        # (e.g. {"name":"edit_blueprint","arguments":{"drawing":{"x1":10}}}).
         if not calls:
-            for m in re.finditer(
-                r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}',
-                text,
-            ):
+            for m in re.finditer(r'\{\s*"name"\s*:\s*"\w+"', text):
+                start = m.start()
+                depth = 0
+                in_string = False
+                escape_next = False
+                end = None
+                for i in range(start, len(text)):
+                    c = text[i]
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    if c == '\\' and in_string:
+                        escape_next = True
+                        continue
+                    if c == '"':
+                        in_string = not in_string
+                        continue
+                    if in_string:
+                        continue
+                    if c == '{':
+                        depth += 1
+                    elif c == '}':
+                        depth -= 1
+                        if depth == 0:
+                            end = i + 1
+                            break
+                if end is None:
+                    continue
                 try:
-                    args = _json.loads(m.group(2))
-                    calls.append({
-                        "function": {
-                            "name": m.group(1),
-                            "arguments": args,
-                        }
-                    })
+                    obj = _json.loads(text[start:end])
+                    if isinstance(obj, dict) and "name" in obj:
+                        calls.append({
+                            "function": {
+                                "name": obj["name"],
+                                "arguments": obj.get("arguments", {}),
+                            }
+                        })
                 except (ValueError, TypeError):
                     continue
 
@@ -498,7 +533,12 @@ class ChatHandler:
         r"\b(?:file|read|write|save|load|create|blueprints?|execute|run|shell|search"
         r"|remember|recall|forget|memory|code|script|theme|profile|stats|sync"
         r"|send|update|resolve|conflict|web|fetch|summarize|extract|list|open"
-        r"|show|display|available|import)\b",
+        r"|show|display|available|import"
+        # Blueprint / drawing editing verbs & nouns
+        r"|add|remove|delete|modify|edit|change|move|draw|place|put|set|clear"
+        r"|rename|resize|rotate|connect|disconnect"
+        r"|line|circle|rect(?:angle)?|arc|text|component|connection|dimension"
+        r"|color|position|label|name)\b",
         re.IGNORECASE,
     )
 
@@ -511,7 +551,9 @@ class ChatHandler:
         """
         return bool(ChatHandler._TOOL_HINT_RE.search(message))
 
-    async def process_message(self, message: str) -> str:
+    async def process_message(
+        self, message: str, *, force_tools: bool = False,
+    ) -> str:
         """Process user message and return response using AI with tool calling.
 
         Performance improvements:
@@ -521,6 +563,7 @@ class ChatHandler:
 
         Args:
             message: User message to process.
+            force_tools: Always include tool schemas (e.g. blueprint is open).
 
         Returns:
             AI response string.
@@ -528,7 +571,7 @@ class ChatHandler:
         start_time = time.time()
         try:
             # Only send tool schemas when the message plausibly needs them
-            if self._message_needs_tools(message):
+            if force_tools or self._message_needs_tools(message):
                 tools = self._get_cached_tool_schemas()
             else:
                 tools = []

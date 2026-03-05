@@ -218,7 +218,10 @@ def _render_grid_with_components(
     eff_spacing = max(2, int(grid_spacing * zoom))
     cx, cy = width // 2, height // 2  # screen-space origin
 
-    # ── 1. Draw grid dots / lines ────────────────────────────────
+    # ── 1. Draw clean dot grid ────────────────────────────────────
+    # Dots-only grid: quiet background that lets lines and components
+    # stand out.  Origin gets a small crosshair, major intersections
+    # are slightly brighter, minor intersections are dim dots.
     for row in range(height):
         for col in range(width):
             wr = row - cy + int(pan_y * zoom)
@@ -232,22 +235,13 @@ def _render_grid_with_components(
             on_minor_v = wc % eff_spacing == 0 if eff_spacing else False
 
             if on_origin_h and on_origin_v:
-                chars[row][col] = "╋"
-                styles[row][col] = _C_ORIGIN
-            elif on_origin_h:
-                chars[row][col] = "─"
-                styles[row][col] = _C_ORIGIN
-            elif on_origin_v:
-                chars[row][col] = "│"
-                styles[row][col] = _C_ORIGIN
-            elif (on_major_h and on_major_v) or (on_major_h and on_minor_v) or (on_major_v and on_minor_h):
                 chars[row][col] = "┼"
-                styles[row][col] = _C_MAJOR
-            elif on_major_h:
-                chars[row][col] = "─"
-                styles[row][col] = _C_MAJOR
-            elif on_major_v:
-                chars[row][col] = "│"
+                styles[row][col] = _C_ORIGIN
+            elif (on_origin_h and on_minor_v) or (on_origin_v and on_minor_h):
+                chars[row][col] = "·"
+                styles[row][col] = _C_ORIGIN
+            elif on_major_h and on_major_v:
+                chars[row][col] = "·"
                 styles[row][col] = _C_MAJOR
             elif on_minor_h and on_minor_v:
                 chars[row][col] = "·"
@@ -354,28 +348,11 @@ def _render_grid_with_components(
             chars[cr][cc] = chr(BRAILLE_BASE + bits)
             styles[cr][cc] = color
 
-    # ── 2. Draw connection lines ─────────────────────────────────
+    # ── 2. Draw connection lines (smooth braille) ────────────────
     for conn in connections:
         fc, fr = w2s(conn.from_x, conn.from_y)
         tc, tr = w2s(conn.to_x, conn.to_y)
-        # Bresenham-ish line drawing
-        steps = max(abs(tc - fc), abs(tr - fr), 1)
-        for i in range(steps + 1):
-            t = i / steps
-            c = int(fc + (tc - fc) * t)
-            r = int(fr + (tr - fr) * t)
-            if 0 <= r < height and 0 <= c < width:
-                # Don't overwrite component cells (they are drawn after)
-                if styles[r][c] not in (_C_COMP, _C_SEL, _C_COMP_FILL, _C_SEL_FILL):
-                    dc = abs(tc - fc)
-                    dr = abs(tr - fr)
-                    if dc > dr * 2:
-                        chars[r][c] = "─"
-                    elif dr > dc * 2:
-                        chars[r][c] = "│"
-                    else:
-                        chars[r][c] = "╱" if ((tc - fc) * (tr - fr) < 0) else "╲"
-                    styles[r][c] = _C_CONN
+        _bresenham_braille(fc, fr, tc, tr, _C_CONN)
 
     # ── 3. Draw components as boxes ──────────────────────────────
     for comp in components:
@@ -456,6 +433,76 @@ def _render_grid_with_components(
     # ── 4. Draw percentage-based drawing primitives ──────────────
     import math as _math
 
+    # ── Braille sub-pixel helpers for curves ─────────────────────
+    _BRAILLE_BASE = 0x2800
+    _DOT_BITS = [
+        [0x01, 0x08],
+        [0x02, 0x10],
+        [0x04, 0x20],
+        [0x40, 0x80],
+    ]
+
+    def _plot_braille_subpixels(
+        points: list[tuple[int, int]], color: str,
+    ) -> None:
+        """Render a list of sub-pixel (2x, 4y) points as braille chars."""
+        cells: dict[tuple[int, int], int] = {}
+        for sx, sy in points:
+            cc = sx // 2
+            cr = sy // 4
+            dc = sx % 2
+            dr = sy % 4
+            if 0 <= cr < height and 0 <= cc < width:
+                key = (cc, cr)
+                if key not in cells:
+                    existing = chars[cr][cc]
+                    if len(existing) == 1 and 0x2800 <= ord(existing) <= 0x28FF:
+                        cells[key] = ord(existing) - _BRAILLE_BASE
+                    else:
+                        cells[key] = 0
+                cells[key] |= _DOT_BITS[dr][dc]
+        for (cc, cr), bits in cells.items():
+            chars[cr][cc] = chr(_BRAILLE_BASE + bits)
+            styles[cr][cc] = color
+
+    def _circle_braille(
+        center_c: int, center_r: int,
+        rx: int, ry: int, color: str,
+    ) -> None:
+        """Draw a circle outline using braille sub-pixels."""
+        sub_cx, sub_cy = center_c * 2, center_r * 4
+        sub_rx, sub_ry = max(rx * 2, 1), max(ry * 4, 1)
+        steps = max(int(2 * _math.pi * max(sub_rx, sub_ry)), 72)
+        pts: list[tuple[int, int]] = []
+        for i in range(steps):
+            angle = 2.0 * _math.pi * i / steps
+            sx = int(sub_cx + sub_rx * _math.cos(angle) + 0.5)
+            sy = int(sub_cy + sub_ry * _math.sin(angle) + 0.5)
+            pts.append((sx, sy))
+        _plot_braille_subpixels(pts, color)
+
+    def _arc_braille(
+        center_c: int, center_r: int,
+        rx: int, ry: int,
+        start_deg: float, end_deg: float, color: str,
+    ) -> None:
+        """Draw an arc using braille sub-pixels."""
+        sub_cx, sub_cy = center_c * 2, center_r * 4
+        sub_rx, sub_ry = max(rx * 2, 1), max(ry * 4, 1)
+        s_rad = _math.radians(start_deg)
+        e_rad = _math.radians(end_deg)
+        if e_rad < s_rad:
+            e_rad += 2.0 * _math.pi
+        arc_len = (e_rad - s_rad) * max(sub_rx, sub_ry)
+        steps = max(int(arc_len), 36)
+        pts: list[tuple[int, int]] = []
+        for i in range(steps + 1):
+            angle = s_rad + (e_rad - s_rad) * i / steps
+            sx = int(sub_cx + sub_rx * _math.cos(angle) + 0.5)
+            sy = int(sub_cy + sub_ry * _math.sin(angle) + 0.5)
+            pts.append((sx, sy))
+        _plot_braille_subpixels(pts, color)
+
     # 4a. Lines
     for dl in (draw_lines or []):
         sc0, sr0 = pct2s(dl.x1, dl.y1)
@@ -510,36 +557,23 @@ def _render_grid_with_components(
                     chars[lr][cc] = ch
                     styles[lr][cc] = f"bold {safe}"
 
-    # 4c. Circles (approximated with characters)
+    # 4c. Circles (smooth braille sub-pixel rendering)
     for dc in (draw_circles or []):
         ccx, ccy = pct2s(dc.cx, dc.cy)
-        # Radius in screen cells (use width for x-radius)
-        rx = int(dc.r / 100.0 * width)
-        ry = int(dc.r / 100.0 * height)
-        if rx < 1:
-            rx = 1
-        if ry < 1:
-            ry = 1
+        rx = max(1, int(dc.r / 100.0 * width))
+        ry = max(1, int(dc.r / 100.0 * height))
         safe = _safe_color(dc.color)
         circ_color = f"bold {safe}"
-        fill_style = f"on grey15" if dc.fill else ""
-        for angle_deg in range(360):
-            rad = _math.radians(angle_deg)
-            sc = ccx + int(rx * _math.cos(rad))
-            sr = ccy + int(ry * _math.sin(rad))
-            if 0 <= sr < height and 0 <= sc < width:
-                chars[sr][sc] = "●" if dc.fill else "○"
-                styles[sr][sc] = circ_color
         if dc.fill:
-            # Fill interior
+            fill_style = "on grey15"
             for r in range(max(0, ccy - ry), min(height, ccy + ry + 1)):
                 for c in range(max(0, ccx - rx), min(width, ccx + rx + 1)):
                     dx = (c - ccx) / max(rx, 1)
                     dy = (r - ccy) / max(ry, 1)
                     if dx * dx + dy * dy <= 1.0:
-                        if chars[r][c] not in ("●", "○"):
-                            chars[r][c] = " "
-                            styles[r][c] = fill_style
+                        chars[r][c] = " "
+                        styles[r][c] = fill_style
+        _circle_braille(ccx, ccy, rx, ry, circ_color)
         if dc.label:
             lc = ccx - len(dc.label) // 2
             lr = ccy
@@ -549,28 +583,14 @@ def _render_grid_with_components(
                     chars[lr][cc] = ch
                     styles[lr][cc] = f"bold {safe}"
 
-    # 4d. Arcs
+    # 4d. Arcs (smooth braille sub-pixel rendering)
     for da in (draw_arcs or []):
         acx, acy = pct2s(da.cx, da.cy)
-        arx = int(da.r / 100.0 * width)
-        ary = int(da.r / 100.0 * height)
-        if arx < 1:
-            arx = 1
-        if ary < 1:
-            ary = 1
+        arx = max(1, int(da.r / 100.0 * width))
+        ary = max(1, int(da.r / 100.0 * height))
         safe = _safe_color(da.color)
         arc_color = f"bold {safe}"
-        start = int(da.start_angle)
-        end = int(da.end_angle)
-        if end < start:
-            end += 360
-        for angle_deg in range(start, end + 1):
-            rad = _math.radians(angle_deg)
-            sc = acx + int(arx * _math.cos(rad))
-            sr = acy + int(ary * _math.sin(rad))
-            if 0 <= sr < height and 0 <= sc < width:
-                chars[sr][sc] = "·"
-                styles[sr][sc] = arc_color
+        _arc_braille(acx, acy, arx, ary, da.start_angle, da.end_angle, arc_color)
         if da.label:
             mid_angle = _math.radians((da.start_angle + da.end_angle) / 2)
             lc = acx + int(arx * _math.cos(mid_angle)) - len(da.label) // 2
@@ -846,13 +866,12 @@ class BlueprintViewport(Static):
 # ── Toolbar ──────────────────────────────────────────────────────────
 
 class BlueprintToolbar(Static):
-    """Toolbar with drawing mode indicators."""
+    """Toolbar with mode indicators."""
 
     def compose(self) -> ComposeResult:
         yield Label(
-            "▎ [S]elect  [L]ine  [R]ect  [C]ircle  "
-            "[F]reehand  [P]an  [Z]oom  [U]ndo  "
-            "[G]rid  [N]snap  F5:pixel/char",
+            "▎ Pan  Zoom  Select  Undo  "
+            "Grid  Snap  │  Ctrl+B toggle",
         )
 
 

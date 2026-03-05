@@ -14,8 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app_logging.logger import get_logger
 from core.base_tool import BaseTool, ToolResult
 from core.security import SecurityError, get_security_manager
+
+logger = get_logger(__name__)
 
 
 def _compute_hash(data: dict[str, Any]) -> str:
@@ -178,6 +181,7 @@ class BlueprintEditTool(BaseTool):
     # ── execute ──────────────────────────────────────────────────
 
     def execute(self, **kwargs: Any) -> ToolResult:
+        logger.info("edit_blueprint called: kwargs=%s", kwargs)
         blueprint_ref: str = kwargs.get("blueprint_path", "")
         action: str = kwargs.get("action", "list")
 
@@ -238,6 +242,7 @@ class BlueprintEditTool(BaseTool):
             )
 
         result_msg = handler(raw, kwargs)
+        logger.info("edit_blueprint action=%s result: %s", action, result_msg)
         if result_msg.startswith("Error:"):
             return ToolResult.fail(result_msg, error_type="EditError")
 
@@ -421,12 +426,57 @@ class BlueprintEditTool(BaseTool):
 
     # ── Drawing primitive handlers ───────────────────────────────
 
-    def _get_drawing(self, kwargs: dict) -> dict | None:
-        """Extract the drawing primitive object from kwargs."""
-        return kwargs.get("drawing") or kwargs.get("component")
+    # Keys that belong to the tool dispatch itself, not to a drawing primitive.
+    _META_KEYS = frozenset(
+        {"blueprint_path", "action", "component_id", "connection",
+         "connection_index", "new_name", "dimensions", "note", "tag"}
+    )
+
+    def _get_drawing(self, kwargs: dict, *, hint: str = "") -> dict | None:
+        """Extract the drawing-primitive dict from *kwargs*.
+
+        Tries (in order):
+        1. ``kwargs["drawing"]``  – canonical schema key
+        2. ``kwargs["component"]`` – common LLM alias
+        3. Action-specific key derived from *hint*
+           (e.g. hint="line" → ``kwargs["line"]``)
+        4. Flat kwargs – if the caller embedded coordinate keys directly
+           (x1, y1, cx, cy, …) we scoop up every key that isn't a
+           meta/dispatch key and return them as the drawing dict.
+        """
+        # 1. canonical
+        d = kwargs.get("drawing")
+        if d and isinstance(d, dict):
+            return d
+
+        # 2. common alias
+        d = kwargs.get("component")
+        if d and isinstance(d, dict):
+            return d
+
+        # 3. action-specific key  (e.g. "line", "circle", "rect", …)
+        if hint:
+            d = kwargs.get(hint)
+            if d and isinstance(d, dict):
+                return d
+
+        # 4. flat kwargs – collect everything that isn't a meta key
+        #    Only skip the hint key when its value is a dict (action wrapper),
+        #    not when it's a scalar (e.g. text="Hello" for add_text).
+        skip = {"drawing", "component"}
+        if hint and isinstance(kwargs.get(hint), dict):
+            skip.add(hint)
+        flat = {
+            k: v for k, v in kwargs.items()
+            if k not in self._META_KEYS and k not in skip
+        }
+        if flat:
+            return flat
+
+        return None
 
     def _add_line(self, data: dict, kwargs: dict) -> str:
-        d = self._get_drawing(kwargs)
+        d = self._get_drawing(kwargs, hint="line")
         if not d or not isinstance(d, dict):
             return "Error: 'drawing' object with {x1, y1, x2, y2} is required."
         for key in ("x1", "y1", "x2", "y2"):
@@ -439,7 +489,7 @@ class BlueprintEditTool(BaseTool):
         return f"Added line ({d['x1']},{d['y1']})->({d['x2']},{d['y2']}) color={d['color']}."
 
     def _add_circle(self, data: dict, kwargs: dict) -> str:
-        d = self._get_drawing(kwargs)
+        d = self._get_drawing(kwargs, hint="circle")
         if not d or not isinstance(d, dict):
             return "Error: 'drawing' object with {cx, cy, r} is required."
         for key in ("cx", "cy", "r"):
@@ -452,7 +502,7 @@ class BlueprintEditTool(BaseTool):
         return f"Added circle at ({d['cx']},{d['cy']}) r={d['r']} color={d['color']}."
 
     def _add_rect(self, data: dict, kwargs: dict) -> str:
-        d = self._get_drawing(kwargs)
+        d = self._get_drawing(kwargs, hint="rect")
         if not d or not isinstance(d, dict):
             return "Error: 'drawing' object with {x, y, w, h} is required."
         for key in ("x", "y", "w", "h"):
@@ -465,7 +515,7 @@ class BlueprintEditTool(BaseTool):
         return f"Added rect at ({d['x']},{d['y']}) {d['w']}x{d['h']} color={d['color']}."
 
     def _add_arc(self, data: dict, kwargs: dict) -> str:
-        d = self._get_drawing(kwargs)
+        d = self._get_drawing(kwargs, hint="arc")
         if not d or not isinstance(d, dict):
             return "Error: 'drawing' object with {cx, cy, r, start_angle, end_angle} is required."
         for key in ("cx", "cy", "r"):
@@ -479,7 +529,7 @@ class BlueprintEditTool(BaseTool):
         return f"Added arc at ({d['cx']},{d['cy']}) r={d['r']} {d['start_angle']}°-{d['end_angle']}°."
 
     def _add_text(self, data: dict, kwargs: dict) -> str:
-        d = self._get_drawing(kwargs)
+        d = self._get_drawing(kwargs, hint="text")
         if not d or not isinstance(d, dict):
             return "Error: 'drawing' object with {x, y, text} is required."
         for key in ("x", "y", "text"):
