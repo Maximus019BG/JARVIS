@@ -648,9 +648,17 @@ class JarvisTUI(App):
                 # When a blueprint is open or user wants to create a design,
                 # always include tool schemas so the LLM can call
                 # edit_blueprint / create_blueprint.
+                # Also pass the active blueprint path so the handler can
+                # auto-inject it into edit_blueprint calls that omit it.
+                bp_path: str | None = None
+                if self.blueprint_active and self._engine is not None:
+                    fp = self._engine.state.file_path
+                    if fp:
+                        bp_path = str(fp)
                 response = await self.chat_handler.process_message(
                     text,
                     force_tools=self.blueprint_active or wants_create_design,
+                    active_blueprint_path=bp_path,
                 )
 
             # Record response in memory

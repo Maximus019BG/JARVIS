@@ -197,6 +197,16 @@ class GroqWrapper:
                     tc = dict(tc)
                     tc.setdefault("type", "function")
                     tc.setdefault("id", f"call_{id(tc)}")
+                    # Groq requires function.arguments to be a JSON string
+                    fn = tc.get("function")
+                    if isinstance(fn, dict):
+                        fn = dict(fn)
+                        args = fn.get("arguments")
+                        if isinstance(args, dict):
+                            fn["arguments"] = json.dumps(args)
+                        elif args is None:
+                            fn["arguments"] = "{}"
+                        tc["function"] = fn
                     sanitised.append(tc)
                 msg["tool_calls"] = sanitised
             messages.append(msg)
@@ -254,7 +264,8 @@ class GroqWrapper:
         """Build the messages list for the API call.
 
         Sanitises history entries so that assistant messages with ``tool_calls``
-        always include the ``type`` field required by Groq/OpenAI.
+        always include the ``type`` field required by Groq/OpenAI and
+        ``function.arguments`` is always a JSON string.
         """
         messages: list[dict[str, Any]] = []
         for msg in conversation_history or []:
@@ -265,6 +276,16 @@ class GroqWrapper:
                     tc = dict(tc)
                     tc.setdefault("type", "function")
                     tc.setdefault("id", f"call_{id(tc)}")
+                    # Groq requires function.arguments to be a JSON string
+                    fn = tc.get("function")
+                    if isinstance(fn, dict):
+                        fn = dict(fn)
+                        args = fn.get("arguments")
+                        if isinstance(args, dict):
+                            fn["arguments"] = json.dumps(args)
+                        elif args is None:
+                            fn["arguments"] = "{}"
+                        tc["function"] = fn
                     sanitised.append(tc)
                 msg["tool_calls"] = sanitised
             messages.append(msg)

@@ -40,6 +40,7 @@ from tools import AGENT_TOOLS
 from tools.apply_theme_tool import ApplyThemeTool
 from tools.blueprint_edit_tool import BlueprintEditTool
 from tools.create_blueprint_tool import CreateBlueprintTool
+from tools.delete_blueprint_tool import DeleteBlueprintTool
 from tools.edit_profile_tool import EditProfileTool
 from tools.help_tool import HelpTool
 from tools.import_blueprint_tool import ImportBlueprintTool
@@ -99,6 +100,7 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     registry.register_tool(LoadBlueprintTool())
     registry.register_tool(CreateBlueprintTool())
     registry.register_tool(BlueprintEditTool())
+    registry.register_tool(DeleteBlueprintTool())
     registry.register_tool(ImportBlueprintTool())
 
     # Assistance tools

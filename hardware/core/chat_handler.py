@@ -76,30 +76,81 @@ When the user asks to create/draw/design a new diagram or plan, use create_bluep
 with ALL drawing primitives in ONE call. Include lines, circles, rects, arcs, and texts
 arrays directly. Pick blueprint_type from: circuit, building, part, assembly, system, mechanism.
 
-Be CREATIVE and DETAILED. Think about what the user is asking for and compose a proper
-visual diagram using the primitives. Here are composition patterns:
+Be CREATIVE and DETAILED. Think step-by-step about what the user wants, then
+compose a proper CONNECTED visual diagram using the primitives.
+
+CRITICAL WIRING / CONNECTION RULES:
+- Every wire endpoint MUST touch another wire endpoint or a component.
+- To connect two points, share the EXACT same coordinate at the junction.
+  e.g. wire A ends at (30,40), wire B starts at (30,40) → they are connected.
+- NEVER leave dangling wires — every line must start and end at a shared point.
+- For a complete circuit, wires must form a CLOSED LOOP back to the battery.
+- Plan the layout on paper first: pick junction coordinates, then draw from/to them.
 
 ELECTRICAL CIRCUIT SCHEMATICS (type: "circuit"):
-- Battery: rect for body + texts for +/- terminals and voltage label
-- Bulb: circle for the bulb + small lines for filament inside + texts for label
-- Wires: lines connecting components; use color="yellow" for live, "cyan" for neutral
-- Switch: small gap in a line with a diagonal line for the lever
-- Parallel circuit: split wire into two paths going to separate loads, then merge back
-- Series circuit: components connected end-to-end in one loop
-- Ground symbol: short horizontal lines of decreasing width
-Example 1-bulb circuit layout (percentage coords, top-to-bottom flow):
-  Battery rect at top-center, bulb circle at bottom-center,
-  wire lines down left side and up right side forming a loop.
+Think of the circuit as a loop. Plan junctions first, then connect them.
+
+Single bulb circuit (coords are % 0-100):
+  Battery at top-center. Bulb at bottom-center. Wires form a rectangular loop.
+  Junction points: TL=(20,20) TR=(80,20) BL=(20,80) BR=(80,80)
+  Battery: rect x=35,y=15,w=30,h=10 (body) + texts "+" at (35,17), "-" at (65,17), "5V" at (50,12)
+  Top wire left:  line (20,20)→(35,20) yellow   [TL to battery left edge]
+  Top wire right: line (65,20)→(80,20) yellow   [battery right edge to TR]
+  Left wire down: line (20,20)→(20,80) yellow   [TL down to BL]
+  Right wire up:  line (80,80)→(80,20) yellow   [BR up to TR]
+  Bottom wire L:  line (20,80)→(40,80) yellow   [BL to bulb left]
+  Bottom wire R:  line (60,80)→(80,80) yellow   [bulb right to BR]
+  Bulb: circle cx=50,cy=80,r=8 color=yellow + text "Bulb" at (50,92)
+  Filament: line (46,76)→(50,84) yellow, line (50,84)→(54,76) yellow
+
+Two bulbs in PARALLEL:
+  Battery on top. Two bulbs side by side below. Wires split then rejoin.
+  Junction points: TL=(15,20) TR=(85,20) split_L=(15,45) split_R=(85,45)
+                   BL=(15,85) BR=(85,85) mid_top=(50,45) mid_bot=(50,85)
+  Battery: rect x=35,y=12,w=30,h=10 + texts "+"/"-"/"V"
+  Top wires: line (15,20)→(35,20) and line (65,20)→(85,20) yellow
+  Left trunk:  line (15,20)→(15,45) yellow
+  Right trunk: line (85,20)→(85,45) yellow
+  Split left top:    line (15,45)→(15,85) yellow   [left branch down]
+  Split right top:   line (85,45)→(85,85) yellow   [right branch down]
+  Cross top:   line (15,45)→(50,45) yellow   [left to center junction]
+  Cross top R: line (50,45)→(85,45) yellow   [center junction to right] (SHARED at 50,45)
+  Bulb 1: circle cx=30,cy=65,r=7 yellow + wires: line (15,55)→(23,65), line (37,65)→(50,55) — connecting to left branch
+  Bulb 2: circle cx=70,cy=65,r=7 yellow + wires: line (50,55)→(63,65), line (77,65)→(85,55) — connecting to right branch
+  Bottom merge: line (15,85)→(50,85) yellow, line (50,85)→(85,85) yellow
+  Label texts for each bulb and battery voltage.
+
+Two bulbs in SERIES:
+  Battery top-center, bulb1 on left side, bulb2 on right side, one single loop.
+  Wire: battery+ → down left → bulb1 → across bottom → bulb2 → up right → battery-
 
 FLOOR PLANS / ROOM LAYOUTS (type: "building"):
-- Walls: rects for the room perimeter (thick outline)
-- Doors: small arcs (quarter-circle, 0-90°) at wall openings
-- Windows: pairs of parallel short lines on walls
-- Furniture: rects for bed, desk, wardrobe + text labels
-- Bathroom fixtures: small rects + circles for sink/toilet
-Example bedroom layout:
-  Outer rect for room walls, rect for bed (largest piece),
-  rect for wardrobe, rect for desk, arc for door swing, texts for labels.
+Walls are drawn as LINES forming a closed rectangle (4 lines for 4 walls).
+Do NOT use a single rect for walls — use 4 separate lines so you can leave gaps.
+
+Wall with door opening:
+  Bottom wall from (10,80)→(40,80) then GAP then (48,80)→(90,80)
+  Door arc: arc cx=48,cy=80,r=8,start_angle=0,end_angle=90 (shows door swing inward)
+  The gap (40→48) is the door opening width.
+
+Wall with window:
+  Left wall from (10,10)→(10,35) then WINDOW then (10,50)→(10,80)
+  Window = TWO short parallel lines:
+    line (8,35)→(8,50) cyan + line (12,35)→(12,50) cyan
+  The main wall has a gap between y=35 and y=50 where the window sits.
+
+Example bedroom (10% margin on all sides):
+  Walls (4 lines, white, with gaps for door and window):
+    Top wall:    line (10,10)→(90,10) white
+    Right wall:  line (90,10)→(90,90) white
+    Bottom wall: line (10,90)→(38,90) white + line (46,90)→(90,90) white  [door gap 38→46]
+    Left wall:   line (10,10)→(10,35) white + line (10,55)→(10,90) white   [window gap 35→55]
+  Door: arc cx=46,cy=90,r=8,start_angle=180,end_angle=270 color=cyan
+  Window: line (8,35)→(8,55) cyan + line (12,35)→(12,55) cyan
+  Bed: rect x=55,y=20,w=30,h=40 color=cyan label="Bed"
+  Desk: rect x=15,y=20,w=20,h=12 color=cyan label="Desk"
+  Wardrobe: rect x=15,y=65,w=18,h=20 color=cyan label="Wardrobe"
+  Label texts: "Bedroom" at (50,5) bold white, "Door" near arc, "Window" near window lines
 
 MECHANICAL / HARDWARE DIAGRAMS (type: "part" or "assembly"):
 - Joints: circles at pivot points
@@ -109,12 +160,13 @@ MECHANICAL / HARDWARE DIAGRAMS (type: "part" or "assembly"):
 - Motion arcs: arcs showing range of movement
 
 Always make diagrams visually clear with proper spacing, labels, and colors:
-- Use color="red" for important/power elements
-- Use color="cyan" for structure/outlines
-- Use color="yellow" for wires/connections
-- Use color="green" for labels/annotations
-- Use color="white" for text labels
-- Center the diagram in the viewport (keep margins ~5-10%)
+- Use color="red" for important/power/hot elements
+- Use color="cyan" for structure/outlines/furniture
+- Use color="yellow" for wires/connections/bulbs
+- Use color="green" for annotations/values
+- Use color="white" for walls/text labels
+- Keep margins ~5-10% from edges
+- ALWAYS add text labels for every significant element
 """
 
 
@@ -507,9 +559,52 @@ class ChatHandler:
             ```
         or inline JSON with a "name" and "arguments" key.
 
+        Handles common LLM variations:
+        - "arguments", "parameters", "params", "input" as the args key
+        - OpenAI wrapper format: {"function": {"name": ..., "arguments": ...}}
+        - Arguments as a JSON string instead of a dict
+
         Returns a list of tool_call dicts (Ollama format) or None.
         """
         calls: list[dict[str, Any]] = []
+
+        def _extract_args(obj: dict) -> dict:
+            """Pull arguments from a parsed JSON obj, trying common key names."""
+            for key in ("arguments", "parameters", "params", "input"):
+                val = obj.get(key)
+                if val is not None:
+                    if isinstance(val, dict):
+                        return val
+                    if isinstance(val, str):
+                        try:
+                            parsed = _json.loads(val)
+                            if isinstance(parsed, dict):
+                                return parsed
+                        except (ValueError, TypeError):
+                            pass
+                    return {}
+            return {}
+
+        def _normalise_obj(obj: dict) -> dict | None:
+            """Normalise a parsed JSON dict into ``{"function": {"name": …, "arguments": …}}``."""
+            # Direct format: {"name": "tool_name", "arguments": {...}}
+            if "name" in obj:
+                return {
+                    "function": {
+                        "name": obj["name"],
+                        "arguments": _extract_args(obj),
+                    }
+                }
+            # OpenAI wrapper: {"function": {"name": ..., "arguments": ...}}
+            fn = obj.get("function")
+            if isinstance(fn, dict) and "name" in fn:
+                return {
+                    "function": {
+                        "name": fn["name"],
+                        "arguments": _extract_args(fn),
+                    }
+                }
+            return None
 
         # Pattern 1: fenced code blocks
         for m in re.finditer(
@@ -517,13 +612,10 @@ class ChatHandler:
         ):
             try:
                 obj = _json.loads(m.group(1))
-                if isinstance(obj, dict) and "name" in obj:
-                    calls.append({
-                        "function": {
-                            "name": obj["name"],
-                            "arguments": obj.get("arguments", {}),
-                        }
-                    })
+                if isinstance(obj, dict):
+                    normalised = _normalise_obj(obj)
+                    if normalised:
+                        calls.append(normalised)
             except (ValueError, TypeError):
                 continue
 
@@ -531,7 +623,8 @@ class ChatHandler:
         # Use brace-counting instead of regex to handle nested objects
         # (e.g. {"name":"edit_blueprint","arguments":{"drawing":{"x1":10}}}).
         if not calls:
-            for m in re.finditer(r'\{\s*"name"\s*:\s*"\w+"', text):
+            # Match objects starting with "name" or "function" key
+            for m in re.finditer(r'\{\s*"(?:name|function|id)"\s*:', text):
                 start = m.start()
                 depth = 0
                 in_string = False
@@ -561,15 +654,19 @@ class ChatHandler:
                     continue
                 try:
                     obj = _json.loads(text[start:end])
-                    if isinstance(obj, dict) and "name" in obj:
-                        calls.append({
-                            "function": {
-                                "name": obj["name"],
-                                "arguments": obj.get("arguments", {}),
-                            }
-                        })
+                    if isinstance(obj, dict):
+                        normalised = _normalise_obj(obj)
+                        if normalised:
+                            calls.append(normalised)
                 except (ValueError, TypeError):
                     continue
+
+        if calls:
+            logger.debug(
+                "Text extraction found %d call(s), first args keys: %s",
+                len(calls),
+                list(calls[0].get("function", {}).get("arguments", {}).keys())[:5],
+            )
 
         return calls if calls else None
 
@@ -601,6 +698,7 @@ class ChatHandler:
 
     async def process_message(
         self, message: str, *, force_tools: bool = False,
+        active_blueprint_path: str | None = None,
     ) -> str:
         """Process user message and return response using AI with tool calling.
 
@@ -612,6 +710,9 @@ class ChatHandler:
         Args:
             message: User message to process.
             force_tools: Always include tool schemas (e.g. blueprint is open).
+            active_blueprint_path: Path of the currently open blueprint file.
+                When set, ``blueprint_path`` is auto-injected into
+                edit_blueprint / delete_blueprint tool calls that omit it.
 
         Returns:
             AI response string.
@@ -672,6 +773,24 @@ class ChatHandler:
                     )
 
             if tool_calls:
+                # Auto-inject blueprint_path for blueprint tools when a
+                # blueprint is currently open and the LLM omitted it.
+                if active_blueprint_path:
+                    _BP_TOOLS = {"edit_blueprint", "delete_blueprint"}
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        if fn.get("name") in _BP_TOOLS:
+                            args = fn.get("arguments")
+                            if isinstance(args, str):
+                                try:
+                                    args = _json.loads(args)
+                                except (ValueError, TypeError):
+                                    args = {}
+                                fn["arguments"] = args
+                            if isinstance(args, dict) and not args.get("blueprint_path"):
+                                args["blueprint_path"] = active_blueprint_path
+                                fn["arguments"] = args
+
                 self.memory.add_message(
                     "assistant",
                     assistant_message.get("content", ""),
