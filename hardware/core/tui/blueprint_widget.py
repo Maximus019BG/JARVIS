@@ -350,8 +350,8 @@ def _render_grid_with_components(
 
     # ── 2. Draw connection lines (smooth braille) ────────────────
     for conn in connections:
-        fc, fr = w2s(conn.from_x, conn.from_y)
-        tc, tr = w2s(conn.to_x, conn.to_y)
+        fc, fr = pct2s(conn.from_x, conn.from_y)
+        tc, tr = pct2s(conn.to_x, conn.to_y)
         _bresenham_braille(fc, fr, tc, tr, _C_CONN)
 
     # ── 3. Draw components as boxes ──────────────────────────────
@@ -363,7 +363,7 @@ def _render_grid_with_components(
         box_w = min(box_w, width // 2)
         box_h = min(box_h, height // 2)
 
-        sc, sr = w2s(comp.x, comp.y)
+        sc, sr = pct2s(comp.x, comp.y)
         # center the box on the component position
         left = sc - box_w // 2
         top = sr - box_h // 2
@@ -937,6 +937,30 @@ class BlueprintEngineWidget(Static):
         if bp:
             comp_positions: dict[str, tuple[float, float]] = {}
 
+            # Determine normalisation range → percentage (0-100).
+            # If the blueprint has explicit dimensions, use those.
+            # Otherwise, compute the bounding-box of all components.
+            dims = bp.dimensions
+            range_x = float(dims.length) if dims and dims.length > 0 else 0.0
+            range_y = float(dims.width) if dims and dims.width > 0 else 0.0
+
+            if range_x == 0 or range_y == 0:
+                # Auto-detect from positions
+                xs = [c.position[0] for c in bp.components]
+                ys = [c.position[1] for c in bp.components]
+                if xs:
+                    max_x = max(abs(v) for v in xs) or 1.0
+                    max_y = max(abs(v) for v in ys) or 1.0
+                    # If all values ≤ 100, assume already percentages
+                    if max_x <= 100 and max_y <= 100:
+                        range_x = range_x or 100.0
+                        range_y = range_y or 100.0
+                    else:
+                        range_x = range_x or max_x
+                        range_y = range_y or max_y
+                else:
+                    range_x, range_y = 100.0, 100.0
+
             for comp in bp.components:
                 node = self._engine.scene.get_node_by_component(comp.id)
                 if node:
@@ -948,20 +972,21 @@ class BlueprintEngineWidget(Static):
                     wx, wy = comp.position[0], comp.position[1]
                     bw, bh = 50, 50
 
-                # Scale world-units → screen chars (1 char ≈ 10 world units)
-                sx = wx / 10.0
-                sy = wy / 10.0
-                sw = max(bw / 10.0, 1)
-                sh = max(bh / 10.0, 1)
+                # Normalize to percentage (0-100) of blueprint extents
+                pct_x = wx / range_x * 100.0
+                pct_y = wy / range_y * 100.0
+                # Keep component box size proportional (min 5% for label)
+                sw = max(bw / range_x * 100.0, 5.0)
+                sh = max(bh / range_y * 100.0, 5.0)
 
-                comp_positions[comp.id] = (sx, sy)
+                comp_positions[comp.id] = (pct_x, pct_y)
 
                 render_comps.append(_RenderComponent(
                     id=comp.id,
                     name=comp.name,
                     comp_type=comp.type,
-                    x=sx,
-                    y=sy,
+                    x=pct_x,
+                    y=pct_y,
                     w=sw,
                     h=sh,
                     selected=comp.id in selected_ids,
