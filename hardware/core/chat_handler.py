@@ -589,9 +589,25 @@ class ChatHandler:
                 if context and len(context) > 20:
                     enhanced_message = f"[Context: {context}]\n\nUser: {message}"
 
-            llm_response = await self.llm.chat_with_tools(
-                enhanced_message, tools, history
-            )
+            try:
+                llm_response = await self.llm.chat_with_tools(
+                    enhanced_message, tools, history
+                )
+            except Exception as llm_exc:
+                # Groq may reject an invalid tool-call with a 400 error.
+                # Retry once without tools so the user at least gets a text
+                # response rather than an opaque crash.
+                err_msg = str(llm_exc)
+                if "400" in err_msg or "BadRequest" in type(llm_exc).__name__:
+                    logger.warning(
+                        "LLM tool-call rejected by provider, retrying without tools: %s",
+                        err_msg[:200],
+                    )
+                    llm_response = await self.llm.chat_with_tools(
+                        enhanced_message, [], history
+                    )
+                else:
+                    raise
             assistant_message = llm_response.get("message", {})
 
             tool_calls = assistant_message.get("tool_calls")

@@ -115,12 +115,11 @@ class BlueprintEditTool(BaseTool):
                     "description": "Edit action to perform on the blueprint.",
                 },
                 "component": {
-                    "type": "object",
+                    "type": ["object", "string"],
                     "description": (
-                        "Component object for add_component / modify_component.  "
-                        "Must include 'id' and 'name'.  Optional: type, position "
-                        "(x/y/z dict), rotation, dimensions, material, quantity, "
-                        "specifications, children."
+                        "Component object for add_component / modify_component "
+                        "(object with id, name, type, position, etc.), "
+                        "OR a component ID string for remove_component."
                     ),
                 },
                 "component_id": {
@@ -297,12 +296,74 @@ class BlueprintEditTool(BaseTool):
         data.setdefault("components", []).append(comp)
         return f"Added component '{comp['name']}' (id={comp['id']})."
 
+    @staticmethod
+    def _resolve_component_id(
+        components: list[dict], ref: str,
+    ) -> str | None:
+        """Resolve a component reference to its actual ID.
+
+        Tries (in order):
+        1. Exact ID match
+        2. Case-insensitive ID match
+        3. Exact name match
+        4. Case-insensitive name match
+        5. Normalized match (strip spaces, underscores, hyphens)
+        """
+        if not ref:
+            return None
+        ref_lower = ref.lower().strip()
+        ref_norm = ref_lower.replace(" ", "").replace("_", "").replace("-", "")
+
+        # 1 & 2: ID match
+        for c in components:
+            cid = c.get("id", "")
+            if cid == ref:
+                return cid
+        for c in components:
+            cid = c.get("id", "")
+            if cid.lower() == ref_lower:
+                return cid
+
+        # 3 & 4: Name match
+        for c in components:
+            if c.get("name", "") == ref:
+                return c.get("id", "")
+        for c in components:
+            if c.get("name", "").lower() == ref_lower:
+                return c.get("id", "")
+
+        # 5: Normalized match (handles "eye_2" vs "eye2", "Eye 1" vs "eye1")
+        for c in components:
+            cid_norm = c.get("id", "").lower().replace(" ", "").replace("_", "").replace("-", "")
+            cname_norm = c.get("name", "").lower().replace(" ", "").replace("_", "").replace("-", "")
+            if cid_norm == ref_norm or cname_norm == ref_norm:
+                return c.get("id", "")
+
+        return None
+
     def _remove_component(self, data: dict, kwargs: dict) -> str:
-        comp_id = kwargs.get("component_id", "")
-        if not comp_id:
+        comp_ref = kwargs.get("component_id", "")
+        # LLMs often send the ID via "component" as a string
+        if not comp_ref:
+            c = kwargs.get("component", "")
+            if isinstance(c, str) and c:
+                comp_ref = c
+            elif isinstance(c, dict) and "id" in c:
+                comp_ref = c["id"]
+            elif isinstance(c, dict) and "name" in c:
+                comp_ref = c["name"]
+        if not comp_ref:
             return "Error: 'component_id' is required."
 
         components: list = data.get("components", [])
+        comp_id = self._resolve_component_id(components, comp_ref)
+        if not comp_id:
+            available = ", ".join(
+                f"'{c.get('id')}' ({c.get('name', '?')})"
+                for c in components
+            )
+            return f"Error: Component '{comp_ref}' not found. Available: {available}"
+
         before = len(components)
         data["components"] = [c for c in components if c.get("id") != comp_id]
         removed = before - len(data["components"])
@@ -326,14 +387,25 @@ class BlueprintEditTool(BaseTool):
         return f"Removed component '{comp_id}'.{extra}"
 
     def _modify_component(self, data: dict, kwargs: dict) -> str:
-        comp_id = kwargs.get("component_id", "")
+        comp_ref = kwargs.get("component_id", "")
         updates = kwargs.get("component")
-        if not comp_id:
+        if not comp_ref and isinstance(updates, dict) and "id" in updates:
+            comp_ref = updates["id"]
+        if not comp_ref:
             return "Error: 'component_id' is required."
         if not updates or not isinstance(updates, dict):
             return "Error: 'component' object with updated fields is required."
 
-        for comp in data.get("components", []):
+        components = data.get("components", [])
+        comp_id = self._resolve_component_id(components, comp_ref)
+        if not comp_id:
+            available = ", ".join(
+                f"'{c.get('id')}' ({c.get('name', '?')})"
+                for c in components
+            )
+            return f"Error: Component '{comp_ref}' not found. Available: {available}"
+
+        for comp in components:
             if comp.get("id") == comp_id:
                 for key, value in updates.items():
                     if key != "id":  # Don't let caller change the ID
