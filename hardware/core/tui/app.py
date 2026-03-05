@@ -618,14 +618,20 @@ class JarvisTUI(App):
                 )
 
             # Route to orchestrator or direct LLM
-            # Call the async router directly to avoid asyncio.run() inside
-            # an already-running event loop (Textual's).
-            use_orchestrator = await (
-                self.chat_handler._orchestration_router
-                .should_use_orchestrator_async(
-                    text, self.chat_handler._llm
+            # When a blueprint is open, ALWAYS go direct so the LLM can
+            # call edit_blueprint for drawing / component / reset changes.
+            # Orchestrator doesn't use edit_blueprint and will just chat.
+            if self.blueprint_active:
+                use_orchestrator = False
+            else:
+                # Call the async router directly to avoid asyncio.run()
+                # inside an already-running event loop (Textual's).
+                use_orchestrator = await (
+                    self.chat_handler._orchestration_router
+                    .should_use_orchestrator_async(
+                        text, self.chat_handler._llm
+                    )
                 )
-            )
             if use_orchestrator:
                 self._update_status("Multi-agent processing…")
                 response = await self.chat_handler._process_with_orchestrator(text)

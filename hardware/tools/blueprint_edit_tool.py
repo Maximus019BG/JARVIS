@@ -77,7 +77,9 @@ class BlueprintEditTool(BaseTool):
             "add_connection, remove_connection, set_dimensions, "
             "set_name, add_note, add_tag, "
             "add_line, add_circle, add_rect, add_arc, add_text, "
-            "clear_drawings, list."
+            "clear_drawings, reset, list.  "
+            "Use 'reset' to restore the blueprint to a blank state "
+            "(keeps metadata, clears all components, connections and drawings)."
         )
 
     def schema_parameters(self) -> dict[str, Any]:
@@ -110,6 +112,7 @@ class BlueprintEditTool(BaseTool):
                         "add_arc",
                         "add_text",
                         "clear_drawings",
+                        "reset",
                         "list",
                     ],
                     "description": "Edit action to perform on the blueprint.",
@@ -230,6 +233,7 @@ class BlueprintEditTool(BaseTool):
             "add_arc": self._add_arc,
             "add_text": self._add_text,
             "clear_drawings": self._clear_drawings,
+            "reset": self._reset,
             "list": self._list,
         }
 
@@ -619,6 +623,38 @@ class BlueprintEditTool(BaseTool):
             data[key] = []
         total = sum(counts.values())
         return f"Cleared {total} drawing primitives ({counts})."
+
+    def _reset(self, data: dict, _kwargs: dict) -> str:
+        """Reset the blueprint to a blank state.
+
+        Keeps identity & metadata (id, type, name, description, created,
+        author, version, sync, security, dimensions).  Clears everything else:
+        components, connections, drawings, notes, tags, materials.
+        """
+        cleared: list[str] = []
+
+        for key, label in (
+            ("components", "components"),
+            ("connections", "connections"),
+            ("materials", "materials"),
+            ("notes", "notes"),
+            ("tags", "tags"),
+            ("lines", "lines"),
+            ("circles", "circles"),
+            ("rects", "rects"),
+            ("arcs", "arcs"),
+            ("texts", "texts"),
+        ):
+            items = data.get(key, [])
+            if items:
+                cleared.append(f"{len(items)} {label}")
+                data[key] = []
+
+        if not cleared:
+            return "Blueprint is already empty — nothing to reset."
+
+        data["version"] = data.get("version", 0) + 1
+        return f"Reset blueprint. Cleared: {', '.join(cleared)}."
 
     # ── List handler ─────────────────────────────────────────────
 

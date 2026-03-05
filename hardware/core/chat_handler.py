@@ -536,7 +536,7 @@ class ChatHandler:
         r"|show|display|available|import"
         # Blueprint / drawing editing verbs & nouns
         r"|add|remove|delete|modify|edit|change|move|draw|place|put|set|clear"
-        r"|rename|resize|rotate|connect|disconnect"
+        r"|rename|resize|rotate|connect|disconnect|reset|restore|blank|wipe"
         r"|line|circle|rect(?:angle)?|arc|text|component|connection|dimension"
         r"|color|position|label|name)\b",
         re.IGNORECASE,
