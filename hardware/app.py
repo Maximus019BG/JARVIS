@@ -49,6 +49,7 @@ from tools.live_assistance_tool import LiveAssistanceTool
 from tools.load_blueprint_tool import LoadBlueprintTool
 from tools.quit_tool import QuitTool
 from tools.read_file_tool import ReadFileTool
+from tools.run_script_tool import RunScriptTool
 from tools.save_profile_tool import SaveProfileTool
 from tools.smart_mode_tool import SmartModeTool
 from tools.view_stats_tool import ViewStatsTool
@@ -102,6 +103,9 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     registry.register_tool(BlueprintEditTool())
     registry.register_tool(DeleteBlueprintTool())
     registry.register_tool(ImportBlueprintTool())
+
+    # Code tools
+    registry.register_tool(RunScriptTool())
 
     # Assistance tools
     registry.register_tool(LiveAssistanceTool())

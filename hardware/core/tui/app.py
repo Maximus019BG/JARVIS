@@ -304,6 +304,70 @@ Vertical > ScrollBar {{
     text-style: bold;
     padding: 0 1;
     text-align: center;
+}}
+
+/* ── Code Engine Pane ──────────────────────────────────────────── */
+#code-pane {{
+    width: 1fr;
+    height: 100%;
+    background: {BG_DARK};
+    border-right: solid {ACCENT_DIM};
+    display: none;
+}}
+
+#code-pane.visible {{
+    display: block;
+}}
+
+#split-container.code-active #chat-pane {{
+    width: 1fr;
+}}
+
+#split-container.code-active #code-pane {{
+    width: 2fr;
+    display: block;
+}}
+
+#code-header {{
+    height: 1;
+    dock: top;
+    background: {BG_SURFACE};
+    color: {ACCENT};
+    text-style: bold;
+    padding: 0 1;
+}}
+
+#code-source-divider, #code-output-divider {{
+    height: 1;
+    background: {BG_SURFACE};
+    padding: 0 1;
+}}
+
+#code-source-view {{
+    height: 1fr;
+    background: {BG_DARK};
+    padding: 0 1;
+    overflow-y: auto;
+}}
+
+#code-output-view {{
+    height: 1fr;
+    background: #0d0e10;
+    padding: 0 1;
+    overflow-y: auto;
+}}
+
+#code-status {{
+    height: 1;
+    dock: bottom;
+    background: {BG_SURFACE};
+    color: {TEXT_DIM};
+    padding: 0 1;
+}}
+
+#code-engine-widget {{
+    width: 100%;
+    height: 100%;
 }}"""
 
 
@@ -361,12 +425,14 @@ class JarvisTUI(App):
         Binding("ctrl+l", "clear_chat", "Clear chat", show=True),
         Binding("ctrl+s", "show_status", "Status", show=True),
         Binding("ctrl+b", "toggle_blueprint", "Toggle Blueprint", show=True),
+        Binding("ctrl+d", "toggle_code", "Toggle Code", show=True),
         Binding("f5", "toggle_render_mode", "Pixel/Char", show=True),
         Binding("escape", "focus_input", "Focus input", show=False),
     ]
 
     is_processing = reactive(False)
     blueprint_active = reactive(False)
+    code_active = reactive(False)
 
     def __init__(
         self,
@@ -385,11 +451,14 @@ class JarvisTUI(App):
         self.memory_active = memory_active
         self._engine: BlueprintEngine | None = None
         self._engine_widget = None
+        self._code_engine = None
+        self._code_widget = None
 
     # ── Layout ────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
         from core.tui.blueprint_widget import BlueprintEngineWidget
+        from core.tui.code_widget import CodeEngineWidget
 
         yield Header(show_clock=True)
 
@@ -415,10 +484,11 @@ class JarvisTUI(App):
                 yield Label("  /clear   – reset", classes="sidebar-item")
                 yield Label("  /help    – help", classes="sidebar-item")
                 yield Label("  /blueprint – toggle", classes="sidebar-item")
+                yield Label("  /code    – toggle", classes="sidebar-item")
                 yield Label("  /view     – render", classes="sidebar-item")
                 yield Label("  /quit    – exit", classes="sidebar-item")
 
-            # Split container: blueprint pane (left) + chat pane (right)
+            # Split container: blueprint pane (left) + code pane (left) + chat pane (right)
             with Horizontal(id="split-container"):
                 # Blueprint engine pane (hidden by default)
                 with Vertical(id="blueprint-pane"):
@@ -426,6 +496,10 @@ class JarvisTUI(App):
                         "⬡ Blueprint Engine", id="bp-header"
                     )
                     yield BlueprintEngineWidget(id="bp-engine-widget")
+
+                # Code engine pane (hidden by default)
+                with Vertical(id="code-pane"):
+                    yield CodeEngineWidget(id="code-engine-widget")
 
                 # Chat pane (always visible)
                 with Vertical(id="chat-pane"):
@@ -491,6 +565,13 @@ class JarvisTUI(App):
             self._close_blueprint_pane()
         else:
             self._open_blueprint_pane()
+
+    def action_toggle_code(self) -> None:
+        """Toggle the code engine pane visibility."""
+        if self.code_active:
+            self._close_code_pane()
+        else:
+            self._open_code_pane()
 
     def action_toggle_render_mode(self) -> None:
         """Toggle blueprint viewport between char and pixel render modes."""
@@ -579,6 +660,9 @@ class JarvisTUI(App):
         if text.lower() in ("/view", "/pixel", "/render"):
             self.action_toggle_render_mode()
             return
+        if text.lower() in ("/code",):
+            self.action_toggle_code()
+            return
 
         # Natural-language "open <blueprint>" shortcut
         open_match = _OPEN_BLUEPRINT_RE.match(text)
@@ -629,8 +713,18 @@ class JarvisTUI(App):
                 r"|blueprint|bedroom|room|floor|bulb|battery|wiring)\b",
                 re.IGNORECASE,
             )
+            # Detect coding/scripting requests so we route to the run_script tool
+            _CODE_REQUEST_RE = re.compile(
+                r"\b(?:write|create|make|code|script|program|build|generate)\b.*"
+                r"\b(?:python|script|program|code|function|class|app|game"
+                r"|calculator|sorter|converter|tool|utility|bot)\b"
+                r"|\b(?:run|execute)\b.*\b(?:script|code|program|python)\b"
+                r"|\bpython\s+(?:script|program|code|that|which|to)\b",
+                re.IGNORECASE,
+            )
             wants_create_design = bool(_CREATE_DESIGN_RE.search(text))
-            if self.blueprint_active or wants_create_design:
+            wants_code = bool(_CODE_REQUEST_RE.search(text)) or self.code_active
+            if self.blueprint_active or wants_create_design or wants_code:
                 use_orchestrator = False
             else:
                 # Call the async router directly to avoid asyncio.run()
@@ -657,7 +751,7 @@ class JarvisTUI(App):
                         bp_path = str(fp)
                 response = await self.chat_handler.process_message(
                     text,
-                    force_tools=self.blueprint_active or wants_create_design,
+                    force_tools=self.blueprint_active or wants_create_design or wants_code,
                     active_blueprint_path=bp_path,
                 )
 
@@ -932,6 +1026,64 @@ class JarvisTUI(App):
         self.blueprint_active = False
         self._append_system("Blueprint engine closed.")
 
+    # ── Code engine pane ──────────────────────────────────────────
+
+    def _open_code_pane(
+        self,
+        script_name: str = "",
+        source: str = "",
+        output: str = "",
+        ok: bool | None = None,
+    ) -> None:
+        """Open the code engine pane in split view."""
+        try:
+            code_pane = self.query_one("#code-pane", Vertical)
+            split = self.query_one("#split-container", Horizontal)
+        except NoMatches:
+            return
+
+        # Close blueprint pane if open to avoid clutter
+        if self.blueprint_active:
+            self._close_blueprint_pane()
+
+        code_pane.add_class("visible")
+        split.add_class("code-active")
+        self.code_active = True
+
+        # Initialise engine + widget references
+        if self._code_engine is None:
+            from core.code.engine import CodeEngine
+            self._code_engine = CodeEngine()
+
+        try:
+            from core.tui.code_widget import CodeEngineWidget
+            widget = self.query_one("#code-engine-widget", CodeEngineWidget)
+            widget.engine = self._code_engine
+            self._code_widget = widget
+        except NoMatches:
+            pass
+
+        if source and self._code_widget:
+            self._code_widget.show_script(script_name, source, output, ok)
+
+        self._append_system(
+            "Code engine opened. Source + output view on the left, chat on the right. "
+            "Use Ctrl+D or /code to toggle."
+        )
+
+    def _close_code_pane(self) -> None:
+        """Close the code engine pane."""
+        try:
+            code_pane = self.query_one("#code-pane", Vertical)
+            split = self.query_one("#split-container", Horizontal)
+        except NoMatches:
+            return
+
+        code_pane.remove_class("visible")
+        split.remove_class("code-active")
+        self.code_active = False
+        self._append_system("Code engine closed.")
+
     def _find_latest_blueprint(self) -> str | None:
         """Return the path of the most recently modified .jarvis file, or None."""
         from pathlib import Path as _Path
@@ -1086,11 +1238,10 @@ class JarvisTUI(App):
                 )
 
     def _handle_tool_result_for_engine(self, result: Any) -> None:
-        """Check if a tool result signals to open the blueprint engine.
+        """Check if a tool result signals to open the blueprint or code engine.
 
-        Called after tool execution to detect create/load/edit blueprint results.
-        Opens the engine pane if needed, and reloads the file if the engine
-        already has a blueprint open (e.g. after ``edit_blueprint``).
+        Called after tool execution to detect create/load/edit blueprint results
+        and run_script results. Opens the appropriate pane if needed.
         """
         if not hasattr(result, "error_details") or not result.error_details:
             return
@@ -1099,6 +1250,7 @@ class JarvisTUI(App):
         if not isinstance(meta, dict):
             return
 
+        # Blueprint engine signals
         if meta.get("open_engine"):
             bp_path = meta.get("blueprint_path")
             bp_name = meta.get("blueprint_name", "")
@@ -1108,6 +1260,24 @@ class JarvisTUI(App):
             elif bp_path:
                 # Engine already open — reload file (handles edits)
                 self._load_blueprint_into_engine(bp_path)
+
+        # Code engine signals
+        if meta.get("open_code_engine"):
+            script_name = meta.get("script_name", "script")
+            source = meta.get("source", "")
+            output = meta.get("output", "")
+            execution_ok = meta.get("execution_ok")
+            if not self.code_active:
+                self._open_code_pane(
+                    script_name=f"{script_name}.py",
+                    source=source,
+                    output=output,
+                    ok=execution_ok,
+                )
+            elif self._code_widget:
+                self._code_widget.show_script(
+                    f"{script_name}.py", source, output, execution_ok,
+                )
 
     # ── Session cleanup ───────────────────────────────────────────
 

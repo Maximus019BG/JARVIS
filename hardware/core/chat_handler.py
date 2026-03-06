@@ -167,6 +167,17 @@ Always make diagrams visually clear with proper spacing, labels, and colors:
 - Use color="white" for walls/text labels
 - Keep margins ~5-10% from edges
 - ALWAYS add text labels for every significant element
+
+CODING / SCRIPTING:
+When the user asks you to write, create, or code a Python script/program:
+- Use the run_script tool with a descriptive "name" and the full Python "code".
+- The script is saved to data/code/<name>.py and executed automatically.
+- The TUI will open a split-pane showing the source code and console output.
+- Write COMPLETE, RUNNABLE scripts — include all imports and a proper entrypoint.
+- Use print() to show output so it appears in the console.
+- Keep scripts self-contained: no external files or user input required.
+- If the user asks to "run" or "execute" an existing script, describe what it does.
+- Add clear comments explaining what each section does.
 """
 
 
@@ -683,7 +694,10 @@ class ChatHandler:
         r"|color|position|label|name"
         # Creative / domain-specific triggers
         r"|schema(?:tic)?|circuit|electric(?:al|ity)?|bulb|battery|wir(?:e|ing)"
-        r"|plan|floor|bedroom|room|layout|diagram|design|sketch)\b",
+        r"|plan|floor|bedroom|room|layout|diagram|design|sketch"
+        # Coding / scripting triggers
+        r"|program|script|function|class|calculator"
+        r"|sorter|converter|utility|bot|fibonacci|hello.?world)\b",
         re.IGNORECASE,
     )
 
