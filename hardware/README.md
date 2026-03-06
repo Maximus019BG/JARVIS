@@ -75,6 +75,16 @@ Note: Requires PyInstaller. The build folder contains the output.
 
 Start the app with `python app.py` and interact via natural language commands. Type 'help' to see available tools.
 
+## Switching hardware sync target (localhost ↔ domain)
+
+Use a single env var in `hardware/.env`:
+
+- `SYNC_API_BASE_URL=http://localhost:3000` (local server)
+- `SYNC_API_BASE_URL=https://your-domain.com` (remote server)
+
+The app reads this value on startup via config and uses it for all sync APIs.
+Legacy `JARVIS_SYNC_SERVER_URL` is still accepted when `SYNC_API_BASE_URL` is not set.
+
 ## Extending
 
 To add new tools, create a new tool class in `tools/`, inheriting from the base tool class, and register it in `app.py`.

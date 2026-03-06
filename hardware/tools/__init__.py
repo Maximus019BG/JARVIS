@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from .connection_info_tool import ConnectionInfoTool
     from .execute_code_tool import ExecuteCodeTool
     from .memory_tools import ForgetTool, MemoryStatsTool, RecallTool, RememberTool
     from .resolve_conflict_tool import ResolveConflictTool
@@ -27,6 +28,7 @@ __all__ = [
     "SyncQueueTool",
     "SyncStatusTool",
     "ResolveConflictTool",
+    "ConnectionInfoTool",
     # Code execution
     "ExecuteCodeTool",
     # Web tools
@@ -102,6 +104,7 @@ class LazyToolRegistry:
                 self.get_tool("SyncQueueTool"),
                 self.get_tool("SyncStatusTool"),
                 self.get_tool("ResolveConflictTool"),
+                self.get_tool("ConnectionInfoTool"),
             ]
         return self._sync_tools
 
@@ -181,6 +184,10 @@ def _get_tool_registry() -> LazyToolRegistry:
         _tool_registry.register_factory(
             "ResolveConflictTool",
             lambda: _import_and_create("resolve_conflict_tool", "ResolveConflictTool"),
+        )
+        _tool_registry.register_factory(
+            "ConnectionInfoTool",
+            lambda: _import_and_create("connection_info_tool", "ConnectionInfoTool"),
         )
         _tool_registry.register_factory(
             "ExecuteCodeTool",
