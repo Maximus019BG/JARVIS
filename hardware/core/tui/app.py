@@ -425,7 +425,7 @@ class JarvisTUI(App):
         Binding("ctrl+l", "clear_chat", "Clear chat", show=True),
         Binding("ctrl+s", "show_status", "Status", show=True),
         Binding("ctrl+b", "toggle_blueprint", "Toggle Blueprint", show=True),
-        Binding("ctrl+d", "toggle_code", "Toggle Code", show=True),
+        Binding("ctrl+d", "toggle_code", "Toggle Code", show=True, priority=True),
         Binding("f5", "toggle_render_mode", "Pixel/Char", show=True),
         Binding("escape", "focus_input", "Focus input", show=False),
     ]
