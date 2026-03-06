@@ -718,8 +718,14 @@ class JarvisTUI(App):
                 r"\b(?:write|create|make|code|script|program|build|generate)\b.*"
                 r"\b(?:python|script|program|code|function|class|app|game"
                 r"|calculator|sorter|converter|tool|utility|bot)\b"
-                r"|\b(?:run|execute)\b.*\b(?:script|code|program|python)\b"
-                r"|\bpython\s+(?:script|program|code|that|which|to)\b",
+                r"|\b(?:run|execute|open|launch)\b.*\b(?:script|code|program|python)\b"
+                r"|\bpython\s+(?:script|program|code|that|which|to)\b"
+                # Catch short follow-up requests when code pane is already open
+                r"|\b(?:create|make|write|code|generate)\b.*\b(?:new|another|one|it|that|this)\b"
+                r"|\b(?:new|another)\b.*\b(?:script|file|program|one)\b"
+                # Catch "open/run it", "run <name>", "execute it"
+                r"|\b(?:run|execute|open|launch)\b.*\b(?:it|that|this|the)\b"
+                r"|\b(?:open|run|execute)\b\s+\w+\.py\b",
                 re.IGNORECASE,
             )
             wants_create_design = bool(_CREATE_DESIGN_RE.search(text))
@@ -749,8 +755,19 @@ class JarvisTUI(App):
                     fp = self._engine.state.file_path
                     if fp:
                         bp_path = str(fp)
+                # When code engine is open, prepend a context hint so the
+                # LLM knows to use run_script instead of pasting code in chat.
+                effective_text = text
+                if self.code_active:
+                    effective_text = (
+                        "[Code engine is active — ALWAYS use the run_script tool. "
+                        "To CREATE a new script: run_script(name=..., code=...). "
+                        "To OPEN/RUN an existing script: run_script(name=...) without code. "
+                        "Never paste code as plain text.]"
+                        f"\n\nUser: {text}"
+                    )
                 response = await self.chat_handler.process_message(
-                    text,
+                    effective_text,
                     force_tools=self.blueprint_active or wants_create_design or wants_code,
                     active_blueprint_path=bp_path,
                 )

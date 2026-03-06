@@ -28,11 +28,12 @@ class RunScriptTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Create a Python script file and optionally run it. "
-            "The file is saved to data/code/<name>.py. "
-            "Returns the source code and execution output. "
-            "Use this when the user asks you to write, create, code, "
-            "or run a Python script/program."
+            "Create a new Python script OR open and run an existing one. "
+            "To CREATE: provide both 'name' and 'code'. "
+            "To OPEN/RUN an existing script: provide only 'name' (no 'code'). "
+            "Scripts live in data/code/<name>.py. "
+            "Use this when the user asks to write, create, open, run, "
+            "or execute a Python script/program."
         )
 
     def schema_parameters(self) -> dict[str, Any]:
@@ -48,7 +49,10 @@ class RunScriptTool(BaseTool):
                 },
                 "code": {
                     "type": "string",
-                    "description": "The full Python source code for the script.",
+                    "description": (
+                        "The full Python source code for the script. "
+                        "OMIT this to open and run an existing script by name."
+                    ),
                 },
                 "run": {
                     "type": "boolean",
@@ -56,7 +60,7 @@ class RunScriptTool(BaseTool):
                     "default": True,
                 },
             },
-            "required": ["name", "code"],
+            "required": ["name"],
         }
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -74,17 +78,32 @@ class RunScriptTool(BaseTool):
                 tool=self.name,
                 error_type="MissingName",
             )
-        if not code:
-            return ToolResult.fail(
-                "Code is required.",
-                tool=self.name,
-                error_type="MissingCode",
-            )
 
         from core.code.engine import CodeEngine
 
         engine = CodeEngine()
-        path = engine.save_script(script_name, code)
+
+        # ── Create vs. Open existing ──────────────────────────────
+        if code:
+            # New script: save then optionally run
+            path = engine.save_script(script_name, code)
+            action = "created"
+        else:
+            # Open existing script by name
+            loaded = engine.load_script(script_name)
+            if not loaded:
+                # Try with .py suffix
+                loaded = engine.load_script(f"{script_name}.py")
+            if not loaded:
+                return ToolResult.fail(
+                    f"Script '{script_name}' not found in data/code/. "
+                    f"Use list_data(category='code') to see available scripts.",
+                    tool=self.name,
+                    error_type="NotFound",
+                )
+            path = engine.state.file_path
+            code = engine.state.source
+            action = "opened"
 
         output = ""
         run_ok = True
@@ -95,7 +114,6 @@ class RunScriptTool(BaseTool):
                 loop = None
 
             if loop and loop.is_running():
-                # We're inside an async context (TUI) — use a thread
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     result = pool.submit(
@@ -108,14 +126,14 @@ class RunScriptTool(BaseTool):
             run_ok = result.ok
 
         # Build a nice summary
-        lines = [f"Script saved: {path}"]
+        summary_lines = [f"Script {action}: {path}"]
         if should_run:
             status = "✓ Success" if run_ok else "✗ Error"
-            lines.append(f"Execution: {status}")
-            lines.append(f"Output:\n{output}")
+            summary_lines.append(f"Execution: {status}")
+            summary_lines.append(f"Output:\n{output}")
 
         return ToolResult.ok_result(
-            "\n".join(lines),
+            "\n".join(summary_lines),
             tool=self.name,
             # Signal TUI to open code pane
             open_code_engine=True,

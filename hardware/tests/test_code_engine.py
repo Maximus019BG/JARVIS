@@ -132,11 +132,45 @@ class TestRunScriptTool:
         assert not result.ok
         assert "name" in result.content.lower()
 
-    def test_missing_code(self):
+    def test_missing_code_opens_existing(self, tmp_path: Path, monkeypatch):
+        """When code is omitted, the tool tries to load an existing script."""
+        monkeypatch.setattr("core.code.engine.CODE_DIR", tmp_path)
+        # No file exists → should fail with NotFound
         tool = RunScriptTool()
-        result = tool.execute(name="test")
+        result = tool.execute(name="nonexistent")
         assert not result.ok
-        assert "code" in result.content.lower()
+        assert "not found" in result.content.lower()
+
+    def test_open_existing_script(self, tmp_path: Path, monkeypatch):
+        """Open and run an existing script by name (no code arg)."""
+        monkeypatch.setattr("core.code.engine.CODE_DIR", tmp_path)
+        # Pre-create the script
+        (tmp_path / "greet.py").write_text('print("hello from greet")', encoding="utf-8")
+        tool = RunScriptTool()
+        result = tool.execute(name="greet")
+        assert result.ok
+        assert "hello from greet" in result.content
+        assert result.error_details["open_code_engine"] is True
+        assert "greet" in result.error_details["script_name"]
+
+    def test_open_existing_with_py_suffix(self, tmp_path: Path, monkeypatch):
+        """User can pass 'greet.py' and it still works."""
+        monkeypatch.setattr("core.code.engine.CODE_DIR", tmp_path)
+        (tmp_path / "greet.py").write_text('print("hey")', encoding="utf-8")
+        tool = RunScriptTool()
+        result = tool.execute(name="greet.py")
+        assert result.ok
+
+    def test_open_existing_no_run(self, tmp_path: Path, monkeypatch):
+        """Open without running (run=False)."""
+        monkeypatch.setattr("core.code.engine.CODE_DIR", tmp_path)
+        (tmp_path / "calc.py").write_text("x = 42\nprint(x)", encoding="utf-8")
+        tool = RunScriptTool()
+        result = tool.execute(name="calc", run=False)
+        assert result.ok
+        assert "opened" in result.content.lower()
+        # Source should have been loaded
+        assert "x = 42" in result.error_details["source"]
 
     def test_save_and_run(self, tmp_path: Path, monkeypatch):
         """Test that the tool saves and runs a script."""
@@ -160,7 +194,7 @@ class TestRunScriptTool:
         tool = RunScriptTool()
         result = tool.execute(name="norun", code="x = 1", run=False)
         assert result.ok
-        assert "Saved" in result.content or "saved" in result.content.lower()
+        assert "created" in result.content.lower()
         assert (tmp_path / "norun.py").exists()
 
 

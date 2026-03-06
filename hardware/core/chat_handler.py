@@ -168,16 +168,37 @@ Always make diagrams visually clear with proper spacing, labels, and colors:
 - Keep margins ~5-10% from edges
 - ALWAYS add text labels for every significant element
 
+DATA DIRECTORY:
+The user's work is stored in the data/ directory:
+- data/code/      — Python scripts created via run_script
+- data/blueprints/ — .jarvis blueprint files
+When the user asks what files, scripts, or blueprints they have, use list_data.
+When the user asks to find a script that does X, or which blueprint contains Y, use search_data.
+NEVER guess which files exist — always call list_data or search_data first.
+
 CODING / SCRIPTING:
-When the user asks you to write, create, or code a Python script/program:
-- Use the run_script tool with a descriptive "name" and the full Python "code".
-- The script is saved to data/code/<name>.py and executed automatically.
-- The TUI will open a split-pane showing the source code and console output.
+The run_script tool has TWO modes:
+1. CREATE new script: call run_script(name="...", code="...") — saves and runs.
+2. OPEN existing script: call run_script(name="...") WITHOUT code — loads and runs.
+
+When the user asks to WRITE, CREATE, CODE, or GENERATE a new script:
+- Call run_script with both "name" and "code".
 - Write COMPLETE, RUNNABLE scripts — include all imports and a proper entrypoint.
 - Use print() to show output so it appears in the console.
 - Keep scripts self-contained: no external files or user input required.
-- If the user asks to "run" or "execute" an existing script, describe what it does.
 - Add clear comments explaining what each section does.
+
+When the user asks to OPEN, RUN, EXECUTE, or SHOW an existing script:
+- Call run_script with ONLY "name" (the filename without .py), NO "code".
+- The tool will load the existing file from data/code/ and run it.
+- If you don't know the exact name, call list_data(category="code") FIRST.
+
+IMPORTANT RULES:
+- ALWAYS use run_script for ANY code action. NEVER paste code as plain chat text.
+- The TUI opens a split-pane showing the source code and console output.
+- If the code engine is already open, STILL use run_script for new or existing scripts.
+- The ONLY time you should show code in chat (not via tool) is when the user asks
+  you to EXPLAIN code or asks a theoretical coding question.
 """
 
 
@@ -685,6 +706,7 @@ class ChatHandler:
     _TOOL_HINT_RE = re.compile(
         r"\b(?:file|read|write|save|load|create|blueprints?|execute|run|shell|search"
         r"|remember|recall|forget|memory|code|script|theme|profile|stats|sync"
+        r"|data|browse|find|which|what.*have|my files|my scripts|my blueprints"
         r"|send|update|resolve|conflict|web|fetch|summarize|extract|list|open"
         r"|show|display|available|import"
         # Blueprint / drawing editing verbs & nouns

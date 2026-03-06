@@ -45,12 +45,14 @@ from tools.edit_profile_tool import EditProfileTool
 from tools.help_tool import HelpTool
 from tools.import_blueprint_tool import ImportBlueprintTool
 from tools.list_blueprints_tool import ListBlueprintsTool
+from tools.list_data_tool import ListDataTool
 from tools.live_assistance_tool import LiveAssistanceTool
 from tools.load_blueprint_tool import LoadBlueprintTool
 from tools.quit_tool import QuitTool
 from tools.read_file_tool import ReadFileTool
 from tools.run_script_tool import RunScriptTool
 from tools.save_profile_tool import SaveProfileTool
+from tools.search_data_tool import SearchDataTool
 from tools.smart_mode_tool import SmartModeTool
 from tools.view_stats_tool import ViewStatsTool
 from tools.write_file_tool import WriteFileTool
@@ -106,6 +108,10 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
 
     # Code tools
     registry.register_tool(RunScriptTool())
+
+    # Data browsing tools
+    registry.register_tool(ListDataTool())
+    registry.register_tool(SearchDataTool())
 
     # Assistance tools
     registry.register_tool(LiveAssistanceTool())
