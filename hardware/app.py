@@ -55,6 +55,7 @@ from tools.save_profile_tool import SaveProfileTool
 from tools.search_data_tool import SearchDataTool
 from tools.smart_mode_tool import SmartModeTool
 from tools.connection_info_tool import ConnectionInfoTool
+from tools.list_devices_tool import ListDevicesTool
 from tools.view_stats_tool import ViewStatsTool
 from tools.write_file_tool import WriteFileTool
 
@@ -126,6 +127,7 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
 
     # Connection info
     registry.register_tool(ConnectionInfoTool())
+    registry.register_tool(ListDevicesTool())
 
     # File access tools (with security)
     registry.register_tool(ReadFileTool(security_manager))
