@@ -1,33 +1,34 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '~/server/db';
-import { blueprint, syncLog } from '~/server/db/schemas/blueprint';
-import { syncLogger } from '~/lib/syncLogger';
-import { verifyDeviceToken } from '~/lib/device-auth';
-import { verifyHMACSignature } from '~/lib/hmac-verify';
-import { replayProtection } from '~/middleware/replay-protection';
-import { eq } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "~/server/db";
+import { blueprint, syncLog } from "~/server/db/schemas/blueprint";
+import { syncLogger } from "~/lib/syncLogger";
+import { verifyDeviceToken } from "~/lib/device-auth";
+import { verifyHMACSignature } from "~/lib/hmac-verify";
+import { replayProtection } from "~/middleware/replay-protection";
+import { env } from "~/env";
+import { eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    const deviceId = request.headers.get('X-Device-Id');
-    const timestamp = request.headers.get('X-Timestamp');
-    const nonce = request.headers.get('X-Nonce');
-    const signature = request.headers.get('X-Signature');
+    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+    const deviceId = request.headers.get("X-Device-Id");
+    const timestamp = request.headers.get("X-Timestamp");
+    const nonce = request.headers.get("X-Nonce");
+    const signature = request.headers.get("X-Signature");
 
     if (!token || !deviceId || !timestamp || !nonce || !signature) {
       return NextResponse.json(
-        { error: 'Missing required headers' },
-        { status: 400 }
+        { error: "Missing required headers" },
+        { status: 400 },
       );
     }
 
     const claims = await verifyDeviceToken(token);
     if (!claims || claims.deviceId !== deviceId) {
       return NextResponse.json(
-        { error: 'Invalid device token' },
-        { status: 401 }
+        { error: "Invalid device token" },
+        { status: 401 },
       );
     }
 
@@ -36,54 +37,48 @@ export async function POST(request: NextRequest) {
       return replayResult;
     }
 
-    const hmacSecret = process.env.BLUEPRINT_SYNC_HMAC_SECRET;
+    const hmacSecret = env.BLUEPRINT_SYNC_HMAC_SECRET;
     if (!hmacSecret) {
       return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
+        { error: "Server configuration error" },
+        { status: 500 },
       );
     }
 
     const body = await request.json();
     if (!verifyHMACSignature(body, timestamp, nonce, signature, hmacSecret)) {
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     const { blueprintId, localVersion } = body;
 
     if (!blueprintId) {
       return NextResponse.json(
-        { error: 'blueprintId is required' },
-        { status: 400 }
+        { error: "blueprintId is required" },
+        { status: 400 },
       );
     }
 
     const bp = await db.query.blueprint.findFirst({
-      where: eq(blueprint.id, blueprintId)
+      where: eq(blueprint.id, blueprintId),
     });
 
     if (!bp) {
       return NextResponse.json(
-        { error: 'Blueprint not found' },
-        { status: 404 }
+        { error: "Blueprint not found" },
+        { status: 404 },
       );
     }
 
     // Check if workstation matches
     if (bp.workstationId !== claims.workstationId) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // Parse metadata
     let data;
     try {
-      data = JSON.parse(bp.metadata || '{}');
+      data = JSON.parse(bp.metadata || "{}");
     } catch {
       data = {};
     }
@@ -93,15 +88,15 @@ export async function POST(request: NextRequest) {
       id: nanoid(),
       blueprintId,
       deviceId,
-      action: 'pull',
-      direction: 'to_device',
-      status: 'success',
+      action: "pull",
+      direction: "to_device",
+      status: "success",
       versionBefore: localVersion,
       versionAfter: bp.version,
-      createdAt: new Date()
+      createdAt: new Date(),
     });
 
-    syncLogger.info('blueprint.pull.success', {
+    syncLogger.info("blueprint.pull.success", {
       blueprintId,
       deviceId,
       workstationId: claims.workstationId,
@@ -117,17 +112,17 @@ export async function POST(request: NextRequest) {
         data,
         version: bp.version,
         hash: bp.hash,
-        lastModified: bp.updatedAt || bp.createdAt
-      }
+        lastModified: bp.updatedAt || bp.createdAt,
+      },
     });
   } catch (error) {
-    syncLogger.error('blueprint.pull.error', {
+    syncLogger.error("blueprint.pull.error", {
       error: error instanceof Error ? error.message : String(error),
     });
-    console.error('Pull blueprint error:', error);
+    console.error("Pull blueprint error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

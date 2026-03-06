@@ -1,12 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '~/server/db';
-import { device } from '~/server/db/schemas/device';
-import { workstation } from '~/server/db/schemas/workstation';
-import { user } from '~/server/db/schemas/user';
-import { verifyDeviceToken } from '~/lib/device-auth';
-import { verifyHMACSignature } from '~/lib/hmac-verify';
-import { replayProtection } from '~/middleware/replay-protection';
-import { eq } from 'drizzle-orm';
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "~/server/db";
+import { device } from "~/server/db/schemas/device";
+import { workstation } from "~/server/db/schemas/workstation";
+import { user } from "~/server/db/schemas/user";
+import { verifyDeviceToken } from "~/lib/device-auth";
+import { verifyHMACSignature } from "~/lib/hmac-verify";
+import { replayProtection } from "~/middleware/replay-protection";
+import { env } from "~/env";
+import { eq } from "drizzle-orm";
 
 /**
  * GET /api/workstation/device/me
@@ -18,15 +19,15 @@ import { eq } from 'drizzle-orm';
 export async function GET(request: NextRequest) {
   try {
     // ── extract auth headers ──────────────────────────────────────
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    const deviceId = request.headers.get('X-Device-Id');
-    const timestamp = request.headers.get('X-Timestamp');
-    const nonce = request.headers.get('X-Nonce');
-    const signature = request.headers.get('X-Signature');
+    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+    const deviceId = request.headers.get("X-Device-Id");
+    const timestamp = request.headers.get("X-Timestamp");
+    const nonce = request.headers.get("X-Nonce");
+    const signature = request.headers.get("X-Signature");
 
     if (!token || !deviceId || !timestamp || !nonce || !signature) {
       return NextResponse.json(
-        { error: 'Missing required headers' },
+        { error: "Missing required headers" },
         { status: 400 },
       );
     }
@@ -41,26 +42,23 @@ export async function GET(request: NextRequest) {
     const claims = await verifyDeviceToken(token);
     if (!claims || claims.deviceId !== deviceId) {
       return NextResponse.json(
-        { error: 'Invalid device token' },
+        { error: "Invalid device token" },
         { status: 401 },
       );
     }
 
     // ── HMAC signature verification ───────────────────────────────
-    const hmacSecret = process.env.BLUEPRINT_SYNC_HMAC_SECRET;
+    const hmacSecret = env.BLUEPRINT_SYNC_HMAC_SECRET;
     if (!hmacSecret) {
       return NextResponse.json(
-        { error: 'Server configuration error' },
+        { error: "Server configuration error" },
         { status: 500 },
       );
     }
 
     // GET has no body; verify signature over empty payload ({})
     if (!verifyHMACSignature({}, timestamp, nonce, signature, hmacSecret)) {
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     // ── fetch device + workstation + user ─────────────────────────
@@ -69,10 +67,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!deviceRecord) {
-      return NextResponse.json(
-        { error: 'Device not found' },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "Device not found" }, { status: 404 });
     }
 
     const workstationRecord = await db.query.workstation.findFirst({
@@ -111,9 +106,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Device /me error:', error);
+    console.error("Device /me error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       { status: 500 },
     );
   }
