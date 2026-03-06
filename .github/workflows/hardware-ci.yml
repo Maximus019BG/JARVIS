@@ -1,0 +1,56 @@
+name: Hardware CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hardware:
+    name: Hardware (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            hardware/uv.lock
+            hardware/pyproject.toml
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps (uv)
+        working-directory: hardware
+        run: uv sync --frozen --dev
+
+      - name: Lint (ruff)
+        working-directory: hardware
+        run: uv run ruff check .
+
+      - name: Tests (pytest)
+        working-directory: hardware
+        run: uv run pytest -q
+
+      - name: Write step summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Hardware"
+            echo "- lint + tests: **${{ job.status }}**"
+          } >> "$GITHUB_STEP_SUMMARY"

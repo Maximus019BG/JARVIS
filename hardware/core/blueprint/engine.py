@@ -225,7 +225,15 @@ class BlueprintEngine:
         try:
             path = Path(path)
             if not path.is_absolute():
-                path = self._blueprint_dir / path
+                # If path already exists relative to cwd, use it as-is;
+                # otherwise prepend the blueprint directory.
+                if not path.exists():
+                    candidate = self._blueprint_dir / path
+                    if candidate.exists():
+                        path = candidate
+                    else:
+                        # Try just the filename in blueprint_dir
+                        path = self._blueprint_dir / path.name
 
             blueprint = self._parser.load(path)
             self._state.blueprint = blueprint

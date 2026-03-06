@@ -5,12 +5,15 @@ from __future__ import annotations
 import pytest
 
 from core.blueprint.drawing.primitives import (
+    Arc,
+    BezierCurve,
     Circle,
+    DrawStyle,
+    Freehand,
     Line,
     Point2D,
-    Rectangle,
     Polyline,
-    DrawStyle,
+    Rectangle,
 )
 from core.blueprint.drawing.grid import (
     GridConfig,
@@ -20,6 +23,8 @@ from core.blueprint.drawing.grid import (
     SnapResult,
 )
 from core.blueprint.drawing.tools import (
+    ArcTool,
+    BezierTool,
     CircleTool,
     DrawingTool,
     FreehandTool,
@@ -354,3 +359,398 @@ class TestDrawingCanvas:
 
         canvas.add_primitive(line)
         assert line in canvas.active_layer.primitives
+
+
+# ---------------------------------------------------------------------------
+# Additional tool coverage
+# ---------------------------------------------------------------------------
+
+class TestArcToolExtra:
+    """Additional tests for ArcTool coverage."""
+
+    def test_arc_tool_creation(self) -> None:
+        tool = ArcTool()
+        assert tool.name == "Arc"
+        assert tool.state == ToolState.IDLE
+
+    def test_three_point_arc(self) -> None:
+        tool = ArcTool()
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        assert tool.on_point(0, 0) is False
+        assert tool.on_point(5, 10) is False
+        assert tool.on_point(10, 0) is True
+        assert len(committed) == 1
+        assert isinstance(committed[0], Arc)
+
+    def test_collinear_no_arc(self) -> None:
+        tool = ArcTool()
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(5, 0)
+        tool.on_point(10, 0)
+        assert len(committed) == 0
+
+    def test_arc_preview_line(self) -> None:
+        tool = ArcTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_move(5, 5)
+        assert isinstance(tool.preview, Line)
+
+    def test_arc_preview_with_two_points(self) -> None:
+        tool = ArcTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(5, 10)
+        tool.on_move(10, 0)
+        assert tool.preview is not None
+
+    def test_arc_on_drag(self) -> None:
+        tool = ArcTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(5, 5)
+        assert tool.preview is not None
+
+
+class TestBezierToolExtra:
+    """Additional tests for BezierTool coverage."""
+
+    def test_bezier_tool_creation(self) -> None:
+        tool = BezierTool()
+        assert tool.name == "Bezier"
+        assert tool.state == ToolState.IDLE
+
+    def test_four_click_bezier(self) -> None:
+        tool = BezierTool()
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        assert tool.on_point(0, 0) is False
+        assert tool.on_point(10, 20) is False
+        assert tool.on_point(20, 20) is False
+        assert tool.on_point(30, 0) is True
+        assert len(committed) == 1
+        from core.blueprint.drawing.primitives import BezierCurve
+        assert isinstance(committed[0], BezierCurve)
+
+    def test_bezier_preview_1_point(self) -> None:
+        tool = BezierTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_move(10, 10)
+        assert isinstance(tool.preview, Line)
+
+    def test_bezier_preview_2_points(self) -> None:
+        tool = BezierTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(10, 20)
+        tool.on_move(20, 20)
+        from core.blueprint.drawing.primitives import BezierCurve
+        assert isinstance(tool.preview, BezierCurve)
+
+    def test_bezier_preview_3_points(self) -> None:
+        tool = BezierTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(10, 20)
+        tool.on_point(20, 20)
+        tool.on_move(30, 0)
+        from core.blueprint.drawing.primitives import BezierCurve
+        assert isinstance(tool.preview, BezierCurve)
+
+    def test_bezier_on_drag(self) -> None:
+        tool = BezierTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(5, 5)
+        assert tool.preview is not None
+
+
+class TestToolManagerExtra:
+    """Additional tests for ToolManager coverage."""
+
+    def test_cycle_forward(self) -> None:
+        mgr = ToolManager()
+        first = mgr.cycle_tool(forward=True)
+        second = mgr.cycle_tool(forward=True)
+        assert first is not None
+        assert second is not None
+        assert first != second
+
+    def test_cycle_backward(self) -> None:
+        mgr = ToolManager()
+        mgr.set_active("Line")
+        name = mgr.cycle_tool(forward=False)
+        assert name is not None
+        assert name != "Line"
+
+    def test_cycle_no_tools(self) -> None:
+        mgr = ToolManager()
+        mgr._tools = {}
+        assert mgr.cycle_tool() is None
+
+    def test_deactivate(self) -> None:
+        mgr = ToolManager()
+        mgr.set_active("Line")
+        mgr.deactivate()
+        assert mgr.active_tool is None
+        assert mgr.active_tool_name is None
+
+    def test_set_active_nonexistent(self) -> None:
+        mgr = ToolManager()
+        assert mgr.set_active("NoSuchTool") is False
+
+    def test_on_point_no_tool(self) -> None:
+        mgr = ToolManager()
+        assert mgr.on_point(0, 0) is False
+
+    def test_on_move_no_tool(self) -> None:
+        mgr = ToolManager()
+        mgr.on_move(0, 0)  # should not raise
+
+    def test_on_drag_no_tool(self) -> None:
+        mgr = ToolManager()
+        mgr.on_drag(0, 0)  # should not raise
+
+    def test_on_complete_no_tool(self) -> None:
+        mgr = ToolManager()
+        assert mgr.on_complete() is None
+
+    def test_cancel_no_tool(self) -> None:
+        mgr = ToolManager()
+        mgr.cancel()  # should not raise
+
+    def test_set_context_propagates(self) -> None:
+        mgr = ToolManager()
+        ctx = ToolContext(constrain_angles=True)
+        mgr.set_context(ctx)
+        assert mgr.context.constrain_angles is True
+
+    def test_event_forwarding(self) -> None:
+        mgr = ToolManager()
+        mgr.set_active("Line")
+        mgr.on_point(0, 0)
+        mgr.on_move(10, 10)
+        assert mgr.active_tool.preview is not None
+
+    def test_cancel_active_tool(self) -> None:
+        mgr = ToolManager()
+        mgr.set_active("Line")
+        mgr.on_point(0, 0)
+        mgr.cancel()
+        assert mgr.active_tool.state == ToolState.IDLE
+
+
+class TestFreehandToolExtra:
+    """Additional tests for FreehandTool coverage."""
+
+    def test_drag_drawing(self) -> None:
+        tool = FreehandTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        for i in range(1, 20):
+            tool.on_drag(i * 5, i * 3)
+        assert tool.preview is not None
+        assert isinstance(tool.preview, Freehand)
+
+    def test_min_distance_filter(self) -> None:
+        tool = FreehandTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(0.1, 0.1)
+        assert len(tool._points) == 1
+
+    def test_on_complete(self) -> None:
+        tool = FreehandTool()
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        for i in range(1, 10):
+            tool.on_drag(i * 10, i * 5)
+        result = tool.on_complete()
+        assert isinstance(result, Freehand)
+
+    def test_on_complete_too_few(self) -> None:
+        tool = FreehandTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        assert tool.on_complete() is None
+
+    def test_on_move_noop(self) -> None:
+        tool = FreehandTool()
+        tool.on_move(10, 10)  # should not raise
+
+
+class TestPolylineToolExtra:
+    """Additional tests for PolylineTool coverage."""
+
+    def test_set_closed(self) -> None:
+        tool = PolylineTool()
+        tool.set_closed(True)
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(10, 0)
+        tool.on_point(10, 10)
+        result = tool.on_complete()
+        assert result.closed is True
+
+    def test_on_complete_too_few(self) -> None:
+        tool = PolylineTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        assert tool.on_complete() is None
+
+    def test_undo_last_point(self) -> None:
+        tool = PolylineTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(10, 10)
+        assert tool.undo_last_point() is True
+        assert len(tool._points) == 1
+
+    def test_undo_to_empty(self) -> None:
+        tool = PolylineTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.undo_last_point()
+        assert tool.state == ToolState.IDLE
+
+    def test_undo_empty_false(self) -> None:
+        tool = PolylineTool()
+        assert tool.undo_last_point() is False
+
+    def test_preview_on_move(self) -> None:
+        tool = PolylineTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_move(10, 10)
+        assert isinstance(tool.preview, Polyline)
+
+    def test_on_drag(self) -> None:
+        tool = PolylineTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(10, 10)
+        assert tool.preview is not None
+
+
+class TestRectangleToolExtra:
+    """Additional tests for RectangleTool coverage."""
+
+    def test_square_constraint(self) -> None:
+        tool = RectangleTool()
+        tool.set_constrain_square(True)
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(30, 20)
+        r = committed[0]
+        assert r.width == r.height
+
+    def test_preview_square_constraint(self) -> None:
+        tool = RectangleTool()
+        tool.set_constrain_square(True)
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_move(30, 20)
+        assert isinstance(tool.preview, Rectangle)
+        assert tool.preview.width == tool.preview.height
+
+    def test_on_drag(self) -> None:
+        tool = RectangleTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(10, 20)
+        assert tool.preview is not None
+
+
+class TestCircleToolExtra:
+    """Additional tests for CircleTool coverage."""
+
+    def test_zero_radius_no_commit(self) -> None:
+        tool = CircleTool()
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(5, 5)
+        tool.on_point(5, 5)
+        assert len(committed) == 0
+
+    def test_preview_on_move(self) -> None:
+        tool = CircleTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_move(10, 0)
+        assert isinstance(tool.preview, Circle)
+
+    def test_on_drag(self) -> None:
+        tool = CircleTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(10, 0)
+        assert tool.preview is not None
+
+
+class TestLineToolExtra:
+    """Additional tests for LineTool coverage."""
+
+    def test_on_complete_with_preview(self) -> None:
+        tool = LineTool()
+        committed: list = []
+        ctx = ToolContext(on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_move(5, 5)
+        result = tool.on_complete()
+        assert isinstance(result, Line)
+
+    def test_on_complete_no_preview(self) -> None:
+        tool = LineTool()
+        assert tool.on_complete() is None
+
+    def test_on_drag(self) -> None:
+        tool = LineTool()
+        ctx = ToolContext()
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_drag(10, 10)
+        assert tool.preview is not None
+
+    def test_style_applied(self) -> None:
+        tool = LineTool()
+        style = DrawStyle(stroke_color=(255, 0, 0))
+        committed: list = []
+        ctx = ToolContext(current_style=style, on_commit=lambda p: committed.append(p))
+        tool.set_context(ctx)
+        tool.on_point(0, 0)
+        tool.on_point(10, 10)
+        assert committed[0].style == style

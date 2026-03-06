@@ -49,8 +49,10 @@ def test_schema_create_blueprint_baseline() -> None:
     params = _params(schema)
 
     assert "blueprint_name" in params["properties"]
-    assert "theme" in params["properties"]
-    assert "profile" in params["properties"]
+    assert "blueprint_type" in params["properties"]
+    assert "description" in params["properties"]
+    assert "components" in params["properties"]
+    assert "connections" in params["properties"]
     assert params["required"] == ["blueprint_name"]
 
 

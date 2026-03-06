@@ -249,15 +249,9 @@ class ToolCallExecutor:
         def finalize(result: ToolResult) -> ToolResult:
             # Logging only; never allow logging failures to affect behavior.
             try:
-                self._logger.debug(
-                    "Tool call result: %s",
-                    {
-                        "ok": result.ok,
-                        "tool": result.tool,
-                        "call_id": result.call_id,
-                        "error_type": result.error_type,
-                        "duration_ms": result.duration_ms,
-                    },
+                self._logger.info(
+                    "Tool call result: ok=%s tool=%s content=%.200s",
+                    result.ok, result.tool, result.content,
                 )
             except Exception:
                 pass
@@ -267,6 +261,10 @@ class ToolCallExecutor:
             fn = tool_call.get("function") or {}
             function_name = fn.get("name")
             call_id = tool_call.get("id")
+            self._logger.info(
+                "execute_tool_call: name=%s, call_id=%s, raw_args_type=%s",
+                function_name, call_id, type(fn.get("arguments")).__name__,
+            )
             if not function_name:
                 duration_ms = int((time.time() - started) * 1000)
                 return finalize(
@@ -281,7 +279,15 @@ class ToolCallExecutor:
 
             raw_args = fn.get("arguments", "{}")
             try:
-                arguments = _json_loads_maybe_orjson(raw_args) if raw_args else {}
+                # Ollama native tool calls and text-extraction helpers
+                # already return arguments as a dict.  Only parse when we
+                # receive a JSON string (e.g. from OpenAI-compatible APIs).
+                if isinstance(raw_args, dict):
+                    arguments = raw_args
+                elif isinstance(raw_args, str):
+                    arguments = _json_loads_maybe_orjson(raw_args) if raw_args else {}
+                else:
+                    arguments = {}
             except (json.JSONDecodeError, Exception):
                 duration_ms = int((time.time() - started) * 1000)
                 return finalize(

@@ -175,3 +175,9 @@ build/
 
 .roo
 .roomodes
+
+# JARVIS specific
+**/episodic_memory.json
+**/memory_store.json
+*.jarvis
+hardware/data/*

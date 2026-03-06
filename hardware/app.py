@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JARVIS - AI-Powered Hardware Assistant.
+"""JARVIS - Agentic Hardware Assistant.
 
 A chat-driven application that uses a multi-agent system to handle complex tasks.
 
@@ -38,14 +38,21 @@ from tools import AGENT_TOOLS
 
 # Import tools
 from tools.apply_theme_tool import ApplyThemeTool
+from tools.blueprint_edit_tool import BlueprintEditTool
 from tools.create_blueprint_tool import CreateBlueprintTool
+from tools.delete_blueprint_tool import DeleteBlueprintTool
 from tools.edit_profile_tool import EditProfileTool
 from tools.help_tool import HelpTool
+from tools.import_blueprint_tool import ImportBlueprintTool
+from tools.list_blueprints_tool import ListBlueprintsTool
+from tools.list_data_tool import ListDataTool
 from tools.live_assistance_tool import LiveAssistanceTool
 from tools.load_blueprint_tool import LoadBlueprintTool
 from tools.quit_tool import QuitTool
 from tools.read_file_tool import ReadFileTool
+from tools.run_script_tool import RunScriptTool
 from tools.save_profile_tool import SaveProfileTool
+from tools.search_data_tool import SearchDataTool
 from tools.smart_mode_tool import SmartModeTool
 from tools.view_stats_tool import ViewStatsTool
 from tools.write_file_tool import WriteFileTool
@@ -92,8 +99,19 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     registry.register_tool(QuitTool())
 
     # Blueprint tools
+    registry.register_tool(ListBlueprintsTool())
     registry.register_tool(LoadBlueprintTool())
     registry.register_tool(CreateBlueprintTool())
+    registry.register_tool(BlueprintEditTool())
+    registry.register_tool(DeleteBlueprintTool())
+    registry.register_tool(ImportBlueprintTool())
+
+    # Code tools
+    registry.register_tool(RunScriptTool())
+
+    # Data browsing tools
+    registry.register_tool(ListDataTool())
+    registry.register_tool(SearchDataTool())
 
     # Assistance tools
     registry.register_tool(LiveAssistanceTool())
@@ -184,7 +202,7 @@ def main() -> None:
     logger.info("Starting %s", config.app_name)
 
     print("\n" + "=" * 60)
-    print("  🤖 JARVIS - AI-Powered Hardware Assistant")
+    print("  🤖 JARVIS - Agentic Hardware Assistant")
     print("=" * 60)
 
     # Setup security
@@ -241,7 +259,7 @@ def main() -> None:
         memory_manager = None
         print("  ⚠ Using basic memory")
 
-    # Create chat handler and start
+    # Create chat handler
     enable_tts = config.tts.engine.value != "disabled"
     chat_handler = ChatHandler(
         tool_registry=registry,
@@ -254,8 +272,21 @@ def main() -> None:
 
     print("=" * 60 + "\n")
 
-    logger.info("Starting chat")
-    chat_handler.start_chat()
+    # Launch TUI
+    logger.info("Launching TUI")
+    from core.tui.app import JarvisTUI
+
+    agent_names_list = (
+        orchestrator.get_registered_agents() if orchestrator else []
+    )
+    tui = JarvisTUI(
+        chat_handler=chat_handler,
+        orchestrator=orchestrator,
+        agent_names=agent_names_list,
+        tool_count=len(registry.get_all_tools()),
+        memory_active=memory_manager is not None,
+    )
+    tui.run()
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ class AIProvider(str, Enum):
 
     GOOGLE = "google"
     OLLAMA = "ollama"
+    GROQ = "groq"
 
 
 class TTSEngine(str, Enum):
@@ -59,6 +60,10 @@ class AIConfig(BaseSettings):
     ollama_model: str = "gemma3:1b"
     ollama_host: str = "http://localhost:11434"
 
+    # Groq
+    groq_api_key: SecretStr | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+
     max_tokens: int = 4096
     temperature: float = 0.7
 
@@ -70,6 +75,11 @@ class AIConfig(BaseSettings):
             if not key:
                 # Tests assert this env var name is included in the error.
                 raise ValueError("Missing GOOGLE_AI_API_KEY")
+
+        if self.provider == AIProvider.GROQ:
+            key = self.groq_api_key.get_secret_value() if self.groq_api_key else ""
+            if not key:
+                raise ValueError("Missing AI_GROQ_API_KEY")
 
         # Ollama requires no API key.
 

@@ -1,7 +1,7 @@
 # 🧠 JARVIS
 ### Job Acceleration Reference Visual Interface System
 
-> “Your personal AI-powered workspace assistant.”
+> “Your personal Agentic workspace assistant.”
 
 JARVIS is a **hardware–software hybrid system** designed to augment human productivity at the workstation.  
 Built on a **Raspberry Pi 5** with a **camera** and **projector**, JARVIS combines **AI vision**, **voice interaction**, and **workflow automation** to create a truly intelligent, context-aware workbench assistant.

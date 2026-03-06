@@ -1,19 +1,26 @@
-"""Tool to load and apply blueprints."""
+"""Tool to load and apply .jarvis blueprints.
+
+Loads blueprints from .jarvis files (or legacy .json) and opens the
+blueprint engine for interactive editing via gesture control.
+"""
 
 from __future__ import annotations
 
-# Standard library imports
 import json
 from pathlib import Path
 from typing import Any
 
-# Local application imports
 from core.base_tool import BaseTool, ToolResult
 from core.security import get_security_manager
 
 
 class LoadBlueprintTool(BaseTool):
-    """Tool for loading blueprints."""
+    """Tool for loading blueprints and opening them in the engine.
+
+    Supports both .jarvis (full format) and legacy .json files.
+    When a blueprint is loaded, it signals the TUI to open the
+    split-pane blueprint engine view.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +28,10 @@ class LoadBlueprintTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Loads and applies a specified blueprint."
+        return (
+            "Loads a .jarvis blueprint and opens it in the blueprint engine "
+            "for interactive editing with the grid view and gesture controls."
+        )
 
     def execute(self, blueprint_name: str = "") -> ToolResult:
         if not blueprint_name:
@@ -30,25 +40,44 @@ class LoadBlueprintTool(BaseTool):
                 error_type="ValidationError",
             )
 
-        # Security: prevent path traversal by constructing a path with Path APIs,
-        # resolving it to a canonical absolute path, and validating it against
-        # SecurityManager allow/block rules.
         base_dir = Path("data/blueprints")
-        candidate = base_dir / f"{blueprint_name}.json"
-
         security = get_security_manager()
-        try:
-            resolved = candidate.resolve()
-            resolved = security.validate_file_access(resolved)
-        except Exception:
-            return ToolResult.fail(
-                f"Blueprint '{blueprint_name}' not found.",
-                error_type="NotFound",
-            )
 
-        if not resolved.exists():
+        # Try .jarvis first, then fall back to .json
+        candidate_jarvis = base_dir / f"{blueprint_name}.jarvis"
+        candidate_json = base_dir / f"{blueprint_name}.json"
+
+        resolved = None
+        file_format = None
+
+        for candidate, fmt in [
+            (candidate_jarvis, "jarvis"),
+            (candidate_json, "json"),
+        ]:
+            try:
+                r = candidate.resolve()
+                r = security.validate_file_access(r)
+                if r.exists():
+                    resolved = r
+                    file_format = fmt
+                    break
+            except Exception:
+                continue
+
+        if resolved is None:
+            # List available blueprints so the agent can suggest alternatives
+            available = sorted(
+                f.stem for f in base_dir.glob("*.jarvis") if f.is_file()
+            )
+            avail_str = (
+                " Available blueprints: " + ", ".join(available)
+                if available
+                else " No blueprints found in data/blueprints/."
+            )
             return ToolResult.fail(
-                f"Blueprint '{blueprint_name}' not found.",
+                f"Blueprint '{blueprint_name}' not found. "
+                f"Looked for {blueprint_name}.jarvis and {blueprint_name}.json "
+                f"in data/blueprints/.{avail_str}",
                 error_type="NotFound",
             )
 
@@ -56,17 +85,77 @@ class LoadBlueprintTool(BaseTool):
             with resolved.open("r", encoding="utf-8") as f:
                 data: dict[str, Any] = json.load(f)
 
-            # Apply theme if present
-            if "theme" in data:
-                from config.config import current_theme
+            # ── Auto-fix corrupt blueprints ──────────────────────
+            from core.blueprint.fixer import fix_blueprint_dict
 
-                current_theme.update(data["theme"])
+            fixes = fix_blueprint_dict(data)
+            if fixes:
+                # Write the fixed version back to disk
+                resolved.write_text(
+                    json.dumps(data, indent=2, default=str), encoding="utf-8"
+                )
 
-            # Profile could be handled similarly if there's a current_profile
-            # For now, just load it
+            # Determine if this is a .jarvis-format blueprint
+            is_jarvis_format = "jarvis_version" in data
 
-            return ToolResult.ok_result(
-                f"Blueprint '{blueprint_name}' loaded and applied successfully."
+            if is_jarvis_format:
+                bp_name = data.get("name", blueprint_name)
+                bp_type = data.get("type", "part")
+                bp_id = data.get("id", "")
+                component_count = len(data.get("components", []))
+                drawing_count = sum(
+                    len(data.get(k, []))
+                    for k in ("lines", "circles", "rects", "arcs", "texts")
+                )
+
+                fix_msg = ""
+                if fixes:
+                    fix_msg = (
+                        f" Auto-fixed {len(fixes)} issue(s): "
+                        + "; ".join(fixes[:3])
+                        + ("..." if len(fixes) > 3 else "")
+                        + "."
+                    )
+
+                dims = data.get("dimensions", {})
+                dim_str = ""
+                if dims and isinstance(dims, dict):
+                    l, w, h = dims.get("length", 0), dims.get("width", 0), dims.get("height", 0)
+                    unit = dims.get("unit", "mm")
+                    if l or w or h:
+                        dim_str = f" Size: {l}x{w}x{h}{unit}."
+
+                return ToolResult.ok_result(
+                    f"Blueprint '{bp_name}' loaded ({bp_type}, "
+                    f"{component_count} components, {drawing_count} drawings).{dim_str}"
+                    f"{fix_msg} "
+                    f"Opening blueprint engine for interactive editing.",
+                    blueprint_path=str(resolved),
+                    blueprint_name=bp_name,
+                    blueprint_id=bp_id,
+                    blueprint_type=bp_type,
+                    component_count=component_count,
+                    drawing_count=drawing_count,
+                    open_engine=True,
+                )
+            else:
+                # Legacy .json - apply theme if present
+                if "theme" in data:
+                    from config.config import current_theme
+                    current_theme.update(data["theme"])
+
+                return ToolResult.ok_result(
+                    f"Legacy blueprint '{blueprint_name}' loaded and applied. "
+                    f"Opening blueprint engine for interactive editing.",
+                    blueprint_path=str(resolved),
+                    blueprint_name=blueprint_name,
+                    open_engine=True,
+                )
+
+        except json.JSONDecodeError as e:
+            return ToolResult.fail(
+                f"Blueprint '{blueprint_name}' has invalid JSON: {e}",
+                error_type="ParseError",
             )
         except Exception as e:
             return ToolResult.fail(
@@ -80,7 +169,10 @@ class LoadBlueprintTool(BaseTool):
             "properties": {
                 "blueprint_name": {
                     "type": "string",
-                    "description": "The name of the blueprint to load.",
+                    "description": (
+                        "The name of the blueprint to load "
+                        "(without .jarvis/.json extension)."
+                    ),
                 },
             },
             "required": ["blueprint_name"],

@@ -1,0 +1,92 @@
+name: Web CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web_check:
+    name: Web (lint + typecheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check (lint + typecheck)
+        run: pnpm run check
+
+      - name: Write step summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Web check"
+            echo "- lint + typecheck: **${{ job.status }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  web_test_build:
+    name: Web (tests + build)
+    needs: [web_check]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Write step summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Web test + build"
+            echo "- tests + build: **${{ job.status }}**"
+          } >> "$GITHUB_STEP_SUMMARY"

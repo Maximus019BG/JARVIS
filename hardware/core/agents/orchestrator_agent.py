@@ -376,29 +376,27 @@ RULES:
         Returns:
             Map of subtask ID to result.
         """
-        # Create task-to-ID mapping for result correlation
-        task_to_id = {}
+        # Build ordered list of (task_id, coroutine) pairs
+        ordered_ids = []
         tasks = []
         for task_id in subtask_ids:
             subtask = subtask_map[task_id]
-            task = self._execute_subtask(subtask, context, results)
-            task_to_id[task] = task_id
-            tasks.append(task)
+            ordered_ids.append(task_id)
+            tasks.append(self._execute_subtask(subtask, context, results))
 
-        # Use as_completed for streaming results as they finish
-        # This allows processing results immediately rather than waiting for all
+        # Use gather to run all subtasks concurrently and collect results
+        settled = await asyncio.gather(*tasks, return_exceptions=True)
+
         group_results = {}
-        for completed_task in asyncio.as_completed(tasks):
-            task_id = task_to_id[completed_task]
-            try:
-                result = await completed_task
-                group_results[task_id] = result
-            except Exception as e:
+        for task_id, result in zip(ordered_ids, settled):
+            if isinstance(result, BaseException):
                 group_results[task_id] = AgentResponse(
-                    content=f"Error: {e}",
+                    content=f"Error: {result}",
                     agent_role=subtask_map[task_id].agent_role,
                     success=False,
                 )
+            else:
+                group_results[task_id] = result
 
         return group_results
 
