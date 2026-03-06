@@ -1,10 +1,9 @@
 from __future__ import annotations
-
-import asyncio
 from typing import Any, Literal
 
 from core.base_tool import BaseTool, ToolResult
 from core.sync.offline_queue import OfflineQueue
+from core.sync.async_bridge import run_coro_sync
 from core.sync.sync_factory import build_sync_stack
 
 
@@ -61,19 +60,14 @@ class SyncQueueTool(BaseTool):
             return ToolResult.ok_result("Queue cleared")
 
         if action == "process":
-
-            async def _run() -> list[dict[str, Any]]:
-                return await self.sync_manager.process_offline_queue()
-
             try:
-                results = asyncio.run(_run())
+                results = run_coro_sync(
+                    self.sync_manager.process_offline_queue(),
+                    timeout=120,
+                )
                 return ToolResult.ok_result(
                     f"Processed {len(results)} operations",
                     results=results,
-                )
-            except RuntimeError as e:
-                return ToolResult.fail(
-                    f"Process failed: {e}", error_type="RuntimeError"
                 )
             except Exception as e:
                 return ToolResult.fail(f"Process failed: {e}", error_type="Exception")

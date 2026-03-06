@@ -17,6 +17,8 @@ from typing import Any
 from app_logging.logger import get_logger
 from core.base_tool import BaseTool, ToolResult
 from core.security import SecurityError, get_security_manager
+from core.sync.async_bridge import run_coro_sync
+from core.sync.sync_factory import build_sync_stack
 
 logger = get_logger(__name__)
 
@@ -272,11 +274,34 @@ class BlueprintEditTool(BaseTool):
                 error_type="IOError",
             )
 
+        sync_status = "local_only"
+        sync_error: str | None = None
+        try:
+            stack = build_sync_stack()
+            sync_response = run_coro_sync(
+                stack.sync_manager.send_blueprint(str(validated_path)),
+                timeout=90,
+            )
+            sync_status = str(sync_response.get("syncStatus", "synced"))
+        except Exception as exc:
+            sync_status = "queued"
+            sync_error = str(exc)
+            logger.warning(
+                "Blueprint edit saved locally but immediate cloud sync failed; queued for retry: %s",
+                exc,
+            )
+
+        content = result_msg
+        if sync_status == "queued":
+            content += " Cloud sync queued for retry."
+
         return ToolResult.ok_result(
-            result_msg,
+            content,
             blueprint_path=str(validated_path),
             blueprint_name=raw.get("name", ""),
             open_engine=True,
+            sync_status=sync_status,
+            sync_error=sync_error,
         )
 
     # ── Action handlers ──────────────────────────────────────────

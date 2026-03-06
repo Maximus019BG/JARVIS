@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
 from core.base_tool import BaseTool, ToolResult
+from core.sync.async_bridge import run_coro_sync
 from core.sync.sync_factory import build_sync_stack
 
 
@@ -67,11 +67,11 @@ class SendBlueprintTool(BaseTool):
                 )
             blueprint_path = found
 
-        async def _run() -> dict[str, Any]:
-            return await self.sync_manager.send_blueprint(blueprint_path)
-
         try:
-            result = asyncio.run(_run())
+            result = run_coro_sync(
+                self.sync_manager.send_blueprint(blueprint_path),
+                timeout=90,
+            )
             content = (
                 f"Sent blueprint: {result.get('blueprintId')}\n"
                 f"version: {result.get('version')}\n"
@@ -83,9 +83,6 @@ class SendBlueprintTool(BaseTool):
                 version=result.get("version"),
                 syncStatus=result.get("syncStatus"),
             )
-        except RuntimeError as e:
-            # event loop already running -> best effort
-            return ToolResult.fail(f"Send failed: {e}", error_type="RuntimeError")
         except Exception as e:
             return ToolResult.fail(f"Send failed: {e}", error_type="Exception")
 
@@ -93,15 +90,16 @@ class SendBlueprintTool(BaseTool):
         """Find blueprint file by ID."""
         blueprints_dir = Path("data/blueprints")
 
-        for blueprint_file in blueprints_dir.glob("*.json"):
-            try:
-                import json
+        for pattern in ("*.jarvis", "*.json"):
+            for blueprint_file in blueprints_dir.glob(pattern):
+                try:
+                    import json
 
-                with open(blueprint_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if data.get("id") == blueprint_id:
-                        return str(blueprint_file)
-            except Exception:
-                continue
+                    with open(blueprint_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if data.get("id") == blueprint_id:
+                            return str(blueprint_file)
+                except Exception:
+                    continue
 
         return None

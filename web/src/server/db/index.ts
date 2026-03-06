@@ -18,6 +18,7 @@ import * as device from "~/server/db/schemas/device";
 import * as nonce from "~/server/db/schemas/nonce";
 import * as syncLog from "~/server/db/schemas/sync_log";
 import * as idempotencyKey from "~/server/db/schemas/idempotency_key";
+import * as scriptFile from "~/server/db/schemas/script_file";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -44,6 +45,7 @@ export const schema = {
   ...nonce,
   ...syncLog,
   ...idempotencyKey,
+  ...scriptFile,
 };
 
 export const db = drizzle(conn, {

@@ -14,6 +14,8 @@ from typing import Any
 
 from app_logging.logger import get_logger
 from core.base_tool import BaseTool, ToolResult
+from core.sync.async_bridge import run_coro_sync
+from core.sync.sync_factory import build_sync_stack
 
 logger = get_logger(__name__)
 
@@ -125,12 +127,34 @@ class RunScriptTool(BaseTool):
             output = result.combined_output
             run_ok = result.ok
 
+        script_sync_status = "not_attempted"
+        script_sync_error: str | None = None
+        if code:
+            try:
+                stack = build_sync_stack()
+                sync_response = run_coro_sync(
+                    stack.sync_manager.send_script(str(path)),
+                    timeout=90,
+                )
+                script_sync_status = str(sync_response.get("syncStatus", "synced"))
+            except Exception as exc:
+                script_sync_status = "queued"
+                script_sync_error = str(exc)
+                logger.warning(
+                    "Script saved locally but immediate cloud sync failed; queued for retry: %s",
+                    exc,
+                )
+
         # Build a nice summary
         summary_lines = [f"Script {action}: {path}"]
         if should_run:
             status = "✓ Success" if run_ok else "✗ Error"
             summary_lines.append(f"Execution: {status}")
             summary_lines.append(f"Output:\n{output}")
+        if script_sync_status == "synced":
+            summary_lines.append("Cloud sync: synced")
+        elif script_sync_status == "queued":
+            summary_lines.append("Cloud sync: queued for retry")
 
         return ToolResult.ok_result(
             "\n".join(summary_lines),
@@ -142,4 +166,6 @@ class RunScriptTool(BaseTool):
             source=code,
             output=output,
             execution_ok=run_ok,
+            sync_status=script_sync_status,
+            sync_error=script_sync_error,
         )

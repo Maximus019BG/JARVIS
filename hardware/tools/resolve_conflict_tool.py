@@ -1,9 +1,8 @@
 from __future__ import annotations
-
-import asyncio
 from typing import Any, Literal
 
 from core.base_tool import BaseTool, ToolResult
+from core.sync.async_bridge import run_coro_sync
 from core.sync.sync_factory import build_sync_stack
 
 
@@ -60,13 +59,11 @@ class ResolveConflictTool(BaseTool):
                 error_type="ValidationError",
             )
 
-        async def _run() -> dict[str, Any]:
-            return await self.sync_manager.resolve_conflict(
-                blueprint_id, str(resolution)
-            )
-
         try:
-            result = asyncio.run(_run())
+            result = run_coro_sync(
+                self.sync_manager.resolve_conflict(blueprint_id, str(resolution)),
+                timeout=90,
+            )
             content = (
                 f"Resolved conflict for blueprint: {result.get('blueprintId')}\n"
                 f"version: {result.get('version')}"
@@ -76,7 +73,5 @@ class ResolveConflictTool(BaseTool):
                 blueprintId=result.get("blueprintId"),
                 version=result.get("version"),
             )
-        except RuntimeError as e:
-            return ToolResult.fail(f"Resolution failed: {e}", error_type="RuntimeError")
         except Exception as e:
             return ToolResult.fail(f"Resolution failed: {e}", error_type="Exception")

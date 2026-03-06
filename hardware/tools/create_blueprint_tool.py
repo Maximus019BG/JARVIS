@@ -14,8 +14,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app_logging.logger import get_logger
 from core.base_tool import BaseTool, ToolResult
 from core.security import SecurityError, get_security_manager
+from core.sync.async_bridge import run_coro_sync
+from core.sync.sync_factory import build_sync_stack
+
+logger = get_logger(__name__)
 
 
 def _generate_blueprint_id(name: str) -> str:
@@ -160,13 +165,40 @@ class CreateBlueprintTool(BaseTool):
                 json.dumps(data, indent=2, default=str), encoding="utf-8"
             )
 
-            return ToolResult.ok_result(
+            sync_status = "local_only"
+            sync_error: str | None = None
+            try:
+                stack = build_sync_stack()
+                sync_response = run_coro_sync(
+                    stack.sync_manager.send_blueprint(str(validated_path)),
+                    timeout=90,
+                )
+                sync_status = str(sync_response.get("syncStatus", "synced"))
+            except Exception as exc:
+                sync_status = "queued"
+                sync_error = str(exc)
+                logger.warning(
+                    "Blueprint created but immediate cloud sync failed; queued for retry: %s",
+                    exc,
+                )
+
+            content = (
                 f"Blueprint '{safe_name}' created successfully as .jarvis file. "
-                f"Opening blueprint engine for interactive editing.",
+                f"Opening blueprint engine for interactive editing."
+            )
+            if sync_status == "queued":
+                content += " Cloud sync was queued and will retry automatically."
+            elif sync_status == "synced":
+                content += " Synced to cloud."
+
+            return ToolResult.ok_result(
+                content,
                 blueprint_path=str(validated_path),
                 blueprint_id=bp_id,
                 blueprint_name=name,
                 open_engine=True,
+                sync_status=sync_status,
+                sync_error=sync_error,
             )
         except SecurityError as exc:
             return ToolResult.fail(

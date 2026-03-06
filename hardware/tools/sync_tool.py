@@ -1,9 +1,8 @@
 from __future__ import annotations
-
-import asyncio
 from typing import Any
 
 from core.base_tool import BaseTool, ToolResult
+from core.sync.async_bridge import run_coro_sync
 from core.sync.sync_factory import build_sync_stack
 
 
@@ -31,14 +30,9 @@ class SyncTool(BaseTool):
         return {"type": "object", "properties": {}, "required": []}
 
     def execute(self, **_: Any) -> ToolResult:
-        async def _run() -> list[dict[str, Any]]:
-            return await self.sync_manager.sync_to_server()
-
         try:
-            blueprints = asyncio.run(_run())
+            blueprints = run_coro_sync(self.sync_manager.sync_to_server(), timeout=90)
             msg = f"Synced {len(blueprints)} blueprints"
             return ToolResult.ok_result(msg, blueprints=blueprints)
-        except RuntimeError as e:
-            return ToolResult.fail(f"Sync failed: {e}", error_type="RuntimeError")
         except Exception as e:
             return ToolResult.fail(f"Sync failed: {e}", error_type="Exception")
