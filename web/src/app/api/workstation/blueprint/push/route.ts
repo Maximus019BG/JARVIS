@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { blueprint, syncLog } from "~/server/db/schemas/blueprint";
 import { syncLogger } from "~/lib/syncLogger";
-import { verifyDeviceToken } from "~/lib/device-auth";
+import { verifyDeviceById } from "~/lib/device-auth";
 import { verifyHMACSignature } from "~/lib/hmac-verify";
 import {
   idempotency,
@@ -22,13 +22,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
     const deviceId = request.headers.get("X-Device-Id");
     const timestamp = request.headers.get("X-Timestamp");
     const nonce = request.headers.get("X-Nonce");
     const signature = request.headers.get("X-Signature");
 
-    if (!token || !deviceId || !timestamp || !nonce || !signature) {
+    if (!deviceId || !timestamp || !nonce || !signature) {
       return NextResponse.json(
         { error: "Missing required headers" },
         { status: 400 },
@@ -40,10 +39,10 @@ export async function POST(request: NextRequest) {
       return replayResult;
     }
 
-    const claims = await verifyDeviceToken(token);
-    if (!claims || claims.deviceId !== deviceId) {
+    const claims = await verifyDeviceById(deviceId);
+    if (!claims) {
       return NextResponse.json(
-        { error: "Invalid device token" },
+        { error: "Unknown or inactive device" },
         { status: 401 },
       );
     }

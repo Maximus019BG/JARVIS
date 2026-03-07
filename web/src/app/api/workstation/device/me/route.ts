@@ -3,7 +3,7 @@ import { db } from "~/server/db";
 import { device } from "~/server/db/schemas/device";
 import { workstation } from "~/server/db/schemas/workstation";
 import { user } from "~/server/db/schemas/user";
-import { verifyDeviceToken } from "~/lib/device-auth";
+import { verifyDeviceById } from "~/lib/device-auth";
 import { verifyHMACSignature } from "~/lib/hmac-verify";
 import { replayProtection } from "~/middleware/replay-protection";
 import { env } from "~/env";
@@ -19,13 +19,12 @@ import { eq } from "drizzle-orm";
 export async function GET(request: NextRequest) {
   try {
     // ── extract auth headers ──────────────────────────────────────
-    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
     const deviceId = request.headers.get("X-Device-Id");
     const timestamp = request.headers.get("X-Timestamp");
     const nonce = request.headers.get("X-Nonce");
     const signature = request.headers.get("X-Signature");
 
-    if (!token || !deviceId || !timestamp || !nonce || !signature) {
+    if (!deviceId || !timestamp || !nonce || !signature) {
       return NextResponse.json(
         { error: "Missing required headers" },
         { status: 400 },
@@ -38,11 +37,11 @@ export async function GET(request: NextRequest) {
       return replayResult;
     }
 
-    // ── JWT verification ──────────────────────────────────────────
-    const claims = await verifyDeviceToken(token);
-    if (!claims || claims.deviceId !== deviceId) {
+    // ── device verification (DB lookup) ───────────────────────────
+    const claims = await verifyDeviceById(deviceId);
+    if (!claims) {
       return NextResponse.json(
-        { error: "Invalid device token" },
+        { error: "Unknown or inactive device" },
         { status: 401 },
       );
     }

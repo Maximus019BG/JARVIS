@@ -569,26 +569,48 @@ class SecurityManager:
         return path.read_text(encoding="utf-8").strip()
 
     def load_device_id(self) -> str:
-        """Load the stored device ID."""
+        """Load the device ID.
+
+        Priority order:
+        1. DEVICE_ID environment variable (recommended – copy from web dashboard)
+        2. Legacy file at data/device_id.enc
+        """
+        import os
+
+        env_id = os.getenv("DEVICE_ID", "").strip()
+        if env_id:
+            return env_id
+
         from config.sync_config import SYNC_CONFIG
 
         path = Path(SYNC_CONFIG["device_id_path"])
         if not path.exists():
-            logger.warning("Device ID file not found: %s", path)
+            logger.warning("Device ID not found (set DEVICE_ID env var or file: %s)", path)
             return ""
         return path.read_text(encoding="utf-8").strip()
 
     def is_device_registered(self) -> bool:
-        """Return True when device credentials are present on disk."""
-        return bool(self.load_device_token()) and bool(self.load_device_id())
+        """Return True when device credentials are present (ID + signing key)."""
+        return bool(self.load_device_id()) and bool(self.get_signing_key())
 
     def get_signing_key(self) -> bytes:
-        """Load the HMAC signing key used for request signatures."""
+        """Load the HMAC signing key used for request signatures.
+
+        Priority order:
+        1. BLUEPRINT_SYNC_HMAC_SECRET environment variable
+        2. Legacy file at data/signing_key.enc
+        """
+        import os
+
+        env_key = os.getenv("BLUEPRINT_SYNC_HMAC_SECRET", "").strip()
+        if env_key:
+            return env_key.encode("utf-8")
+
         from config.sync_config import SYNC_CONFIG
 
         path = Path(SYNC_CONFIG["signing_key_path"])
         if not path.exists():
-            logger.warning("Signing key file not found: %s", path)
+            logger.warning("Signing key not found (set BLUEPRINT_SYNC_HMAC_SECRET or file: %s)", path)
             return b""
         return path.read_text(encoding="utf-8").strip().encode("utf-8")
 

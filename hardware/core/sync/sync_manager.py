@@ -25,10 +25,9 @@ class SyncManager:
     _BLUEPRINT_EXTENSIONS = (".jarvis", ".json")
 
     def __init__(
-        self, http_client: HttpClient, device_token: str, device_id: str
+        self, http_client: HttpClient, device_id: str
     ) -> None:
         self.http = http_client
-        self.device_token = device_token
         self.device_id = device_id
         self.config = SyncConfigManager()
         self.offline_queue = OfflineQueue()
@@ -43,7 +42,6 @@ class SyncManager:
                 "/api/workstation/blueprint/sync",
                 params=params,
                 device_id=self.device_id,
-                device_token=self.device_token,
             )
 
             self.config.update_last_sync_timestamp()
@@ -79,7 +77,6 @@ class SyncManager:
                 "/api/workstation/blueprint/push",
                 data=payload,
                 device_id=self.device_id,
-                device_token=self.device_token,
                 idempotency_key=idempotency_key,
             )
 
@@ -119,7 +116,6 @@ class SyncManager:
                 "/api/workstation/script/push",
                 data=payload,
                 device_id=self.device_id,
-                device_token=self.device_token,
                 idempotency_key=idempotency_key,
             )
         except Exception:
@@ -141,7 +137,6 @@ class SyncManager:
                 "/api/workstation/blueprint/pull",
                 data=payload,
                 device_id=self.device_id,
-                device_token=self.device_token,
             )
 
             self._save_blueprint(blueprint_id, response["blueprint"])
@@ -172,7 +167,6 @@ class SyncManager:
             "/api/workstation/blueprint/resolve",
             data=payload,
             device_id=self.device_id,
-            device_token=self.device_token,
         )
 
         self._save_blueprint(blueprint_id, response)
@@ -258,7 +252,6 @@ class SyncManager:
             "/api/workstation/blueprint/pull",
             data=payload,
             device_id=self.device_id,
-            device_token=self.device_token,
         )
 
         return response.get("blueprint", {})

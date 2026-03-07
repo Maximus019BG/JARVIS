@@ -35,6 +35,42 @@ export async function verifyDeviceToken(token: string): Promise<DeviceClaims | n
   }
 }
 
+/**
+ * Verify a device by looking up its ID in the database.
+ *
+ * This replaces JWT-based verification: the hardware only needs to know
+ * its device ID (assigned via the web dashboard).  The server looks it up
+ * in the DB and returns the associated workstationId / userId.
+ *
+ * Security is still enforced by HMAC request signing + replay protection.
+ */
+export async function verifyDeviceById(deviceId: string): Promise<DeviceClaims | null> {
+  try {
+    const deviceRecord = await db.query.device.findFirst({
+      where: eq(device.id, deviceId),
+    });
+
+    if (!deviceRecord) {
+      console.error('Device not found:', deviceId);
+      return null;
+    }
+
+    if (!deviceRecord.isActive) {
+      console.error('Device is inactive:', deviceId);
+      return null;
+    }
+
+    return {
+      deviceId: deviceRecord.id,
+      workstationId: deviceRecord.workstationId,
+      userId: deviceRecord.userId,
+    };
+  } catch (error) {
+    console.error('Device verification by ID failed:', error);
+    return null;
+  }
+}
+
 export function generateDeviceToken(claims: DeviceClaims): string {
   const secret = process.env.BLUEPRINT_SYNC_JWT_SECRET;
   if (!secret) {

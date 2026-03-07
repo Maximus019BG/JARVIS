@@ -41,7 +41,6 @@ class TestConnectionInfoServerOnline:
         mock_cfg.return_value.sync_api.base_url = "https://jarvisweb.cloud"
 
         stack = MagicMock()
-        stack.device_token = "tok"
         stack.device_id = "dev-1"
         mock_stack.return_value = stack
 
@@ -68,17 +67,10 @@ class TestConnectionInfoOfflineFallback:
     @patch("tools.connection_info_tool.build_sync_stack")
     @patch("tools.connection_info_tool.run_coro_sync")
     @patch("tools.connection_info_tool.get_config")
-    def test_offline_shows_jwt_claims(self, mock_cfg, mock_run, mock_stack):
+    def test_offline_shows_device_id(self, mock_cfg, mock_run, mock_stack):
         mock_cfg.return_value.sync_api.base_url = "http://localhost:3000"
 
-        token = _fake_jwt_token({
-            "deviceId": "dev-1",
-            "workstationId": "ws-1",
-            "userId": "user-1",
-        })
-
         stack = MagicMock()
-        stack.device_token = token
         stack.device_id = "dev-1"
         mock_stack.return_value = stack
 
@@ -91,8 +83,6 @@ class TestConnectionInfoOfflineFallback:
         assert result.ok
         assert "offline" in result.content.lower()
         assert "dev-1" in result.content
-        assert "ws-1" in result.content
-        assert "user-1" in result.content
         assert result.error_details["online"] is False
 
 
@@ -104,8 +94,8 @@ class TestConnectionInfoNotRegistered:
     def test_no_credentials(self, mock_cfg, mock_stack):
         mock_cfg.return_value.sync_api.base_url = "https://jarvisweb.cloud"
 
-        # build_sync_stack raises when no token file exists
-        mock_stack.side_effect = FileNotFoundError("data/device_token.enc")
+        # build_sync_stack raises when no device ID is configured
+        mock_stack.side_effect = FileNotFoundError("DEVICE_ID not set")
 
         tool = _make_tool()
         result = tool.execute()
@@ -120,7 +110,6 @@ class TestConnectionInfoNotRegistered:
         mock_cfg.return_value.sync_api.base_url = "https://jarvisweb.cloud"
 
         stack = MagicMock()
-        stack.device_token = ""
         stack.device_id = ""
         mock_stack.return_value = stack
 

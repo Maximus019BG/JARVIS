@@ -41,12 +41,11 @@ class ListDevicesTool(BaseTool):
                 error_type="NotRegistered",
             )
 
-        device_token = stack.device_token
         device_id = stack.device_id
 
-        if not device_token or not device_id:
+        if not device_id:
             return ToolResult.fail(
-                "Device credentials not found – cannot list devices.\n"
+                "Device ID not configured – set DEVICE_ID in .env.\n"
                 f"Sync server: {sync_url}",
                 error_type="NotRegistered",
             )
@@ -57,7 +56,6 @@ class ListDevicesTool(BaseTool):
                     "/api/workstation/device/list",
                     params={},
                     device_id=device_id,
-                    device_token=device_token,
                 ),
                 timeout=15,
             )

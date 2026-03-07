@@ -14,7 +14,7 @@ from core.sync.sync_manager import SyncError, SyncManager
 
 def _make_manager() -> tuple[SyncManager, MagicMock]:
     http = MagicMock()
-    mgr = SyncManager(http_client=http, device_token="tok", device_id="dev1")
+    mgr = SyncManager(http_client=http, device_id="dev1")
     return mgr, http
 
 
@@ -37,7 +37,6 @@ class TestSyncManagerInit:
     def test_init(self) -> None:
         mgr, http = _make_manager()
         assert mgr.http is http
-        assert mgr.device_token == "tok"
         assert mgr.device_id == "dev1"
 
     def test_calculate_hash(self) -> None:

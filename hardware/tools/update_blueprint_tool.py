@@ -23,7 +23,6 @@ class UpdateBlueprintTool(BaseTool):
         stack = build_sync_stack()
         self.security = stack.security
         self.http_client = stack.http_client
-        self.device_token = stack.device_token
         self.device_id = stack.device_id
         self.sync_manager = stack.sync_manager
 

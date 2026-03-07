@@ -80,15 +80,14 @@ class ConnectionInfoTool(BaseTool):
                 device_name=DEVICE_NAME,
             )
 
-        device_token = stack.device_token
         device_id = stack.device_id
 
-        if not device_token or not device_id:
+        if not device_id:
             return ToolResult.ok_result(
-                f"Not connected – device credentials not found.\n"
+                f"Not connected – device ID not configured.\n"
                 f"Device name:  {DEVICE_NAME}\n"
                 f"Sync server:  {sync_url}\n"
-                "Run device registration from the web dashboard first.",
+                "Set DEVICE_ID in .env (copy from the web dashboard).",
                 registered=False,
                 sync_url=sync_url,
                 device_name=DEVICE_NAME,
@@ -101,7 +100,6 @@ class ConnectionInfoTool(BaseTool):
                     "/api/workstation/device/me",
                     params={},
                     device_id=device_id,
-                    device_token=device_token,
                 ),
                 timeout=15,
             )
@@ -109,9 +107,8 @@ class ConnectionInfoTool(BaseTool):
         except Exception as exc:
             logger.debug("Server unreachable for /device/me: %s", exc)
 
-        # --- fallback: decode JWT locally ------------------------------------
-        claims = _decode_jwt_payload(device_token)
-        return self._format_offline(claims, sync_url, device_id)
+        # --- fallback: minimal offline info ----------------------------------
+        return self._format_offline({}, sync_url, device_id)
 
     # ------------------------------------------------------------------
     # Formatting helpers
