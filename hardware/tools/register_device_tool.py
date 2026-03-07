@@ -122,7 +122,11 @@ class RegisterDeviceTool(BaseTool):
         device_name: str,
         workstation_name: str | None,
     ) -> ToolResult:
-        with httpx.Client(timeout=15, follow_redirects=True) as client:
+        with httpx.Client(
+            timeout=15,
+            follow_redirects=True,
+            headers={"Origin": base_url},  # match server's trustedOrigins
+        ) as client:
             # ── 1. sign in ────────────────────────────────────────
             sign_in = client.post(
                 f"{base_url}/api/auth/sign-in/email",
@@ -245,9 +249,12 @@ class RegisterDeviceTool(BaseTool):
 
 
 def _default_device_name() -> str:
-    """Best-effort hostname for the device name."""
+    """Read device name from DEVICE_NAME env var, falling back to hostname."""
     import socket
 
+    name = os.getenv("DEVICE_NAME", "").strip()
+    if name:
+        return name
     try:
         return socket.gethostname()
     except Exception:

@@ -44,6 +44,7 @@ export const env = createEnv({
     RESEND_API_KEY: z.string().min(1),
     ENCRYPTION_SECRET: z.string().min(8).max(256),
     AUTOMATION_WEBHOOK_SECRET: z.string().min(8),
+    BLUEPRINT_SYNC_JWT_SECRET: z.string().min(1).optional(),
     BLUEPRINT_SYNC_HMAC_SECRET: z.string().min(1).optional(),
   },
 
@@ -78,6 +79,7 @@ export const env = createEnv({
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
     ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
     AUTOMATION_WEBHOOK_SECRET: process.env.AUTOMATION_WEBHOOK_SECRET,
+    BLUEPRINT_SYNC_JWT_SECRET: process.env.BLUEPRINT_SYNC_JWT_SECRET,
     BLUEPRINT_SYNC_HMAC_SECRET: process.env.BLUEPRINT_SYNC_HMAC_SECRET,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },

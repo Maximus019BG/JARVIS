@@ -42,6 +42,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fail fast if the JWT secret is not configured
+    if (!process.env.BLUEPRINT_SYNC_JWT_SECRET) {
+      console.error('BLUEPRINT_SYNC_JWT_SECRET is not set in server environment');
+      return NextResponse.json(
+        { error: 'Server misconfiguration: BLUEPRINT_SYNC_JWT_SECRET not set. Add it to the server .env file.' },
+        { status: 503 }
+      );
+    }
+
     // Generate device ID and token
     const deviceId = nanoid();
     const deviceToken = generateDeviceToken({
@@ -67,8 +76,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Device registration error:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: message },
       { status: 500 }
     );
   }

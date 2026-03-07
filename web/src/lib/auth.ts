@@ -7,6 +7,7 @@ import { sendVerificationEmail } from "~/server/email/utils/send-verification-em
 import { lastLoginMethod, twoFactor } from "better-auth/plugins";
 
 export const auth = betterAuth({
+  trustedOrigins: ["*"],
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,

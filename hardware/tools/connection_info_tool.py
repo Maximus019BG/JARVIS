@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from typing import Any
 
 from app_logging.logger import get_logger
@@ -13,6 +14,15 @@ from core.sync.async_bridge import run_coro_sync
 from core.sync.sync_factory import build_sync_stack
 
 logger = get_logger(__name__)
+
+# Device name from .env (falls back to hostname)
+DEVICE_NAME = os.getenv("DEVICE_NAME", "").strip()
+if not DEVICE_NAME:
+    import socket
+    try:
+        DEVICE_NAME = socket.gethostname()
+    except Exception:
+        DEVICE_NAME = "unknown"
 
 
 def _decode_jwt_payload(token: str) -> dict[str, Any]:
@@ -61,11 +71,13 @@ class ConnectionInfoTool(BaseTool):
         except Exception as exc:
             logger.warning("Cannot load device credentials: %s", exc)
             return ToolResult.ok_result(
-                "Not connected – device is not registered.\n"
-                f"Sync server: {sync_url}\n"
+                f"Not connected – device is not registered.\n"
+                f"Device name:  {DEVICE_NAME}\n"
+                f"Sync server:  {sync_url}\n"
                 "Run device registration from the web dashboard first.",
                 registered=False,
                 sync_url=sync_url,
+                device_name=DEVICE_NAME,
             )
 
         device_token = stack.device_token
@@ -73,11 +85,13 @@ class ConnectionInfoTool(BaseTool):
 
         if not device_token or not device_id:
             return ToolResult.ok_result(
-                "Not connected – device credentials not found.\n"
-                f"Sync server: {sync_url}\n"
+                f"Not connected – device credentials not found.\n"
+                f"Device name:  {DEVICE_NAME}\n"
+                f"Sync server:  {sync_url}\n"
                 "Run device registration from the web dashboard first.",
                 registered=False,
                 sync_url=sync_url,
+                device_name=DEVICE_NAME,
             )
 
         # --- try the server endpoint for full info ---------------------------
@@ -114,6 +128,7 @@ class ConnectionInfoTool(BaseTool):
         lines = [
             "Connected to JARVIS cloud ✓",
             "",
+            f"  Device name: {DEVICE_NAME}",
             f"  User:        {user_info.get('name', 'unknown')}",
             f"  Email:       {user_info.get('email', 'unknown')}",
             f"  Workstation: {ws_info.get('name', 'unknown')} ({ws_info.get('id', '?')})",
@@ -139,6 +154,7 @@ class ConnectionInfoTool(BaseTool):
         lines = [
             "Connected (offline mode)",
             "",
+            f"  Device name:    {DEVICE_NAME}",
             f"  Device ID:      {claims.get('deviceId', device_id)}",
             f"  Workstation ID: {claims.get('workstationId', 'unknown')}",
             f"  User ID:        {claims.get('userId', 'unknown')}",
