@@ -12,7 +12,6 @@ from core.sync.sync_manager import SyncManager
 class SyncStack:
     security: SecurityManager
     http_client: HttpClient
-    device_token: str
     device_id: str
     sync_manager: SyncManager
 
@@ -42,14 +41,12 @@ def build_sync_stack(
         base_url = cfg.sync_api.base_url
 
     http_client = HttpClient(base_url=base_url, security_manager=sec)
-    device_token = sec.load_device_token()
     device_id = sec.load_device_id()
-    sync_manager = SyncManager(http_client, device_token, device_id)
+    sync_manager = SyncManager(http_client, device_id)
 
     return SyncStack(
         security=sec,
         http_client=http_client,
-        device_token=device_token,
         device_id=device_id,
         sync_manager=sync_manager,
     )

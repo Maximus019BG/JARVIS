@@ -86,7 +86,6 @@ class HttpClient:
         endpoint: str,
         params: Optional[Dict] = None,
         device_id: str = None,
-        device_token: str = None,
     ) -> Dict:
         """Secure GET request with rate limiting and replay protection"""
         if not self.security.rate_limiter.allow_request():
@@ -96,7 +95,7 @@ class HttpClient:
         # where `since` comes from the query string.
         payload = params or {}
 
-        headers = self._build_security_headers(device_id, device_token, payload)
+        headers = self._build_security_headers(device_id, payload)
         url = f"{self.base_url}{endpoint}"
         response = await self.client.get(url, params=params, headers=headers)
         return self._handle_response(response)
@@ -106,14 +105,13 @@ class HttpClient:
         endpoint: str,
         data: Optional[Dict] = None,
         device_id: str = None,
-        device_token: str = None,
         idempotency_key: str = None,
     ) -> Dict:
         """Secure POST request with rate limiting and replay protection"""
         if not self.security.rate_limiter.allow_request():
             raise RateLimitExceeded("Too many requests")
 
-        headers = self._build_security_headers(device_id, device_token, data)
+        headers = self._build_security_headers(device_id, data)
 
         if idempotency_key:
             headers["X-Idempotency-Key"] = idempotency_key
@@ -123,7 +121,7 @@ class HttpClient:
         return self._handle_response(response)
 
     def _build_security_headers(
-        self, device_id: str, device_token: str, payload: Optional[Dict] = None
+        self, device_id: str, payload: Optional[Dict] = None
     ) -> Dict:
         """Build secure request headers with replay protection"""
         # Server expects ISO8601 timestamp strings (see web replay protection).
@@ -131,7 +129,6 @@ class HttpClient:
         nonce = secrets.token_urlsafe(16)
 
         headers = {
-            "Authorization": f"Bearer {device_token}",
             "X-Device-Id": device_id,
             "X-Timestamp": timestamp,
             "X-Nonce": nonce,

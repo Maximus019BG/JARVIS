@@ -693,6 +693,32 @@ class ChatHandler:
                 except (ValueError, TypeError):
                     continue
 
+        # Pattern 3: Python-style function calls – e.g. register_device(email="X")
+        # Small models sometimes emit tool calls in this syntax instead of JSON.
+        # Only match snake_case names (contain underscore) to avoid false positives
+        # on ordinary English like "print(hello)".
+        if not calls:
+            for m in re.finditer(
+                r'([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\(([^)]*)\)',
+                text,
+                re.IGNORECASE,
+            ):
+                fn_name = m.group(1)
+                raw_args = m.group(2).strip()
+                args: dict[str, Any] = {}
+                if raw_args:
+                    # Parse key="value" / key='value' / key=value pairs
+                    for kv in re.finditer(
+                        r'(\w+)\s*=\s*(?:"([^"]*)"|' + r"'([^']*)'" + r'|([^\s,]+))',
+                        raw_args,
+                    ):
+                        key = kv.group(1)
+                        val = kv.group(2) or kv.group(3) or kv.group(4) or ""
+                        args[key] = val
+                calls.append(
+                    {"function": {"name": fn_name, "arguments": args}}
+                )
+
         if calls:
             logger.debug(
                 "Text extraction found %d call(s), first args keys: %s",
@@ -708,7 +734,7 @@ class ChatHandler:
         r"|remember|recall|forget|memory|code|script|theme|profile|stats|sync"
         r"|data|browse|find|which|what.*have|my files|my scripts|my blueprints"
         r"|send|update|resolve|conflict|web|fetch|summarize|extract|list|open"
-        r"|show|display|available|import"
+        r"|show|display|available|import|register|device|connection"
         # Blueprint / drawing editing verbs & nouns
         r"|add|remove|delete|modify|edit|change|move|draw|place|put|set|clear"
         r"|rename|resize|rotate|connect|disconnect|reset|restore|blank|wipe"

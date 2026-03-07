@@ -69,13 +69,14 @@ def _make_client() -> HttpClient:
 class TestBuildSecurityHeaders:
     def test_has_required_headers(self):
         client = _make_client()
-        headers = client._build_security_headers("dev1", "tok1", {"a": 1})
-        assert headers["Authorization"] == "Bearer tok1"
+        headers = client._build_security_headers("dev1", {"a": 1})
         assert headers["X-Device-Id"] == "dev1"
         assert "X-Timestamp" in headers
         assert "X-Nonce" in headers
         assert "X-Signature" in headers
         assert headers["Content-Type"] == "application/json"
+        # No Authorization header (JWT removed)
+        assert "Authorization" not in headers
 
     def test_signature_deterministic(self):
         client = _make_client()
@@ -136,13 +137,13 @@ class TestAsyncMethods:
         client = _make_client()
         client.security.rate_limiter.allow_request.return_value = False
         with pytest.raises(RateLimitExceeded):
-            asyncio.run(client.get("/test", device_id="d", device_token="t"))
+            asyncio.run(client.get("/test", device_id="d"))
 
     def test_post_rate_limited(self):
         client = _make_client()
         client.security.rate_limiter.allow_request.return_value = False
         with pytest.raises(RateLimitExceeded):
-            asyncio.run(client.post("/test", device_id="d", device_token="t"))
+            asyncio.run(client.post("/test", device_id="d"))
 
     def test_get_success(self):
         client = _make_client()
@@ -150,7 +151,7 @@ class TestAsyncMethods:
         fake_resp.status_code = 200
         fake_resp.json.return_value = {"data": "ok"}
         client.client.get = AsyncMock(return_value=fake_resp)
-        result = asyncio.run(client.get("/ep", params={"since": "0"}, device_id="d", device_token="t"))
+        result = asyncio.run(client.get("/ep", params={"since": "0"}, device_id="d"))
         assert result == {"data": "ok"}
 
     def test_post_success(self):
@@ -159,7 +160,7 @@ class TestAsyncMethods:
         fake_resp.status_code = 200
         fake_resp.json.return_value = {"created": True}
         client.client.post = AsyncMock(return_value=fake_resp)
-        result = asyncio.run(client.post("/ep", data={"a": 1}, device_id="d", device_token="t"))
+        result = asyncio.run(client.post("/ep", data={"a": 1}, device_id="d"))
         assert result == {"created": True}
 
     def test_post_with_idempotency_key(self):
@@ -168,7 +169,7 @@ class TestAsyncMethods:
         fake_resp.status_code = 200
         fake_resp.json.return_value = {}
         client.client.post = AsyncMock(return_value=fake_resp)
-        asyncio.run(client.post("/ep", data={}, device_id="d", device_token="t",
+        asyncio.run(client.post("/ep", data={}, device_id="d",
                                 idempotency_key="idem-123"))
         # Verify idempotency header was included
         call_kwargs = client.client.post.call_args

@@ -453,6 +453,8 @@ class JarvisTUI(App):
         self._engine_widget = None
         self._code_engine = None
         self._code_widget = None
+        # Pending device registration (password collection phase)
+        self._pending_registration: dict[str, Any] | None = None
 
     # ── Layout ────────────────────────────────────────────────────
 
@@ -633,6 +635,11 @@ class JarvisTUI(App):
 
         event.input.clear()
 
+        # ── Password collection for device registration ───────
+        if self._pending_registration is not None:
+            self._complete_registration(text)
+            return
+
         # Slash commands
         if text.lower() in ("/quit", "quit"):
             self.action_quit()
@@ -789,6 +796,7 @@ class JarvisTUI(App):
             # Check if any tool results signal to open/reload the blueprint engine
             for tr in getattr(self.chat_handler, "_last_tool_results", []):
                 self._handle_tool_result_for_engine(tr)
+                self._handle_password_prompt(tr)
             self.chat_handler._last_tool_results = []
 
             # If engine is already open, auto-refresh to pick up any
@@ -1253,6 +1261,66 @@ class JarvisTUI(App):
                 self._append_system(
                     f"New blueprint '{name}' created in engine."
                 )
+
+    # ── Device registration password flow ───────────────────────
+
+    def _handle_password_prompt(self, result: Any) -> None:
+        """Detect a password_required tool result and switch input to masked mode."""
+        from tools.register_device_tool import PASSWORD_REQUIRED
+
+        if not hasattr(result, "error_type"):
+            return
+        if result.error_type != PASSWORD_REQUIRED:
+            return
+
+        meta = result.error_details or {}
+        self._pending_registration = {
+            "email": meta.get("email", ""),
+            "device_name": meta.get("device_name"),
+            "workstation_name": meta.get("workstation_name"),
+        }
+
+        inp = self.query_one("#user-input", Input)
+        inp.password = True
+        inp.placeholder = "Enter password (hidden)…"
+        inp.focus()
+
+    @work(thread=True)
+    def _complete_registration(self, password: str) -> None:
+        """Run the actual registration with the collected password, then restore input.
+
+        Runs in a background thread so the blocking HTTP calls don't freeze the
+        TUI.  All DOM mutations are dispatched back to the event-loop thread via
+        ``call_from_thread``.
+        """
+        from tools.register_device_tool import RegisterDeviceTool
+
+        reg = self._pending_registration or {}
+        self._pending_registration = None
+
+        # Restore normal input immediately (must go through the event loop)
+        def _restore_input() -> None:
+            inp = self.query_one("#user-input", Input)
+            inp.password = False
+            inp.placeholder = "Type a message…"
+
+        self.app.call_from_thread(_restore_input)
+
+        if not password:
+            self.app.call_from_thread(self._append_assistant, "Registration cancelled — no password entered.")
+            return
+
+        self.app.call_from_thread(self._append_assistant, "Registering device…")
+
+        tool = RegisterDeviceTool()
+        result = tool.execute(
+            email=reg.get("email", ""),
+            password=password,
+            device_name=reg.get("device_name"),
+            workstation_name=reg.get("workstation_name"),
+        )
+
+        self.app.call_from_thread(self._append_assistant, result.content)
 
     def _handle_tool_result_for_engine(self, result: Any) -> None:
         """Check if a tool result signals to open the blueprint or code engine.

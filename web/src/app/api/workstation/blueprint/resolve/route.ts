@@ -1,34 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '~/server/db';
-import { blueprint, syncLog } from '~/server/db/schemas/blueprint';
-import { syncLogger } from '~/lib/syncLogger';
-import { verifyDeviceToken } from '~/lib/device-auth';
-import { verifyHMACSignature } from '~/lib/hmac-verify';
-import { replayProtection } from '~/middleware/replay-protection';
-import { eq } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
-import crypto from 'crypto';
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "~/server/db";
+import { blueprint, syncLog } from "~/server/db/schemas/blueprint";
+import { syncLogger } from "~/lib/syncLogger";
+import { verifyDeviceToken } from "~/lib/device-auth";
+import { verifyHMACSignature } from "~/lib/hmac-verify";
+import { replayProtection } from "~/middleware/replay-protection";
+import { eq } from "drizzle-orm";
+import { env } from "~/env";
+import { nanoid } from "nanoid";
+import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    const deviceId = request.headers.get('X-Device-Id');
-    const timestamp = request.headers.get('X-Timestamp');
-    const nonce = request.headers.get('X-Nonce');
-    const signature = request.headers.get('X-Signature');
+    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+    const deviceId = request.headers.get("X-Device-Id");
+    const timestamp = request.headers.get("X-Timestamp");
+    const nonce = request.headers.get("X-Nonce");
+    const signature = request.headers.get("X-Signature");
 
     if (!token || !deviceId || !timestamp || !nonce || !signature) {
       return NextResponse.json(
-        { error: 'Missing required headers' },
-        { status: 400 }
+        { error: "Missing required headers" },
+        { status: 400 },
       );
     }
 
     const claims = await verifyDeviceToken(token);
     if (!claims || claims.deviceId !== deviceId) {
       return NextResponse.json(
-        { error: 'Invalid device token' },
-        { status: 401 }
+        { error: "Invalid device token" },
+        { status: 401 },
       );
     }
 
@@ -37,63 +38,57 @@ export async function POST(request: NextRequest) {
       return replayResult;
     }
 
-    const hmacSecret = process.env.BLUEPRINT_SYNC_HMAC_SECRET;
+    const hmacSecret = env.BLUEPRINT_SYNC_HMAC_SECRET;
     if (!hmacSecret) {
       return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
+        { error: "Server configuration error" },
+        { status: 500 },
       );
     }
 
     const body = await request.json();
     if (!verifyHMACSignature(body, timestamp, nonce, signature, hmacSecret)) {
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     const { blueprintId, resolution, localData, serverData } = body;
 
     if (!blueprintId || !resolution || !localData || !serverData) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+        { error: "Missing required fields" },
+        { status: 400 },
       );
     }
 
-    if (!['server', 'local', 'merge'].includes(resolution)) {
+    if (!["server", "local", "merge"].includes(resolution)) {
       return NextResponse.json(
-        { error: 'Invalid resolution type' },
-        { status: 400 }
+        { error: "Invalid resolution type" },
+        { status: 400 },
       );
     }
 
     // Get current blueprint
     const existing = await db.query.blueprint.findFirst({
-      where: eq(blueprint.id, blueprintId)
+      where: eq(blueprint.id, blueprintId),
     });
 
     if (!existing) {
       return NextResponse.json(
-        { error: 'Blueprint not found' },
-        { status: 404 }
+        { error: "Blueprint not found" },
+        { status: 404 },
       );
     }
 
     // Ownership check (prevent IDOR): blueprint must belong to the device's workstation
     if (existing.workstationId !== claims.workstationId) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // Determine merged data
     let mergedData;
-    if (resolution === 'server') {
+    if (resolution === "server") {
       mergedData = serverData;
-    } else if (resolution === 'local') {
+    } else if (resolution === "local") {
       mergedData = localData;
     } else {
       // Merge: server wins for conflicts, preserve local-only fields
@@ -111,19 +106,20 @@ export async function POST(request: NextRequest) {
     // Update blueprint
     const now = new Date();
     const newHash = crypto
-      .createHash('sha256')
+      .createHash("sha256")
       .update(JSON.stringify(mergedData))
-      .digest('hex');
+      .digest("hex");
 
-    await db.update(blueprint)
+    await db
+      .update(blueprint)
       .set({
         metadata: JSON.stringify(mergedData),
         version: newVersion,
         hash: newHash,
-        syncStatus: 'synced',
+        syncStatus: "synced",
         lastSyncedAt: now,
         deviceId,
-        updatedAt: now
+        updatedAt: now,
       })
       .where(eq(blueprint.id, blueprintId));
 
@@ -132,15 +128,15 @@ export async function POST(request: NextRequest) {
       id: nanoid(),
       blueprintId,
       deviceId,
-      action: 'resolve',
-      direction: 'to_server',
-      status: 'success',
+      action: "resolve",
+      direction: "to_server",
+      status: "success",
       versionBefore: existing.version,
       versionAfter: newVersion,
-      createdAt: now
+      createdAt: now,
     });
 
-    syncLogger.info('blueprint.resolve.success', {
+    syncLogger.info("blueprint.resolve.success", {
       blueprintId,
       deviceId,
       workstationId: claims.workstationId,
@@ -154,16 +150,16 @@ export async function POST(request: NextRequest) {
       blueprintId,
       version: newVersion,
       mergedData,
-      hash: newHash
+      hash: newHash,
     });
   } catch (error) {
-    syncLogger.error('blueprint.resolve.error', {
+    syncLogger.error("blueprint.resolve.error", {
       error: error instanceof Error ? error.message : String(error),
     });
-    console.error('Resolve conflict error:', error);
+    console.error("Resolve conflict error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

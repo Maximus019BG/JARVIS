@@ -29,6 +29,20 @@
       "when": 1770882494958,
       "tag": "0003_lush_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1772784000000,
+      "tag": "0004_script_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772829733783,
+      "tag": "0005_previous_nomad",
+      "breakpoints": true
     }
   ]
 }

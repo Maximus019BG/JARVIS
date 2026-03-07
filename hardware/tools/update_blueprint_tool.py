@@ -1,9 +1,8 @@
 from __future__ import annotations
-
-import asyncio
 from typing import Any
 
 from core.base_tool import BaseTool, ToolResult
+from core.sync.async_bridge import run_coro_sync
 from core.sync.sync_factory import build_sync_stack
 
 
@@ -24,7 +23,6 @@ class UpdateBlueprintTool(BaseTool):
         stack = build_sync_stack()
         self.security = stack.security
         self.http_client = stack.http_client
-        self.device_token = stack.device_token
         self.device_id = stack.device_id
         self.sync_manager = stack.sync_manager
 
@@ -46,11 +44,11 @@ class UpdateBlueprintTool(BaseTool):
                 "blueprint_id is required", error_type="ValidationError"
             )
 
-        async def _run() -> dict[str, Any]:
-            return await self.sync_manager.update_blueprint(blueprint_id)
-
         try:
-            result = asyncio.run(_run())
+            result = run_coro_sync(
+                self.sync_manager.update_blueprint(blueprint_id),
+                timeout=90,
+            )
             blueprint = (result or {}).get("blueprint") or {}
             content = (
                 f"Updated blueprint: {blueprint.get('name')}\n"
@@ -65,7 +63,5 @@ class UpdateBlueprintTool(BaseTool):
                 version=blueprint.get("version"),
                 lastModified=blueprint.get("lastModified"),
             )
-        except RuntimeError as e:
-            return ToolResult.fail(f"Update failed: {e}", error_type="RuntimeError")
         except Exception as e:
             return ToolResult.fail(f"Update failed: {e}", error_type="Exception")

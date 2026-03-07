@@ -18,7 +18,9 @@ export const env = createEnv({
       .transform((val) => {
         const parsed = parseInt(val, 10);
         if (isNaN(parsed)) {
-          throw new Error(`Invalid number for BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: ${val}`);
+          throw new Error(
+            `Invalid number for BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: ${val}`,
+          );
         }
         return parsed;
       })
@@ -28,7 +30,9 @@ export const env = createEnv({
       .transform((val) => {
         const parsed = parseInt(val, 10);
         if (isNaN(parsed)) {
-          throw new Error(`Invalid number for BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: ${val}`);
+          throw new Error(
+            `Invalid number for BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN: ${val}`,
+          );
         }
         return parsed;
       })
@@ -40,6 +44,8 @@ export const env = createEnv({
     RESEND_API_KEY: z.string().min(1),
     ENCRYPTION_SECRET: z.string().min(8).max(256),
     AUTOMATION_WEBHOOK_SECRET: z.string().min(8),
+    BLUEPRINT_SYNC_JWT_SECRET: z.string().min(1).optional(),
+    BLUEPRINT_SYNC_HMAC_SECRET: z.string().min(1).optional(),
   },
 
   /**
@@ -65,13 +71,16 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     BETTER_AUTH_ORGANIZATION_LIMIT: process.env.BETTER_AUTH_ORGANIZATION_LIMIT,
-    BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: process.env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
+    BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN:
+      process.env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
     BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN:
       process.env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
     ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
     AUTOMATION_WEBHOOK_SECRET: process.env.AUTOMATION_WEBHOOK_SECRET,
+    BLUEPRINT_SYNC_JWT_SECRET: process.env.BLUEPRINT_SYNC_JWT_SECRET,
+    BLUEPRINT_SYNC_HMAC_SECRET: process.env.BLUEPRINT_SYNC_HMAC_SECRET,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

@@ -13,7 +13,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Annotated
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -159,7 +159,8 @@ class SyncApiConfig(BaseSettings):
 
     Centralizes server URLs to avoid hardcoding them throughout tools.
     Environment variable support:
-      - SYNC_API_BASE_URL
+            - SYNC_API_BASE_URL (primary)
+            - JARVIS_SYNC_SERVER_URL (legacy fallback)
     """
 
     model_config = SettingsConfigDict(
@@ -170,6 +171,18 @@ class SyncApiConfig(BaseSettings):
     )
 
     base_url: str = Field(default="https://jarvisweb.cloud", alias="BASE_URL")
+
+    @model_validator(mode="after")
+    def _apply_legacy_env_and_normalize(self) -> "SyncApiConfig":
+        """Apply legacy env fallback and normalize base URL."""
+        legacy = os.getenv("JARVIS_SYNC_SERVER_URL", "").strip()
+        explicit_new = os.getenv("SYNC_API_BASE_URL", "").strip()
+
+        if legacy and not explicit_new:
+            self.base_url = legacy
+
+        self.base_url = self.base_url.rstrip("/")
+        return self
 
 
 class AudioInputBackend(str, Enum):

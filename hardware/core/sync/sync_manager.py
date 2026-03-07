@@ -22,11 +22,12 @@ class SyncError(Exception):
 class SyncManager:
     """Manages blueprint synchronization with server."""
 
+    _BLUEPRINT_EXTENSIONS = (".jarvis", ".json")
+
     def __init__(
-        self, http_client: HttpClient, device_token: str, device_id: str
+        self, http_client: HttpClient, device_id: str
     ) -> None:
         self.http = http_client
-        self.device_token = device_token
         self.device_id = device_id
         self.config = SyncConfigManager()
         self.offline_queue = OfflineQueue()
@@ -41,7 +42,6 @@ class SyncManager:
                 "/api/workstation/blueprint/sync",
                 params=params,
                 device_id=self.device_id,
-                device_token=self.device_token,
             )
 
             self.config.update_last_sync_timestamp()
@@ -55,13 +55,18 @@ class SyncManager:
     async def send_blueprint(self, blueprint_path: str) -> dict[str, Any]:
         """Send a local blueprint to the server."""
         blueprint_data = self._load_blueprint(blueprint_path)
+        if not blueprint_data.get("id"):
+            raise SyncError("Blueprint missing required 'id'")
+        if not blueprint_data.get("name"):
+            raise SyncError("Blueprint missing required 'name'")
+
         blueprint_hash = self._calculate_hash(blueprint_data)
         idempotency_key = f"{blueprint_data['id']}_{blueprint_data.get('version', 1)}"
 
         payload = {
             "blueprintId": blueprint_data["id"],
             "name": blueprint_data["name"],
-            "data": blueprint_data.get("data", {}),
+            "data": blueprint_data,
             "version": blueprint_data.get("version", 1),
             "hash": blueprint_hash,
             "timestamp": datetime.utcnow().isoformat(),
@@ -72,7 +77,6 @@ class SyncManager:
                 "/api/workstation/blueprint/push",
                 data=payload,
                 device_id=self.device_id,
-                device_token=self.device_token,
                 idempotency_key=idempotency_key,
             )
 
@@ -86,6 +90,42 @@ class SyncManager:
             )
             raise SyncError("Send failed")
 
+    async def send_script(self, script_path: str) -> dict[str, Any]:
+        """Send a local script file to the server."""
+        path = Path(script_path)
+        if not path.exists():
+            raise SyncError(f"Script not found: {script_path}")
+
+        source = path.read_text(encoding="utf-8")
+        script_name = path.stem
+        script_id = f"script_{script_name}"
+        payload_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        idempotency_key = f"{script_id}_{payload_hash}"
+
+        payload = {
+            "scriptId": script_id,
+            "name": script_name,
+            "language": "python",
+            "source": source,
+            "hash": payload_hash,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        try:
+            return await self.http.post(
+                "/api/workstation/script/push",
+                data=payload,
+                device_id=self.device_id,
+                idempotency_key=idempotency_key,
+            )
+        except Exception:
+            logger.exception("Send script failed")
+            self.offline_queue.add(
+                "script_push",
+                {"script_path": str(path), "payload": payload},
+            )
+            raise SyncError("Script send failed")
+
     async def update_blueprint(self, blueprint_id: str) -> dict[str, Any]:
         """Pull and apply server updates to a local blueprint."""
         local_version = self._get_local_blueprint_version(blueprint_id)
@@ -97,7 +137,6 @@ class SyncManager:
                 "/api/workstation/blueprint/pull",
                 data=payload,
                 device_id=self.device_id,
-                device_token=self.device_token,
             )
 
             self._save_blueprint(blueprint_id, response["blueprint"])
@@ -128,7 +167,6 @@ class SyncManager:
             "/api/workstation/blueprint/resolve",
             data=payload,
             device_id=self.device_id,
-            device_token=self.device_token,
         )
 
         self._save_blueprint(blueprint_id, response)
@@ -152,6 +190,8 @@ class SyncManager:
                     result = await self.update_blueprint(
                         operation["data"]["blueprint_id"]
                     )
+                elif operation["type"] == "script_push":
+                    result = await self.send_script(operation["data"]["script_path"])
                 else:
                     # Unknown operation; keep it in the queue.
                     self.offline_queue.add(operation["type"], operation["data"])
@@ -190,9 +230,7 @@ class SyncManager:
 
     def _load_blueprint_data(self, blueprint_id: str) -> dict[str, Any]:
         """Load blueprint data by ID."""
-        blueprints_dir = Path("data/blueprints")
-
-        for blueprint_file in blueprints_dir.glob("*.json"):
+        for blueprint_file in self._iter_blueprint_files():
             try:
                 with open(blueprint_file, encoding="utf-8") as f:
                     data = json.load(f)
@@ -214,7 +252,6 @@ class SyncManager:
             "/api/workstation/blueprint/pull",
             data=payload,
             device_id=self.device_id,
-            device_token=self.device_token,
         )
 
         return response.get("blueprint", {})
@@ -226,7 +263,9 @@ class SyncManager:
         blueprints_dir = Path("data/blueprints")
         blueprints_dir.mkdir(parents=True, exist_ok=True)
 
-        blueprint_file = blueprints_dir / f"{blueprint_id}.json"
+        blueprint_file = self._find_blueprint_file_by_id(blueprint_id)
+        if blueprint_file is None:
+            blueprint_file = blueprints_dir / f"{blueprint_id}.jarvis"
 
         with open(blueprint_file, "w", encoding="utf-8") as f:
             json.dump(blueprint_data, f, indent=2)
@@ -245,6 +284,30 @@ class SyncManager:
         """Get local blueprint version."""
         data = self._load_blueprint_data(blueprint_id)
         return int(data.get("version", 0))
+
+    def _iter_blueprint_files(self) -> list[Path]:
+        """Return blueprint files preferring .jarvis over .json."""
+        blueprints_dir = Path("data/blueprints")
+        if not blueprints_dir.exists():
+            return []
+
+        files: list[Path] = []
+        for ext in self._BLUEPRINT_EXTENSIONS:
+            files.extend(blueprints_dir.glob(f"*{ext}"))
+        return files
+
+    def _find_blueprint_file_by_id(self, blueprint_id: str) -> Path | None:
+        for blueprint_file in self._iter_blueprint_files():
+            try:
+                with open(blueprint_file, encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            if data.get("id") == blueprint_id:
+                return blueprint_file
+
+        return None
 
     def _calculate_hash(self, data: dict[str, Any]) -> str:
         """Calculate SHA-256 hash of blueprint data."""

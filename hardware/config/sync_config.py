@@ -4,7 +4,7 @@ Blueprint synchronization configuration for JARVIS hardware.
 
 SYNC_CONFIG = {
     # Server URL for blueprint sync API
-    "server_url": "https://api.jarvis.example.com",
+    "server_url": "https://jarvisweb.cloud",
     # Paths for storing device credentials
     "device_token_path": "data/device_token.enc",
     "device_id_path": "data/device_id.enc",
@@ -26,8 +26,9 @@ SYNC_CONFIG = {
 import os
 
 SYNC_CONFIG["server_url"] = os.getenv(
-    "JARVIS_SYNC_SERVER_URL", SYNC_CONFIG["server_url"]
-)
+    "SYNC_API_BASE_URL",
+    os.getenv("JARVIS_SYNC_SERVER_URL", SYNC_CONFIG["server_url"]),
+).rstrip("/")
 SYNC_CONFIG["sync_interval_minutes"] = int(
     os.getenv("JARVIS_SYNC_INTERVAL", SYNC_CONFIG["sync_interval_minutes"])
 )

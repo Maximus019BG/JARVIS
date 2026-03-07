@@ -8,14 +8,12 @@ import pytest
 def _make_stack_stub(call_log: list[str]):
     security = object()
     http_client = object()
-    device_token = "token-123"
     device_id = "device-abc"
     sync_manager = object()
 
     stack = SimpleNamespace(
         security=security,
         http_client=http_client,
-        device_token=device_token,
         device_id=device_id,
         sync_manager=sync_manager,
     )
@@ -49,7 +47,6 @@ def test_tools_use_build_sync_stack(monkeypatch, module_path: str, tool_cls_name
     assert call_log == ["called"]
     assert tool.security is stack.security
     assert tool.http_client is stack.http_client
-    assert tool.device_token == stack.device_token
     assert tool.device_id == stack.device_id
     assert tool.sync_manager is stack.sync_manager
 
@@ -67,7 +64,6 @@ def test_sync_queue_tool_uses_build_sync_stack_and_keeps_queue(monkeypatch):
     assert call_log == ["called"]
     assert tool.security is stack.security
     assert tool.http_client is stack.http_client
-    assert tool.device_token == stack.device_token
     assert tool.device_id == stack.device_id
     assert tool.sync_manager is stack.sync_manager
 
@@ -85,7 +81,6 @@ def test_sync_tool_execute_behavior_preserved_with_stubbed_sync_manager(monkeypa
     stack = SimpleNamespace(
         security=object(),
         http_client=object(),
-        device_token="token-123",
         device_id="device-abc",
         sync_manager=SimpleNamespace(sync_to_server=_sync_to_server),
     )

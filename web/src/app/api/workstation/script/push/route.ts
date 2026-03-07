@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "~/server/db";
-import { blueprint, syncLog } from "~/server/db/schemas/blueprint";
+import { scriptFile } from "~/server/db/schemas/script_file";
 import { syncLogger } from "~/lib/syncLogger";
 import { verifyDeviceById } from "~/lib/device-auth";
 import { verifyHMACSignature } from "~/lib/hmac-verify";
@@ -10,13 +10,10 @@ import {
 } from "~/middleware/idempotency";
 import { replayProtection } from "~/middleware/replay-protection";
 import { env } from "~/env";
-import { eq, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
+import { eq } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
-  // Check idempotency
   const idempotencyResult = await idempotency(request);
-  // Only short-circuit when we're replaying a stored response
   if (idempotencyResult.headers.get("X-Idempotency-Replayed") === "true") {
     return idempotencyResult;
   }
@@ -60,42 +57,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    const { blueprintId, name, data, version, hash } = body;
+    const { scriptId, name, language, source, hash } = body;
 
-    if (!blueprintId || !name || !data || !version || !hash) {
+    if (!scriptId || !name || !source || !hash) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 },
       );
     }
 
-    // Check for version conflict
-    const existing = await db.query.blueprint.findFirst({
-      where: eq(blueprint.id, blueprintId),
+    const existing = await db.query.scriptFile.findFirst({
+      where: eq(scriptFile.id, scriptId),
     });
 
-    // Ownership check (prevent IDOR): existing blueprint must belong to the device's workstation
     if (existing && existing.workstationId !== claims.workstationId) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    if (existing && existing.version >= version) {
-      return NextResponse.json(
-        { error: "Version conflict", currentVersion: existing.version },
-        { status: 409 },
-      );
-    }
-
-    // Update or create blueprint
     const now = new Date();
-    const newVersion = existing ? version : 1;
+    const newVersion = (existing?.version ?? 0) + 1;
 
     if (existing) {
       await db
-        .update(blueprint)
+        .update(scriptFile)
         .set({
           name,
-          metadata: JSON.stringify(data),
+          language: language || existing.language || "python",
+          source,
           version: newVersion,
           hash,
           syncStatus: "synced",
@@ -103,13 +91,14 @@ export async function POST(request: NextRequest) {
           deviceId,
           updatedAt: now,
         })
-        .where(eq(blueprint.id, blueprintId));
+        .where(eq(scriptFile.id, scriptId));
     } else {
-      await db.insert(blueprint).values({
-        id: blueprintId,
+      await db.insert(scriptFile).values({
+        id: scriptId,
         name,
-        metadata: JSON.stringify(data),
-        version: newVersion,
+        language: language || "python",
+        source,
+        version: 1,
         hash,
         syncStatus: "synced",
         lastSyncedAt: now,
@@ -121,44 +110,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Log sync operation
-    await db.insert(syncLog).values({
-      id: nanoid(),
-      blueprintId,
-      deviceId,
-      action: "push",
-      direction: "to_server",
-      status: "success",
-      versionBefore: existing?.version,
-      versionAfter: newVersion,
-      createdAt: now,
-    });
-
-    syncLogger.info("blueprint.push.success", {
-      blueprintId,
-      deviceId,
-      workstationId: claims.workstationId,
-      versionBefore: existing?.version,
-      versionAfter: newVersion,
-    });
-
     const response = NextResponse.json({
       success: true,
-      blueprintId,
+      scriptId,
       version: newVersion,
       syncStatus: "synced",
       serverTimestamp: now.toISOString(),
     });
 
-    // Store idempotency response
     await storeIdempotencyResponse(request, response);
 
     return response;
   } catch (error) {
-    syncLogger.error("blueprint.push.error", {
+    syncLogger.error("script.push.error", {
       error: error instanceof Error ? error.message : String(error),
     });
-    console.error("Push blueprint error:", error);
+    console.error("Push script error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
