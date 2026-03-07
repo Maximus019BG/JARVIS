@@ -548,6 +548,70 @@ class SecurityManager:
             )
             return True
 
+    # ------------------------------------------------------------------
+    # Device credential helpers (used by sync_factory / sync tools)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _credentials_dir() -> Path:
+        from config.sync_config import SYNC_CONFIG
+
+        return Path(SYNC_CONFIG["device_token_path"]).parent
+
+    def load_device_token(self) -> str:
+        """Load the stored device JWT token."""
+        from config.sync_config import SYNC_CONFIG
+
+        path = Path(SYNC_CONFIG["device_token_path"])
+        if not path.exists():
+            logger.warning("Device token file not found: %s", path)
+            return ""
+        return path.read_text(encoding="utf-8").strip()
+
+    def load_device_id(self) -> str:
+        """Load the stored device ID."""
+        from config.sync_config import SYNC_CONFIG
+
+        path = Path(SYNC_CONFIG["device_id_path"])
+        if not path.exists():
+            logger.warning("Device ID file not found: %s", path)
+            return ""
+        return path.read_text(encoding="utf-8").strip()
+
+    def is_device_registered(self) -> bool:
+        """Return True when device credentials are present on disk."""
+        return bool(self.load_device_token()) and bool(self.load_device_id())
+
+    def get_signing_key(self) -> bytes:
+        """Load the HMAC signing key used for request signatures."""
+        from config.sync_config import SYNC_CONFIG
+
+        path = Path(SYNC_CONFIG["signing_key_path"])
+        if not path.exists():
+            logger.warning("Signing key file not found: %s", path)
+            return b""
+        return path.read_text(encoding="utf-8").strip().encode("utf-8")
+
+    def save_device_credentials(
+        self, device_id: str, device_token: str, signing_key: str
+    ) -> None:
+        """Persist device credentials to disk after registration."""
+        from config.sync_config import SYNC_CONFIG
+
+        cred_dir = self._credentials_dir()
+        cred_dir.mkdir(parents=True, exist_ok=True)
+
+        Path(SYNC_CONFIG["device_token_path"]).write_text(
+            device_token, encoding="utf-8"
+        )
+        Path(SYNC_CONFIG["device_id_path"]).write_text(device_id, encoding="utf-8")
+        Path(SYNC_CONFIG["signing_key_path"]).write_text(
+            signing_key, encoding="utf-8"
+        )
+
+        self.audit_log("device_registered", {"device_id": device_id})
+        logger.info("Device credentials saved to %s", cred_dir)
+
 
 # Global security manager instance
 _security_manager: SecurityManager | None = None
