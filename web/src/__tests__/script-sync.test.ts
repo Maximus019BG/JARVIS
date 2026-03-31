@@ -16,7 +16,8 @@ jest.mock('~/server/db', () => ({
 }));
 
 jest.mock('~/lib/device-auth', () => ({
-  verifyDeviceToken: jest.fn()
+  verifyDeviceToken: jest.fn(),
+  verifyDeviceById: jest.fn()
 }));
 
 jest.mock('~/lib/hmac-verify', () => ({
@@ -24,7 +25,7 @@ jest.mock('~/lib/hmac-verify', () => ({
 }));
 
 import { db } from '~/server/db';
-import { verifyDeviceToken } from '~/lib/device-auth';
+import { verifyDeviceToken, verifyDeviceById } from '~/lib/device-auth';
 import { verifyHMACSignature } from '~/lib/hmac-verify';
 
 function makeHeaders(overrides: Record<string, string> = {}) {
@@ -62,6 +63,11 @@ beforeEach(() => {
   process.env.BLUEPRINT_SYNC_JWT_SECRET = 'jwt';
 
   (verifyDeviceToken as jest.Mock).mockResolvedValue({
+    deviceId: 'device-1',
+    workstationId: 'ws-1',
+    userId: 'user-1'
+  });
+  (verifyDeviceById as jest.Mock).mockResolvedValue({
     deviceId: 'device-1',
     workstationId: 'ws-1',
     userId: 'user-1'

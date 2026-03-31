@@ -5,23 +5,24 @@ import { blueprintVersion } from "~/server/db/schemas/blueprint_version";
 import { syncLogger } from "~/lib/syncLogger";
 import { verifyDeviceById } from "~/lib/device-auth";
 import { verifyHMACSignature } from "~/lib/hmac-verify";
-import {
-  idempotency,
-  storeIdempotencyResponse,
-} from "~/middleware/idempotency";
 import { replayProtection } from "~/middleware/replay-protection";
 import { env } from "~/env";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+/**
+ * POST /api/workstation/blueprint/restore
+ *
+ * Rolls a blueprint back to a specific historical version snapshot.
+ * The current live content is saved as a new snapshot in
+ * `blueprint_version` before the restore is applied so that the
+ * rollback itself is also reversible.
+ *
+ * Request body: { blueprintId: string, targetVersion: number }
+ *
+ * Security: standard device-auth chain (device ID lookup + HMAC + replay).
+ */
 export async function POST(request: NextRequest) {
-  // Check idempotency
-  const idempotencyResult = await idempotency(request);
-  // Only short-circuit when we're replaying a stored response
-  if (idempotencyResult.headers.get("X-Idempotency-Replayed") === "true") {
-    return idempotencyResult;
-  }
-
   try {
     const deviceId = request.headers.get("X-Device-Id");
     const timestamp = request.headers.get("X-Timestamp");
@@ -61,117 +62,119 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    const { blueprintId, name, data, version, hash } = body;
+    const { blueprintId, targetVersion } = body;
 
-    if (!blueprintId || !name || !data || !version || !hash) {
+    if (!blueprintId || targetVersion === undefined || targetVersion === null) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "blueprintId and targetVersion are required" },
         { status: 400 },
       );
     }
 
-    // Check for version conflict
+    // Load current blueprint (ownership + existence check)
     const existing = await db.query.blueprint.findFirst({
       where: eq(blueprint.id, blueprintId),
     });
 
-    // Ownership check (prevent IDOR): existing blueprint must belong to the device's workstation
-    if (existing && existing.workstationId !== claims.workstationId) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
-    if (existing && existing.version >= version) {
+    if (!existing) {
       return NextResponse.json(
-        { error: "Version conflict", currentVersion: existing.version },
-        { status: 409 },
+        { error: "Blueprint not found" },
+        { status: 404 },
       );
     }
 
-    // Update or create blueprint
+    if (existing.workstationId !== claims.workstationId) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    // Locate the requested historical snapshot
+    const snapshot = await db.query.blueprintVersion.findFirst({
+      where: and(
+        eq(blueprintVersion.blueprintId, blueprintId),
+        eq(blueprintVersion.version, targetVersion),
+      ),
+    });
+
+    if (!snapshot) {
+      return NextResponse.json(
+        { error: "Version not found" },
+        { status: 404 },
+      );
+    }
+
     const now = new Date();
-    const newVersion = existing ? version : 1;
 
-    if (existing) {
-      // Snapshot the current version before overwriting
-      await db.insert(blueprintVersion).values({
-        id: nanoid(),
-        blueprintId,
-        version: existing.version,
-        metadata: existing.metadata ?? "{}",
-        hash: existing.hash ?? null,
-        deviceId: existing.deviceId ?? null,
-        createdBy: claims.userId,
-        createdAt: now,
-      });
+    // Snapshot the current live version before rolling back
+    await db.insert(blueprintVersion).values({
+      id: nanoid(),
+      blueprintId,
+      version: existing.version,
+      metadata: existing.metadata ?? "{}",
+      hash: existing.hash ?? null,
+      deviceId: existing.deviceId ?? null,
+      createdBy: claims.userId,
+      createdAt: now,
+    });
 
-      await db
-        .update(blueprint)
-        .set({
-          name,
-          metadata: JSON.stringify(data),
-          version: newVersion,
-          hash,
-          syncStatus: "synced",
-          lastSyncedAt: now,
-          deviceId,
-          updatedAt: now,
-        })
-        .where(eq(blueprint.id, blueprintId));
-    } else {
-      await db.insert(blueprint).values({
-        id: blueprintId,
-        name,
-        metadata: JSON.stringify(data),
+    // The restored version gets a new (incremented) version number so
+    // that the version counter stays monotonically increasing.
+    const newVersion = existing.version + 1;
+
+    await db
+      .update(blueprint)
+      .set({
+        metadata: snapshot.metadata,
         version: newVersion,
-        hash,
+        hash: snapshot.hash ?? null,
         syncStatus: "synced",
         lastSyncedAt: now,
         deviceId,
-        workstationId: claims.workstationId,
-        createdBy: claims.userId,
-        createdAt: now,
         updatedAt: now,
-      });
-    }
+      })
+      .where(eq(blueprint.id, blueprintId));
 
-    // Log sync operation
+    // Log the restore operation
     await db.insert(syncLog).values({
       id: nanoid(),
       blueprintId,
       deviceId,
-      action: "push",
+      action: "restore",
       direction: "to_server",
       status: "success",
-      versionBefore: existing?.version,
+      versionBefore: existing.version,
       versionAfter: newVersion,
       createdAt: now,
     });
 
-    syncLogger.info("blueprint.push.success", {
+    syncLogger.info("blueprint.restore.success", {
       blueprintId,
       deviceId,
       workstationId: claims.workstationId,
-      versionBefore: existing?.version,
+      targetVersion,
+      versionBefore: existing.version,
       versionAfter: newVersion,
     });
 
-    const response = NextResponse.json({
+    let restoredData: unknown;
+    try {
+      restoredData = JSON.parse(snapshot.metadata);
+    } catch {
+      restoredData = {};
+    }
+
+    return NextResponse.json({
       success: true,
       blueprintId,
+      restoredFromVersion: targetVersion,
       version: newVersion,
-      syncStatus: "synced",
-      serverTimestamp: now.toISOString(),
+      hash: snapshot.hash,
+      data: restoredData,
     });
-
-    // Store idempotency response
-    await storeIdempotencyResponse(request, response);
-
-    return response;
   } catch (error) {
-    syncLogger.error("blueprint.push.error", {
+    syncLogger.error("blueprint.restore.error", {
       error: error instanceof Error ? error.message : String(error),
     });
-    console.error("Push blueprint error:", error);
+    console.error("Restore blueprint error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

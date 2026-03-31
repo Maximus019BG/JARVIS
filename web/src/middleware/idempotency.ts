@@ -50,11 +50,15 @@ export async function storeIdempotencyResponse(
   const key = request.headers.get('X-Idempotency-Key')!;
   const deviceId = request.headers.get('X-Device-Id')!;
   const expiresAt = new Date(request.headers.get('X-Idempotency-Expires')!);
+
+  // Clone the response before reading its body so that the original
+  // response body stream remains readable for the caller.
+  const cloned = response.clone();
   
   await db.insert(idempotencyKey).values({
     key,
     deviceId,
-    response: JSON.stringify(await response.json()),
+    response: JSON.stringify(await cloned.json()),
     expiresAt
   });
 }
