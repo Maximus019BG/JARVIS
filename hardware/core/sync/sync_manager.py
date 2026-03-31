@@ -172,6 +172,59 @@ class SyncManager:
         self._save_blueprint(blueprint_id, response)
         return response
 
+    async def list_blueprint_versions(
+        self, blueprint_id: str
+    ) -> list[dict[str, Any]]:
+        """Return the version history list for a blueprint from the server."""
+        try:
+            params = {"blueprintId": blueprint_id}
+            response = await self.http.get(
+                "/api/workstation/blueprint/versions",
+                params=params,
+                device_id=self.device_id,
+            )
+            return response.get("versions", [])
+        except Exception:
+            logger.exception("List blueprint versions failed")
+            raise SyncError("List versions failed")
+
+    async def restore_blueprint_version(
+        self, blueprint_id: str, target_version: int
+    ) -> dict[str, Any]:
+        """Ask the server to roll back a blueprint to a previous version.
+
+        The server will:
+        1. Snapshot the current live version.
+        2. Restore the requested historical snapshot under a new
+           (incremented) version number.
+
+        On success the local file is updated with the restored content.
+        """
+        payload = {
+            "blueprintId": blueprint_id,
+            "targetVersion": target_version,
+        }
+
+        try:
+            response = await self.http.post(
+                "/api/workstation/blueprint/restore",
+                data=payload,
+                device_id=self.device_id,
+            )
+
+            # Persist the restored content locally
+            if "data" in response:
+                restored = response["data"]
+                restored["id"] = blueprint_id
+                restored["version"] = response.get("version", target_version)
+                self._save_blueprint(blueprint_id, restored)
+
+            return response
+
+        except Exception:
+            logger.exception("Restore blueprint version failed")
+            raise SyncError("Restore failed")
+
     async def process_offline_queue(self) -> list[dict[str, Any]]:
         """Process queued offline operations."""
         results: list[dict[str, Any]] = []
@@ -192,6 +245,11 @@ class SyncManager:
                     )
                 elif operation["type"] == "script_push":
                     result = await self.send_script(operation["data"]["script_path"])
+                elif operation["type"] == "restore":
+                    result = await self.restore_blueprint_version(
+                        operation["data"]["blueprint_id"],
+                        operation["data"]["target_version"],
+                    )
                 else:
                     # Unknown operation; keep it in the queue.
                     self.offline_queue.add(operation["type"], operation["data"])
