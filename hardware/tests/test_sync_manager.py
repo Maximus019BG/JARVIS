@@ -125,3 +125,94 @@ class TestScriptSync:
             await mgr.send_script(str(script))
 
         mgr.offline_queue.add.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Blueprint version history & restore
+# ---------------------------------------------------------------------------
+
+class TestBlueprintVersioning:
+    @pytest.mark.asyncio
+    async def test_list_blueprint_versions_success(self) -> None:
+        mgr, http = _make_manager()
+        versions_payload = [
+            {"id": "v1", "version": 1, "hash": "h1", "createdAt": "2026-01-01T00:00:00Z"},
+            {"id": "v2", "version": 2, "hash": "h2", "createdAt": "2026-01-02T00:00:00Z"},
+        ]
+        http.get = AsyncMock(
+            return_value={"success": True, "blueprintId": "bp-1", "versions": versions_payload}
+        )
+
+        result = await mgr.list_blueprint_versions("bp-1")
+
+        assert result == versions_payload
+        http.get.assert_awaited_once_with(
+            "/api/workstation/blueprint/versions",
+            params={"blueprintId": "bp-1"},
+            device_id=mgr.device_id,
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_blueprint_versions_failure_raises_sync_error(self) -> None:
+        mgr, http = _make_manager()
+        http.get = AsyncMock(side_effect=Exception("network error"))
+
+        with pytest.raises(SyncError):
+            await mgr.list_blueprint_versions("bp-1")
+
+    @pytest.mark.asyncio
+    async def test_restore_blueprint_version_success(self, tmp_path: Path) -> None:
+        mgr, http = _make_manager()
+        http.post = AsyncMock(
+            return_value={
+                "success": True,
+                "blueprintId": "bp-1",
+                "restoredFromVersion": 1,
+                "version": 4,
+                "hash": "h1",
+                "data": {"key": "old_value"},
+            }
+        )
+
+        # Patch blueprint save so no disk I/O is needed
+        mgr._save_blueprint = MagicMock()
+
+        result = await mgr.restore_blueprint_version("bp-1", 1)
+
+        assert result["success"] is True
+        assert result["restoredFromVersion"] == 1
+        assert result["version"] == 4
+
+        http.post.assert_awaited_once_with(
+            "/api/workstation/blueprint/restore",
+            data={"blueprintId": "bp-1", "targetVersion": 1},
+            device_id=mgr.device_id,
+        )
+
+        # Local file should have been updated
+        mgr._save_blueprint.assert_called_once()
+        saved_data = mgr._save_blueprint.call_args[0][1]
+        assert saved_data["version"] == 4
+        assert saved_data["key"] == "old_value"
+
+    @pytest.mark.asyncio
+    async def test_restore_blueprint_version_failure_raises_sync_error(self) -> None:
+        mgr, http = _make_manager()
+        http.post = AsyncMock(side_effect=Exception("server error"))
+
+        with pytest.raises(SyncError):
+            await mgr.restore_blueprint_version("bp-1", 2)
+
+    @pytest.mark.asyncio
+    async def test_process_offline_queue_handles_restore_operation(self) -> None:
+        mgr, http = _make_manager()
+        mgr.restore_blueprint_version = AsyncMock(
+            return_value={"success": True, "version": 5}
+        )
+        mgr.offline_queue.add("restore", {"blueprint_id": "bp-1", "target_version": 2})
+
+        results = await mgr.process_offline_queue()
+
+        assert len(results) == 1
+        assert results[0]["success"] is True
+        mgr.restore_blueprint_version.assert_awaited_once_with("bp-1", 2)

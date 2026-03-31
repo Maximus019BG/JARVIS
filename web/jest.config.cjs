@@ -9,11 +9,13 @@ module.exports = {
     '^.+\\.m?[jt]sx?$': 'babel-jest'
   },
   moduleNameMapper: {
+    '^~/env$': '<rootDir>/src/__mocks__/env.ts',
+    '^nanoid$': '<rootDir>/src/__mocks__/nanoid.ts',
     '^~/(.*)$': '<rootDir>/src/$1'
   },
   // pnpm nests deps under node_modules/.pnpm/..., so match that structure too.
   // Allow nanoid to be transformed instead of failing on `import`.
-  transformIgnorePatterns: ['node_modules/(?!\\.pnpm/|nanoid/)'],
+  transformIgnorePatterns: ['node_modules/(?!(\\.pnpm/|nanoid/))'],
   clearMocks: true,
   restoreMocks: true
 };

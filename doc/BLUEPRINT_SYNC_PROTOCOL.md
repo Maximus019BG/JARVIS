@@ -4,8 +4,8 @@ This document describes how the hardware client and server blueprint sync works 
 
 Primary references in code:
 
-- Hardware orchestration: [`SyncManager.sync_to_server()`](hardware/core/sync/sync_manager.py:35), [`SyncManager.send_blueprint()`](hardware/core/sync/sync_manager.py:55), [`SyncManager.update_blueprint()`](hardware/core/sync/sync_manager.py:89), [`SyncManager.resolve_conflict()`](hardware/core/sync/sync_manager.py:113), [`OfflineQueue.add()`](hardware/core/sync/offline_queue.py:29), [`OfflineQueue.pop()`](hardware/core/sync/offline_queue.py:43)
-- Server routes: [`GET()`](web/src/app/api/workstation/blueprint/sync/route.ts:9), [`POST()`](web/src/app/api/workstation/blueprint/push/route.ts:11), [`POST()`](web/src/app/api/workstation/blueprint/pull/route.ts:10), [`POST()`](web/src/app/api/workstation/blueprint/resolve/route.ts:11)
+- Hardware orchestration: [`SyncManager.sync_to_server()`](hardware/core/sync/sync_manager.py:35), [`SyncManager.send_blueprint()`](hardware/core/sync/sync_manager.py:55), [`SyncManager.update_blueprint()`](hardware/core/sync/sync_manager.py:89), [`SyncManager.resolve_conflict()`](hardware/core/sync/sync_manager.py:113), [`SyncManager.list_blueprint_versions()`](hardware/core/sync/sync_manager.py:137), [`SyncManager.restore_blueprint_version()`](hardware/core/sync/sync_manager.py:155), [`OfflineQueue.add()`](hardware/core/sync/offline_queue.py:29), [`OfflineQueue.pop()`](hardware/core/sync/offline_queue.py:43)
+- Server routes: [`GET()`](web/src/app/api/workstation/blueprint/sync/route.ts:9), [`POST()`](web/src/app/api/workstation/blueprint/push/route.ts:11), [`POST()`](web/src/app/api/workstation/blueprint/pull/route.ts:10), [`POST()`](web/src/app/api/workstation/blueprint/resolve/route.ts:11), [`GET()`](web/src/app/api/workstation/blueprint/versions/route.ts:17), [`POST()`](web/src/app/api/workstation/blueprint/restore/route.ts:25), [`GET()`](web/src/app/api/workstation/device/usage/route.ts:21)
 - Security helpers: [`verifyDeviceToken()`](web/src/lib/device-auth.ts:12), [`verifyHMACSignature()`](web/src/lib/hmac-verify.ts:3), [`replayProtection()`](web/src/middleware/replay-protection.ts:9), [`idempotency()`](web/src/middleware/idempotency.ts:8), [`storeIdempotencyResponse()`](web/src/middleware/idempotency.ts:42)
 
 ## Actors
@@ -148,7 +148,80 @@ Hardware behavior:
 
 - Writes response to disk via [`SyncManager._save_blueprint()`](hardware/core/sync/sync_manager.py:222).
 
-### 5) Offline queue behavior (hardware)
+### 5) `/versions` (GET) — list blueprint version history
+
+Server implementation: [`GET()`](web/src/app/api/workstation/blueprint/versions/route.ts:17)
+
+Purpose:
+
+- Retrieve the list of historical snapshots for a blueprint so the user or hardware can choose a version to restore.
+
+Request:
+
+- `GET /api/workstation/blueprint/versions?blueprintId=<id>`
+
+Server behavior:
+
+- Validates required headers + device auth + replay protection.
+- Validates HMAC for payload `{ blueprintId }`.
+- Checks workstation ownership.
+- Returns all `blueprint_version` rows ordered newest-first.
+
+Returns:
+
+- `{ success, blueprintId, currentVersion, versions: [{ id, version, hash, deviceId, createdAt }] }`
+
+### 6) `/restore` (POST) — restore a historical version
+
+Server implementation: [`POST()`](web/src/app/api/workstation/blueprint/restore/route.ts:25)
+
+Purpose:
+
+- Roll a blueprint back to any previously snapshotted version.
+
+Hardware flow:
+
+- Calls [`SyncManager.restore_blueprint_version()`](hardware/core/sync/sync_manager.py:155) with `blueprintId` and `targetVersion`.
+- On success, saves the restored content locally.
+- On failure, does NOT queue offline (restore is intentional; user must retry).
+
+Request body:
+
+- `blueprintId`: target blueprint
+- `targetVersion`: version number from the history to restore
+
+Server behavior:
+
+- Validates headers + device auth + replay protection + HMAC signature.
+- Loads current blueprint and validates workstation ownership.
+- Locates the historical snapshot for `targetVersion`.
+- Snapshots the current live version into `blueprint_version` (so the rollback is also reversible).
+- Updates the blueprint row with the historical content, using `existing.version + 1` as the new version number.
+- Logs the operation as `action: "restore"` in `sync_log`.
+- Returns `{ success, blueprintId, restoredFromVersion, version, hash, data }`.
+
+### 7) `/api/workstation/device/usage` (GET) — API request counts
+
+Server implementation: [`GET()`](web/src/app/api/workstation/device/usage/route.ts:21)
+
+Purpose:
+
+- Web dashboard and admins can view how many API sync operations each device has made within a time window.
+
+Authentication:
+
+- User session (web dashboard, not device JWT).
+
+Query parameters:
+
+- `workstationId` (optional): restrict to one workstation
+- `days` (optional, default 30): look-back window
+
+Returns:
+
+- `{ windowDays, since, totalRequests, requests: [{ deviceId, deviceName, workstationId, workstationName, totalRequests, byAction }] }`
+
+### 8) Offline queue behavior (hardware)
 
 Implementation: [`OfflineQueue`](hardware/core/sync/offline_queue.py:7), processor loop in [`SyncManager.process_offline_queue()`](hardware/core/sync/sync_manager.py:137)
 
@@ -159,11 +232,11 @@ Stored as JSON list in [`data/offline_queue.json`](data/offline_queue.json:1).
   - `sync` → call [`SyncManager.sync_to_server()`](hardware/core/sync/sync_manager.py:35)
   - `push` → call [`SyncManager.send_blueprint()`](hardware/core/sync/sync_manager.py:55)
   - `pull` → call [`SyncManager.update_blueprint()`](hardware/core/sync/sync_manager.py:89)
+  - `restore` → call [`SyncManager.restore_blueprint_version()`](hardware/core/sync/sync_manager.py:155)
 - If an operation fails during processing, it is re-added to the queue.
 
 Notes:
 
-- There is no explicit `resolve` operation in the offline queue in current implementation.
 - Queue size is capped: when full, oldest entries are dropped in [`OfflineQueue.add()`](hardware/core/sync/offline_queue.py:29).
 
 ## Security model
@@ -251,7 +324,7 @@ Offline queue:
 
 - Path: [`data/offline_queue.json`](data/offline_queue.json:1)
 - Contents (per [`OfflineQueue.add()`](hardware/core/sync/offline_queue.py:29)):
-  - `type`: `sync` | `push` | `pull`
+  - `type`: `sync` | `push` | `pull` | `restore`
   - `data`: operation-specific payload
   - `timestamp`: UTC ISO string
 
@@ -267,6 +340,19 @@ Blueprint table:
   - `version`: integer
   - `hash`: integrity marker for last stored payload
   - `syncStatus`, `lastSyncedAt`, `deviceId`, `updatedAt`
+
+Blueprint version history table:
+
+- Schema: [`blueprintVersion`](web/src/server/db/schemas/blueprint_version.ts:1)
+- Immutable snapshot of each past `blueprint` state.
+- Key fields:
+  - `blueprintId`: FK to `blueprint.id` (CASCADE delete)
+  - `version`: the version number captured in this snapshot
+  - `metadata`: JSON string at that version
+  - `hash`: sha256 of `metadata` at that version
+  - `deviceId`, `createdBy`, `createdAt`
+- A new row is inserted by the `/push` route whenever an existing blueprint is updated.
+- A new row is also inserted by `/restore` before applying the rollback, so that restores are themselves reversible.
 
 Nonce table:
 
@@ -321,6 +407,31 @@ Common error response shape is JSON with `error`.
 - 403: replay attack; access denied (workstation mismatch)
 - 404: blueprint not found
 - 500: server configuration error; internal server error
+
+### `/versions` (GET)
+
+- 200: `{ success: true, blueprintId, currentVersion, versions: [...] }`
+- 400: missing required headers; missing `blueprintId`; timestamp out of range
+- 401: unknown/inactive device; invalid signature
+- 403: replay attack; access denied (workstation mismatch)
+- 404: blueprint not found
+- 500: server configuration error; internal server error
+
+### `/restore` (POST)
+
+- 200: `{ success: true, blueprintId, restoredFromVersion, version, hash, data }`
+- 400: missing required headers or body fields; timestamp out of range
+- 401: unknown/inactive device; invalid signature
+- 403: replay attack; access denied (workstation mismatch)
+- 404: blueprint not found; target version snapshot not found
+- 500: server configuration error; internal server error
+
+### `/api/workstation/device/usage` (GET)
+
+- 200: `{ windowDays, since, totalRequests, requests: [...] }`
+- 401: user not authenticated
+- 404: workstationId not found or not owned by user
+- 500: internal server error
 
 Hardware-side behavior guidance:
 
