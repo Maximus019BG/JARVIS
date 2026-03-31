@@ -39,6 +39,7 @@ from tools import AGENT_TOOLS
 # Import tools
 from tools.apply_theme_tool import ApplyThemeTool
 from tools.blueprint_edit_tool import BlueprintEditTool
+from tools.configure_llm_tool import ConfigureLLMTool
 from tools.create_blueprint_tool import CreateBlueprintTool
 from tools.delete_blueprint_tool import DeleteBlueprintTool
 from tools.edit_profile_tool import EditProfileTool
@@ -125,6 +126,7 @@ def register_tools(registry: ToolRegistry, security_manager: SecurityManager) ->
     registry.register_tool(ViewStatsTool())
     registry.register_tool(EditProfileTool())
     registry.register_tool(SaveProfileTool())
+    registry.register_tool(ConfigureLLMTool())
 
     # Connection info
     registry.register_tool(ConnectionInfoTool())

@@ -23,6 +23,7 @@ class AIProvider(str, Enum):
     GOOGLE = "google"
     OLLAMA = "ollama"
     GROQ = "groq"
+    MOONSHOT = "moonshot"
 
 
 class TTSEngine(str, Enum):
@@ -51,7 +52,7 @@ class AIConfig(BaseSettings):
         extra="ignore",
     )
 
-    provider: AIProvider = AIProvider.GOOGLE
+    provider: AIProvider = AIProvider.MOONSHOT
 
     # Google
     google_api_key: SecretStr | None = None
@@ -63,6 +64,11 @@ class AIConfig(BaseSettings):
     # Groq
     groq_api_key: SecretStr | None = None
     groq_model: str = "llama-3.3-70b-versatile"
+
+    # Moonshot/Kimi
+    moonshot_api_key: SecretStr | None = None
+    moonshot_model: str = "kimi-k2.5"
+    moonshot_base_url: str = "https://api.moonshot.ai/v1"
 
     max_tokens: int = 4096
     temperature: float = 0.7
@@ -80,6 +86,11 @@ class AIConfig(BaseSettings):
             key = self.groq_api_key.get_secret_value() if self.groq_api_key else ""
             if not key:
                 raise ValueError("Missing AI_GROQ_API_KEY")
+
+        if self.provider == AIProvider.MOONSHOT:
+            key = self.moonshot_api_key.get_secret_value() if self.moonshot_api_key else ""
+            if not key:
+                raise ValueError("Missing AI_MOONSHOT_API_KEY")
 
         # Ollama requires no API key.
 

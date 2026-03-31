@@ -213,3 +213,49 @@ def save_profile(profile: dict[str, str]) -> None:
         )
 
     _atomic_write_json(PROFILE_FILE, normalized_profile)
+
+
+# LLM Configuration persistence
+LLM_CONFIG_FILE = os.path.join(DATA_DIR, "llm_config.json")
+
+DEFAULT_LLM_CONFIG: dict[str, str] = {
+    "api_key": "",
+    "model": "kimi-k2.5",
+    "base_url": "https://api.moonshot.ai/v1",
+}
+
+
+def _validate_llm_config(obj: Any) -> tuple[dict[str, str], bool]:
+    """Validate and normalize LLM config."""
+    merged = DEFAULT_LLM_CONFIG.copy()
+    if obj is None:
+        return merged, False
+    if not isinstance(obj, dict):
+        return merged, True
+    normalized = False
+    for k, v in obj.items():
+        if k not in DEFAULT_LLM_CONFIG:
+            normalized = True
+            continue
+        if isinstance(v, str):
+            merged[k] = v
+        else:
+            normalized = True
+    return merged, normalized
+
+
+def load_llm_config() -> dict[str, str]:
+    """Load LLM config from file."""
+    ensure_data_dir()
+    obj = _read_json_file(LLM_CONFIG_FILE) if os.path.exists(LLM_CONFIG_FILE) else None
+    config, normalized = _validate_llm_config(obj)
+    if normalized and obj is not None:
+        logger.warning("LLM config required normalization")
+    return config
+
+
+def save_llm_config(config: dict[str, str]) -> None:
+    """Save LLM config to file."""
+    ensure_data_dir()
+    normalized_config, _ = _validate_llm_config(config)
+    _atomic_write_json(LLM_CONFIG_FILE, normalized_config)
