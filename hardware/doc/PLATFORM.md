@@ -212,6 +212,12 @@ Configure via `SYNC_API_BASE_URL` environment variable.
 
 ---
 
+## Related Documentation
+
+- [Programming Languages & Libraries](./LANGUAGES_AND_LIBRARIES.md) - Detailed breakdown of all languages, libraries, and their usage across the project
+
+---
+
 ## Known Limitations
 
 - **RAM Constraint**: 4GB limits local LLM model size
