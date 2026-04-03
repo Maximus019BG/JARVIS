@@ -215,6 +215,7 @@ Configure via `SYNC_API_BASE_URL` environment variable.
 ## Related Documentation
 
 - [Programming Languages & Libraries](./LANGUAGES_AND_LIBRARIES.md) - Detailed breakdown of all languages, libraries, and their usage across the project
+- [Remote PC Control](./REMOTE_PC_CONTROL.md) - Use PC as compute resource: open browsers, run GUI apps on PC while JARVIS TUI stays on projector
 
 ---
 
