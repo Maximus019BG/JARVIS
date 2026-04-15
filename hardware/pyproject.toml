@@ -9,6 +9,7 @@ dependencies = [
     "ollama>=0.4.0",
     "google-generativeai>=0.8.0",
     "groq>=0.9.0",
+    "openai>=1.0.0",  # For Moonshot (OpenAI-compatible)
     # Async & Web
     "aiohttp>=3.11.0",
     "aiofiles>=24.1.0",
@@ -42,6 +43,7 @@ dependencies = [
 
 [project.scripts]
 jarvis = "app:main"
+jarvis-config = "cli:main"
 
 # For editable install to work, the package is just this directory
 # Running tests should use: python -m pytest

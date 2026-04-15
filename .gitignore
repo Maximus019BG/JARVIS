@@ -181,3 +181,5 @@ build/
 **/memory_store.json
 *.jarvis
 hardware/data/*
+
+.firecrawl

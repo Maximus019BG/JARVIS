@@ -77,6 +77,9 @@ class LLMProviderFactory:
         if provider_type == AIProvider.GROQ:
             return LLMProviderFactory._create_groq_provider(config)
 
+        if provider_type == AIProvider.MOONSHOT:
+            return LLMProviderFactory._create_moonshot_provider(config)
+
         raise ValueError(f"Unknown AI provider: {provider_type}")
 
     @staticmethod
@@ -140,6 +143,33 @@ class LLMProviderFactory:
         return GroqWrapper(
             api_key=api_key,
             model_name=config.groq_model,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
+
+    @staticmethod
+    def _create_moonshot_provider(config: AIConfig) -> LLMProvider:
+        """Create Moonshot provider."""
+        from core.llm.moonshot_wrapper import (
+            MOONSHOT_AVAILABLE,
+            MoonshotWrapper,
+        )
+
+        if not MOONSHOT_AVAILABLE:
+            raise ValueError(
+                "Moonshot provider is not available. Install openai with: pip install openai"
+            )
+
+        config.validate_provider()
+        api_key = (
+            config.moonshot_api_key.get_secret_value()
+            if config.moonshot_api_key
+            else ""
+        )
+        return MoonshotWrapper(
+            api_key=api_key,
+            model_name=config.moonshot_model,
+            base_url=config.moonshot_base_url,
             temperature=config.temperature,
             max_tokens=config.max_tokens,
         )

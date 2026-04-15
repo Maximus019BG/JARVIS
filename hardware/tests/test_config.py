@@ -25,7 +25,7 @@ class TestAIConfig:
     def test_default_provider(self):
         """Test default AI provider."""
         config = AIConfig(_env_file=None)
-        assert config.provider == AIProvider.GOOGLE
+        assert config.provider == AIProvider.MOONSHOT
 
     def test_provider_from_env(self):
         """Test provider from environment variable."""
