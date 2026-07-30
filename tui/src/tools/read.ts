@@ -1,6 +1,6 @@
 import { tool } from "ai"
 import { z } from "zod"
-import { ToolError, displayPath, resolvePath, type ToolContext } from "./context.ts"
+import { ToolError, displayPath, markRead, resolvePath, type ToolContext } from "./context.ts"
 
 const MAX_LINES = 2000
 const MAX_LINE_LENGTH = 2000
@@ -19,7 +19,7 @@ export const readTool = (ctx: ToolContext) =>
       const file = Bun.file(absolute)
       if (!(await file.exists())) throw new ToolError(`file not found: ${displayPath(ctx, absolute)}`)
       const lines = (await file.text()).split("\n")
-      ctx.read.add(absolute)
+      await markRead(ctx, absolute)
 
       const start = Math.max(0, offset - 1)
       const slice = lines.slice(start, start + limit)

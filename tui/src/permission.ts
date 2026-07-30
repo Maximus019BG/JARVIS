@@ -12,6 +12,8 @@ export type PermissionRequest = {
   title: string
   /** Optional body: a diff, the command about to run, etc. */
   detail?: string
+  /** How to render `detail`. A unified patch gets the real diff view. */
+  detailKind?: "diff" | "text"
   /**
    * Extra specificity for rule matching. For `bash` this is the command, so
    * `"bash:git "` in the config can allow a family of commands.

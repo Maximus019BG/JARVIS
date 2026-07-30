@@ -9,6 +9,7 @@ import { listModels } from "../agent/provider.ts"
 import { openSession } from "../agent/session.ts"
 import { loadTheme } from "../config/theme.ts"
 import { App } from "./app.tsx"
+import { resolveMotion } from "./motion.ts"
 
 export type StartOptions = {
   config: Config
@@ -17,6 +18,13 @@ export type StartOptions = {
   session?: string
   resume?: boolean
   cwd?: string
+}
+
+/** Current branch, read once at startup so the status line never spawns git per render. */
+function gitBranch(cwd: string): string | undefined {
+  const result = Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd, stderr: "ignore" })
+  const branch = result.success ? result.stdout.toString().trim() : ""
+  return branch && branch !== "HEAD" ? branch : undefined
 }
 
 export async function startTui(options: StartOptions) {
@@ -49,7 +57,9 @@ export async function startTui(options: StartOptions) {
       mcp={mcp}
       extensions={extensions}
       notes={notes}
+      branch={gitBranch(cwd)}
       theme={loadTheme(options.config.theme, cwd)}
+      motion={resolveMotion(options.config.animations)}
       keymap={loadKeymap(options.config.keybinds)}
       model={options.model}
       agent={options.agent}

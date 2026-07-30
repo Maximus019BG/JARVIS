@@ -11,6 +11,10 @@ export type Theme = {
   panel: string
   fg: string
   muted: string
+  /** Keybinding hints and the welcome block: quieter than `fg`, louder than `muted`. */
+  hint: string
+  /** Reasoning blocks and other text the user can safely skip. */
+  dim: string
   border: string
   accent: string
   user: string
@@ -32,6 +36,8 @@ export const THEMES: Record<string, Theme> = {
     panel: "#161b22",
     fg: "#c9d1d9",
     muted: "#6e7681",
+    hint: "#8b949e",
+    dim: "#57606a",
     border: "#30363d",
     accent: "#58a6ff",
     user: "#7ee787",
@@ -51,6 +57,8 @@ export const THEMES: Record<string, Theme> = {
     panel: "#f6f8fa",
     fg: "#24292f",
     muted: "#6e7781",
+    hint: "#57606a",
+    dim: "#8c959f",
     border: "#d0d7de",
     accent: "#0969da",
     user: "#1a7f37",

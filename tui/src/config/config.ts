@@ -88,6 +88,8 @@ export const ConfigSchema = z
     permission: z.record(z.string(), PermissionSchema).default({}),
     keybinds: z.record(z.string(), z.string()).default({}),
     theme: z.string().default("jarvis"),
+    /** UI motion. `reduced` keeps the spinner only; `JARVIS_MOTION` overrides this. */
+    animations: z.enum(["full", "reduced", "off"]).default("full"),
     /** Extra instruction files appended to the system prompt. Globs allowed. */
     instructions: z.array(z.string()).default([]),
     /** Max tool-call steps in one turn before the loop stops. */

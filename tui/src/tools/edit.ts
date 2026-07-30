@@ -35,6 +35,7 @@ export const editTool = (ctx: ToolContext) =>
         tool: "edit",
         title: `edit ${name}`,
         detail: createPatch(name, before, after, "", "", { context: 3 }),
+        detailKind: "diff",
         subject: name,
       })
 

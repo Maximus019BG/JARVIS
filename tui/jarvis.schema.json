@@ -271,6 +271,15 @@
       "default": "jarvis",
       "type": "string"
     },
+    "animations": {
+      "default": "full",
+      "type": "string",
+      "enum": [
+        "full",
+        "reduced",
+        "off"
+      ]
+    },
     "instructions": {
       "default": [],
       "type": "array",

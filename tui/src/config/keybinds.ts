@@ -12,6 +12,11 @@ export type Action =
   | "newSession"
   | "scrollUp"
   | "scrollDown"
+  | "scrollHalfUp"
+  | "scrollHalfDown"
+  | "scrollBottom"
+  /** Takes the highlighted `/` or `@` completion; inert when the strip is closed. */
+  | "acceptSuggestion"
 
 export const DEFAULT_KEYBINDS: Record<Action, string> = {
   submit: "return",
@@ -21,12 +26,18 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   clear: "ctrl+l",
   palette: "ctrl+p",
   modelPicker: "ctrl+o",
-  agentPicker: "tab",
+  // `tab` completes, like everywhere else in a terminal; the agent picker is the rarer
+  // action, so it takes the modifier.
+  agentPicker: "shift+tab",
   sessionPicker: "ctrl+r",
   filePicker: "ctrl+t",
   newSession: "ctrl+n",
   scrollUp: "pageup",
   scrollDown: "pagedown",
+  scrollHalfUp: "ctrl+u",
+  scrollHalfDown: "ctrl+d",
+  scrollBottom: "end",
+  acceptSuggestion: "tab",
 }
 
 export type Chord = { name: string; ctrl: boolean; shift: boolean; meta: boolean }

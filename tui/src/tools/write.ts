@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 import { tool } from "ai"
 import { z } from "zod"
-import { displayPath, resolvePath, type ToolContext } from "./context.ts"
+import { displayPath, markRead, resolvePath, type ToolContext } from "./context.ts"
 
 export const writeTool = (ctx: ToolContext) =>
   tool({
@@ -26,7 +26,7 @@ export const writeTool = (ctx: ToolContext) =>
 
       await mkdir(dirname(absolute), { recursive: true })
       await Bun.write(absolute, content)
-      ctx.read.add(absolute)
+      await markRead(ctx, absolute)
       return `${existed ? "overwrote" : "created"} ${name} (${content.split("\n").length} lines)`
     },
   })

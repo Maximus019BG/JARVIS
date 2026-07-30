@@ -98,7 +98,7 @@ export async function resolveModel(config: Config, id: string): Promise<Resolved
 }
 
 /** Every model declared in the config, as "provider/model" ids. */
-export function listModels(config: Config): { id: string; name: string; provider: string }[] {
+export function listModels(config: Config): { id: string; name: string; provider: string; contextLimit?: number }[] {
   return Object.entries(config.provider)
     .filter(([, provider]) => provider.enabled)
     .flatMap(([providerID, provider]) =>
@@ -106,6 +106,7 @@ export function listModels(config: Config): { id: string; name: string; provider
         id: `${providerID}/${modelID}`,
         name: model.name ?? modelID,
         provider: provider.name ?? providerID,
+        contextLimit: model.contextLimit,
       })),
     )
 }

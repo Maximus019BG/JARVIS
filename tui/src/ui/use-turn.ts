@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { run, type Usage } from "../agent/agent.ts"
 import { appendMessages, createSession, loadSession, type Session } from "../agent/session.ts"
@@ -37,14 +38,31 @@ export type UseTurnOptions = {
   model: string
 }
 
-/** User messages from a restored session, so a resumed transcript is not blank. */
-function restore(session: Session): Item[] {
-  return session.messages
-    .filter((message) => message.role === "user")
-    .map((message) => ({
-      kind: "user" as const,
-      text: typeof message.content === "string" ? message.content : "(restored message)",
-    }))
+/** Text parts of a message, joined. Tool calls and results are counted, not rendered. */
+function textOf(content: ModelMessage["content"]): { text: string; calls: number } {
+  if (typeof content === "string") return { text: content, calls: 0 }
+  let calls = 0
+  const parts: string[] = []
+  for (const part of content) {
+    if (part.type === "text") parts.push(part.text)
+    else if (part.type === "tool-call") calls++
+  }
+  return { text: parts.join("").trim(), calls }
+}
+
+/**
+ * A restored session as transcript items. Both sides of the conversation, because a
+ * resumed session showing only your own questions reads as if nothing ever answered.
+ */
+export function restore(session: Session): Item[] {
+  const items: Item[] = []
+  for (const message of session.messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue
+    const { text, calls } = textOf(message.content)
+    if (text) items.push({ kind: message.role === "user" ? "user" : "assistant", text })
+    if (calls > 0) items.push({ kind: "note", text: `  ✓ ${calls} tool call${calls === 1 ? "" : "s"}`, level: "info" })
+  }
+  return items
 }
 
 /**

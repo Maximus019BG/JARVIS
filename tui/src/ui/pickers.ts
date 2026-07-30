@@ -9,17 +9,42 @@ import type { Choice } from "./components/dialog.tsx"
 /** Everything the one list-picker component can be pointed at. */
 export type PickerKind = "model" | "agent" | "session" | "command" | "theme" | "file"
 
-const FILE_LIMIT = 500
+export const PICKER_TITLES: Record<PickerKind, string> = {
+  model: "Select model",
+  agent: "Select agent",
+  session: "Resume session",
+  command: "Run command",
+  theme: "Select theme",
+  file: "Insert file path",
+}
 
 export type PickerContext = {
   config: Config
   cwd: string
   agents: Record<string, Agent>
   commands: Command[]
+  files: string[]
+}
+
+/**
+ * Tracked and untracked files, minus anything gitignored; a glob outside a repo. Read once
+ * per session by the caller, because a synchronous walk of a large tree on every keystroke
+ * is a visible stall. The whole list goes to the picker — filtering it is cheap, and a
+ * silent cut at N reads as "that is all of them".
+ */
+export function listFiles(cwd: string): string[] {
+  const git = Bun.spawnSync(["git", "ls-files", "-co", "--exclude-standard"], { cwd, stderr: "ignore" })
+  if (git.success) {
+    const paths = git.stdout.toString().split("\n").filter(Boolean)
+    if (paths.length > 0) return paths
+  }
+  return [...new Bun.Glob("**/*").scanSync({ cwd, onlyFiles: true })].filter(
+    (path) => !path.includes("node_modules") && !path.startsWith("."),
+  )
 }
 
 /** Choices for a picker. Pure data, so the component stays presentational. */
-export function pickerChoices(kind: PickerKind, { config, cwd, agents, commands }: PickerContext): Choice[] {
+export function pickerChoices(kind: PickerKind, { config, cwd, agents, commands, files }: PickerContext): Choice[] {
   switch (kind) {
     case "model":
       return listModels(config).map((entry) => ({ value: entry.id, label: entry.id, hint: entry.provider }))
@@ -36,9 +61,6 @@ export function pickerChoices(kind: PickerKind, { config, cwd, agents, commands 
     case "theme":
       return listThemes(cwd).map((name) => ({ value: name, label: name }))
     case "file":
-      return [...new Bun.Glob("**/*").scanSync({ cwd, onlyFiles: true })]
-        .filter((path) => !path.includes("node_modules") && !path.startsWith("."))
-        .slice(0, FILE_LIMIT)
-        .map((path) => ({ value: path, label: path }))
+      return files.map((path) => ({ value: path, label: path }))
   }
 }

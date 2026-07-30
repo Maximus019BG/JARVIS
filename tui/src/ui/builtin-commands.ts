@@ -5,15 +5,32 @@ import type { McpSession } from "../extend/mcp.ts"
 import type { PickerKind } from "./pickers.ts"
 import type { Turn } from "./use-turn.ts"
 
+/** Every binding, described from the live keymap so it cannot drift from the config. */
+const KEY_HELP: [keyof Keymap, string][] = [
+  ["submit", "send"],
+  ["newline", "newline"],
+  ["acceptSuggestion", "take the / or @ completion"],
+  ["interrupt", "interrupt"],
+  ["exit", "quit (twice when idle)"],
+  ["palette", "commands"],
+  ["modelPicker", "model"],
+  ["agentPicker", "agent"],
+  ["sessionPicker", "sessions"],
+  ["filePicker", "insert file path"],
+  ["newSession", "new session"],
+  ["clear", "clear screen"],
+  ["scrollHalfUp", "scroll up"],
+  ["scrollHalfDown", "scroll down"],
+  ["scrollBottom", "jump to newest"],
+]
+
 export function help(keymap: Keymap): string {
+  const width = Math.max(...KEY_HELP.map(([action]) => describe(keymap[action]).length))
   return [
+    "type / for commands and @ for files",
+    "",
     "keys",
-    `  ${describe(keymap.submit)}  send        ${describe(keymap.newline)}  newline`,
-    `  ${describe(keymap.interrupt)}  interrupt   ${describe(keymap.exit)}  quit`,
-    `  ${describe(keymap.palette)}  commands    ${describe(keymap.modelPicker)}  model`,
-    `  ${describe(keymap.agentPicker)}  agent       ${describe(keymap.sessionPicker)}  sessions`,
-    `  ${describe(keymap.filePicker)}  insert file path`,
-    `  ${describe(keymap.newSession)}  new session ${describe(keymap.clear)}  clear screen`,
+    ...KEY_HELP.map(([action, label]) => `  ${describe(keymap[action]).padEnd(width)}  ${label}`),
     "",
     "jarvis.jsonc configures providers, agents, permissions, keybinds and mcp servers.",
     "`jarvis init` scaffolds a .jarvis directory for project agents, commands, skills,",

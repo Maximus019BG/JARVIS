@@ -11,11 +11,16 @@ import { loadCommands, parseCommandLine } from "../extend/command.ts"
 import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
 import { runCommand } from "./builtin-commands.ts"
+import { Activity } from "./components/activity.tsx"
 import { PermissionPrompt, Picker } from "./components/dialog.tsx"
 import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
-import { pickerChoices, type PickerKind } from "./pickers.ts"
+import { Suggestions } from "./components/suggestions.tsx"
+import { Welcome } from "./components/welcome.tsx"
+import type { MotionLevel } from "./motion.ts"
+import { listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
+import { suggest, type Suggestion } from "./suggest.ts"
 import { useTurn } from "./use-turn.ts"
 
 export type AppProps = {
@@ -26,18 +31,23 @@ export type AppProps = {
   extensions: Extensions
   /** Startup warnings and first-run guidance, shown as notes in the transcript. */
   notes: string[]
+  branch?: string
   theme: Theme
+  motion: MotionLevel
   keymap: Keymap
   model?: string
   agent?: string
 }
 
 const SCROLL_LINES = 10
+const QUIT_WINDOW_MS = 2000
 
-export function App({ config, cwd, mcp, extensions, keymap, notes, ...initial }: AppProps) {
-  const { width } = useTerminalDimensions()
+export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motion, ...initial }: AppProps) {
+  const { width, height } = useTerminalDimensions()
   const agents = useMemo(() => loadAgents(config, cwd), [config, cwd])
   const commands = useMemo(() => loadCommands(cwd), [cwd])
+  // One filesystem walk per session; the picker and the `@` strip both read this list.
+  const files = useMemo(() => listFiles(cwd), [cwd])
 
   const [theme, setTheme] = useState(initial.theme)
   const [agent, setAgent] = useState(initial.agent ?? DEFAULT_AGENT)
@@ -47,10 +57,17 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, ...initial }:
     () => initial.model ?? agents[initial.agent ?? DEFAULT_AGENT]?.model ?? listModels(config)[0]?.id ?? "no model",
   )
   const [picker, setPicker] = useState<PickerKind | null>(null)
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
+  const [selected, setSelected] = useState(0)
+  const [quitting, setQuitting] = useState(false)
 
   const turn = useTurn({ config, cwd, extensions, mcpTools: mcp.tools, session: initial.session, notes, agent, model })
   const editor = useRef<EditorHandle>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
+  const history = useRef<string[]>([])
+  const browse = useRef({ index: -1, draft: "" })
+
+  const contextLimit = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
 
   const dispatch = useCallback(
     (name: string, args: string) => {
@@ -70,12 +87,55 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, ...initial }:
 
   const submit = useCallback(
     (text: string) => {
+      history.current.push(text)
+      browse.current = { index: -1, draft: "" }
+      setSuggestion(null)
       const parsed = parseCommandLine(text)
       if (parsed) dispatch(parsed.name, parsed.args)
       else turn.send(text)
     },
     [dispatch, turn],
   )
+
+  const change = useCallback(
+    (text: string) => {
+      const next = suggest(text, commands, files) ?? null
+      // Typing prose is the common case: keep the same reference so React can bail out
+      // instead of reconciling the whole transcript on every keystroke.
+      setSuggestion((current) => (current === null && next === null ? current : next))
+      setSelected(0)
+    },
+    [commands, files],
+  )
+
+  const accept = useCallback(() => {
+    const choice = suggestion?.choices[selected]
+    if (!suggestion || !choice) return
+    editor.current?.replaceToken(suggestion.token, suggestion.kind === "command" ? choice.label : choice.value)
+    setSuggestion(null)
+  }, [selected, suggestion])
+
+  /** Walks the prompt history, keeping the half-written draft to come back to. */
+  const recall = useCallback((direction: -1 | 1) => {
+    const entries = history.current
+    const state = browse.current
+    if (entries.length === 0) return
+    if (state.index === -1) {
+      if (direction === 1) return
+      state.draft = editor.current?.text() ?? ""
+      state.index = entries.length - 1
+    } else {
+      const next = state.index + direction
+      if (next >= entries.length) {
+        state.index = -1
+        editor.current?.set(state.draft)
+        return
+      }
+      if (next < 0) return
+      state.index = next
+    }
+    editor.current?.set(entries[state.index]!)
+  }, [])
 
   const pick = useCallback(
     (value: string) => {
@@ -106,12 +166,42 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, ...initial }:
     [agents, cwd, dispatch, picker, turn],
   )
 
-  // The permission prompt and the picker own the keyboard while they are open.
+  // The permission prompt and the picker own the keyboard while they are open. Everything
+  // else is dispatched here first — these handlers run before the focused textarea sees
+  // the key, so `stopPropagation` is what keeps the completion strip from also typing.
   useKeyboard((key) => {
     if (turn.permission || picker) return
     const is = (action: Action) => matches(key, keymap[action])
+
+    if (suggestion) {
+      const count = suggestion.choices.length
+      if (key.name === "up" || key.name === "down") {
+        setSelected((index) => (index + (key.name === "up" ? count - 1 : 1)) % count)
+        return key.stopPropagation()
+      }
+      if (is("acceptSuggestion")) {
+        accept()
+        return key.stopPropagation()
+      }
+      if (key.name === "escape") {
+        setSuggestion(null)
+        return key.stopPropagation()
+      }
+    }
+
+    if ((key.name === "up" || key.name === "down") && !key.ctrl && !key.meta) {
+      if (editor.current?.atEdge(key.name === "up" ? "first" : "last")) {
+        recall(key.name === "up" ? -1 : 1)
+        return key.stopPropagation()
+      }
+    }
+
     if (is("exit")) {
-      if (!turn.interrupt()) process.exit(0)
+      // A stray ctrl+c should not end the session; the first press only interrupts or warns.
+      if (turn.interrupt()) return
+      if (quitting) process.exit(0)
+      setQuitting(true)
+      setTimeout(() => setQuitting(false), QUIT_WINDOW_MS)
     } else if (is("interrupt")) turn.interrupt()
     else if (is("clear")) turn.clear()
     else if (is("palette")) setPicker("command")
@@ -122,6 +212,9 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, ...initial }:
     else if (is("newSession")) turn.newSession()
     else if (is("scrollUp")) scroll.current?.scrollBy({ x: 0, y: -SCROLL_LINES })
     else if (is("scrollDown")) scroll.current?.scrollBy({ x: 0, y: SCROLL_LINES })
+    else if (is("scrollHalfUp")) scroll.current?.scrollBy({ x: 0, y: -Math.floor(height / 2) })
+    else if (is("scrollHalfDown")) scroll.current?.scrollBy({ x: 0, y: Math.floor(height / 2) })
+    else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
   })
 
   return (
@@ -138,31 +231,61 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, ...initial }:
           scrollbarOptions: { trackOptions: { foregroundColor: theme.border, backgroundColor: theme.bg } },
         }}
       >
-        <Messages items={turn.items} theme={theme} streaming={turn.busy} />
+        <Welcome theme={theme} keymap={keymap} cwd={cwd} branch={branch} model={model} agent={agent} />
+        <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
       </scrollbox>
 
+      {turn.busy && <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} />}
+
+      {suggestion && !turn.permission && !picker && (
+        <Suggestions
+          suggestion={suggestion}
+          selected={selected}
+          theme={theme}
+          hint={`${describe(keymap.acceptSuggestion)} complete · ${describe(keymap.submit)} send · esc dismiss`}
+        />
+      )}
+
       {turn.permission ? (
-        <PermissionPrompt request={turn.permission.request} theme={theme} onAnswer={turn.permission.answer} />
+        <PermissionPrompt
+          request={turn.permission.request}
+          theme={theme}
+          motion={motion}
+          onAnswer={turn.permission.answer}
+        />
       ) : picker ? (
         <Picker
-          title={picker}
-          choices={pickerChoices(picker, { config, cwd, agents, commands })}
+          title={PICKER_TITLES[picker]}
+          choices={pickerChoices(picker, { config, cwd, agents, commands, files })}
           theme={theme}
+          motion={motion}
           onPick={pick}
           onCancel={() => setPicker(null)}
         />
       ) : (
-        <Editor theme={theme} keymap={keymap} busy={turn.busy} handle={editor} onSubmit={submit} />
+        <Editor
+          theme={theme}
+          keymap={keymap}
+          motion={motion}
+          busy={turn.busy}
+          handle={editor}
+          onSubmit={submit}
+          onChange={change}
+        />
       )}
 
       <Status
         theme={theme}
+        motion={motion}
         cwd={cwd}
+        branch={branch}
         model={model}
         agent={agent}
         usage={turn.usage}
+        contextLimit={contextLimit}
         busy={turn.busy}
-        hint={width > 90 ? `${describe(keymap.palette)} commands` : undefined}
+        width={width}
+        hint={quitting ? `press ${describe(keymap.exit)} again to exit` : `${describe(keymap.palette)} commands`}
       />
     </box>
   )
