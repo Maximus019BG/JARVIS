@@ -23,7 +23,9 @@ and Linux; needs `bun` on PATH to build. After that, `jarvis` runs anywhere.
 The binary is compiled on the machine you run the script on, because bun embeds the
 host platform's `libopentui` into it — a Linux binary has to be built on Linux.
 
-From a checkout you can also just run it: `bun install && bun run start`.
+From a checkout you can also just run it: `bun install && bun run start`. To keep the
+agent's `bash` and `edit` tools confined to one directory, or to skip installing bun,
+run it in a container instead — see [docker/README.md](docker/README.md).
 
 ## Commands
 
