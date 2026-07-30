@@ -165,10 +165,30 @@ describe("status segments", () => {
       branch: "main",
       usage,
       contextLimit: 200_000,
+      contextTokens: 42_000,
       width: 200,
     })
     expect(left).toBe("anthropic/claude-opus-4-5")
     expect(right).toBe("$0.4200  main  project  42.0k/200.0k 21%")
+  })
+
+  test("the percentage tracks window occupancy, not the session total", () => {
+    // A multi-step turn re-sends the history each step, so usage.input sums far past the
+    // window. Only the last step's prompt says how full the window really got.
+    const { right } = segments({
+      model: "m",
+      cwd: "/p",
+      usage: { input: 900_000, output: 20_000, cost: 0 },
+      contextLimit: 200_000,
+      contextTokens: 60_000,
+      width: 200,
+    })
+    expect(right).toContain("60.0k/200.0k 30%")
+  })
+
+  test("without a measured prompt size it falls back to the session token count", () => {
+    const { right } = segments({ model: "m", cwd: "/p", usage, contextLimit: 200_000, width: 200 })
+    expect(right).toContain("42.0k tokens")
   })
 
   test("a narrow terminal drops extras but never the token count", () => {
@@ -178,6 +198,7 @@ describe("status segments", () => {
       branch: "main",
       usage,
       contextLimit: 200_000,
+      contextTokens: 42_000,
       width: 70,
     })
     expect(narrow.right).toBe("42.0k/200.0k 21%")

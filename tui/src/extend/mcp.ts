@@ -8,7 +8,8 @@ import type { ToolSet } from "../tools/index.ts"
 export type McpStatus = { server: string; tools: number; error?: string }
 
 /** Tool names are namespaced so two servers exposing `search` do not collide. */
-export const toolName = (server: string, tool: string) => `mcp_${server}_${tool}`
+export const MCP_PREFIX = "mcp_"
+export const toolName = (server: string, tool: string) => `${MCP_PREFIX}${server}_${tool}`
 
 async function connect(server: string, config: McpConfig): Promise<Client> {
   const client = new Client({ name: "jarvis", version: "0.1.0" })

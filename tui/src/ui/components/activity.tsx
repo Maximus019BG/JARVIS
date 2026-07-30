@@ -12,20 +12,25 @@ export function Activity({
   theme,
   motion,
   keymap,
+  compacting = false,
 }: {
   items: Item[]
   theme: Theme
   motion: MotionLevel
   keymap: Keymap
+  /** Summarizing takes a model round trip of its own, so say what the wait is for. */
+  compacting?: boolean
 }) {
   const { frame, seconds } = useTicker(true, motion)
   const running = items.findLast((item) => item.kind === "tool" && item.output === undefined)
 
-  const parts = [
-    `working ${seconds}s`,
-    running?.kind === "tool" ? summarize(running.name, running.input) : undefined,
-    `${describe(keymap.interrupt)} to stop`,
-  ].filter(Boolean)
+  const parts = compacting
+    ? [`compacting history ${seconds}s`]
+    : [
+        `working ${seconds}s`,
+        running?.kind === "tool" ? summarize(running.name, running.input) : undefined,
+        `${describe(keymap.interrupt)} to stop`,
+      ].filter(Boolean)
 
   return (
     <box style={{ flexDirection: "row", width: "100%", paddingLeft: 1 }}>

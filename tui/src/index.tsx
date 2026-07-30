@@ -123,7 +123,15 @@ async function main() {
     }
     case "run": {
       const { runHeadless } = await import("./cli/headless.ts")
-      await runHeadless({ config, prompt: args.join(" "), model: flags.model, agent: flags.agent, yes: flags.yes })
+      await runHeadless({
+        config,
+        prompt: args.join(" "),
+        model: flags.model,
+        agent: flags.agent,
+        yes: flags.yes,
+        session: flags.session,
+        resume: flags.continue,
+      })
       return
     }
     case undefined: {

@@ -1,14 +1,31 @@
 import type { ModelMessage } from "ai"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { run, type Usage } from "../agent/agent.ts"
-import { appendMessages, createSession, loadSession, type Session } from "../agent/session.ts"
+import { attach } from "../agent/attach.ts"
+import { compactSession, generateTitle, isOverflow, NothingToCompact } from "../agent/compact.ts"
+import { writeFileSync } from "node:fs"
+import { join } from "node:path"
+import {
+  appendMessages,
+  createSession,
+  exportMarkdown,
+  loadSession,
+  setTitle,
+  textOf,
+  type Session,
+} from "../agent/session.ts"
 import type { Config } from "../config/config.ts"
 import type { Extensions } from "../extend/extensions.ts"
+import { persistPermission } from "../config/persist.ts"
 import { PermissionGate, type PermissionAnswer, type PermissionRequest } from "../permission.ts"
 import type { ToolSet } from "../tools/index.ts"
+import { beginGroup, endGroup, redo, undo } from "../tools/snapshot.ts"
 import { applyEvent, type Item } from "./transcript.ts"
 
 export type PendingPermission = { request: PermissionRequest; answer: (answer: PermissionAnswer) => void }
+
+/** Fraction of the context window that triggers an automatic compaction after a turn. */
+const COMPACT_AT = 0.85
 
 /** Everything about the conversation in progress. The UI only renders this. */
 export type Turn = {
@@ -16,12 +33,26 @@ export type Turn = {
   items: Item[]
   usage: Usage
   busy: boolean
+  /** True while a summary is being generated, so the UI can say so. */
+  compacting: boolean
+  /** The active model's context window, once a turn has resolved it. */
+  contextLimit?: number
+  /** Prompt tokens on the last turn: how full the window is right now. */
+  contextTokens: number
   permission: PendingPermission | null
   send: (prompt: string, options?: { agent?: string; model?: string }) => void
   note: (text: string, level?: "info" | "error") => void
   newSession: () => void
   resume: (id: string) => void
   clear: () => void
+  /** Summarizes the history so far, shrinking what the model carries. */
+  compact: () => void
+  /** Writes the full session to a markdown file in the workspace. */
+  export: () => void
+  /** Reverts (or re-applies) the file changes from one turn. */
+  history: (direction: "undo" | "redo") => void
+  /** Sends the last prompt again, optionally to a different model. */
+  retry: (model?: string) => void
   /** Aborts the running turn. Returns false when there was nothing to abort. */
   interrupt: () => boolean
 }
@@ -36,18 +67,6 @@ export type UseTurnOptions = {
   notes: string[]
   agent: string
   model: string
-}
-
-/** Text parts of a message, joined. Tool calls and results are counted, not rendered. */
-function textOf(content: ModelMessage["content"]): { text: string; calls: number } {
-  if (typeof content === "string") return { text: content, calls: 0 }
-  let calls = 0
-  const parts: string[] = []
-  for (const part of content) {
-    if (part.type === "text") parts.push(part.text)
-    else if (part.type === "tool-call") calls++
-  }
-  return { text: parts.join("").trim(), calls }
 }
 
 /**
@@ -76,12 +95,26 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
     ...restore(initial.session),
   ])
   const [busy, setBusy] = useState(false)
+  const [compacting, setCompacting] = useState(false)
+  const [contextLimit, setContextLimit] = useState<number | undefined>()
+  // How full the window was on the last turn, which is what the status line should show.
+  const [contextTokens, setContextTokens] = useState(0)
   // Session total plus the turn in flight; a turn reports cumulative numbers as it runs.
   const [total, setTotal] = useState<Usage>({ input: 0, output: 0, cost: 0 })
   const [inFlight, setInFlight] = useState<Usage>({ input: 0, output: 0, cost: 0 })
   const [permission, setPermission] = useState<PendingPermission | null>(null)
 
   const abort = useRef<AbortController | null>(null)
+  // Read files live as long as the session does, so the model doesn't re-read a file
+  // every turn just to satisfy `edit`'s prior-read requirement.
+  const read = useRef(new Map<string, number>())
+  // One generated title per session; the derived one stands in until it arrives.
+  const titled = useRef(initial.session.messages.length > 0)
+  // Cost so far and the next figure to stop at, as refs so `send` sees them unstaled.
+  const spent = useRef(0)
+  const ceiling = useRef(config.maxCost)
+  // The last prompt, so /retry can send it again — possibly to a different model.
+  const lastPrompt = useRef("")
   // `send` is recreated on every model or agent change; the ref keeps it reading the
   // session that is current when it actually runs.
   const sessionRef = useRef(initial.session)
@@ -91,80 +124,200 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
     setItems((current) => [...current, { kind: "note", text, level }])
   }, [])
 
+  /** Resolves a promise into the on-screen prompt. Shared by the gate and the cost guard. */
+  const ask = useCallback(
+    (request: PermissionRequest) =>
+      new Promise<PermissionAnswer>((resolve) =>
+        setPermission({
+          request,
+          answer: (answer) => {
+            setPermission(null)
+            resolve(answer)
+          },
+        }),
+      ),
+    [],
+  )
+
   const gate = useMemo(
     () =>
-      new PermissionGate(config.permission, (request) =>
-        new Promise<PermissionAnswer>((resolve) =>
-          setPermission({
-            request,
-            answer: (answer) => {
-              setPermission(null)
-              resolve(answer)
-            },
-          }),
-        ),
-      ),
-    [config.permission],
+      new PermissionGate(config.permission, ask, undefined, undefined, (request) => {
+        if (!config.persistGrants) return
+        // `bash:git ` rather than `bash:git status`: the subject is one exact command, and
+        // persisting that verbatim would litter the config with near-duplicates.
+        const key = request.subject && request.tool === "bash" ? `${request.tool}:${request.subject}` : request.tool
+        try {
+          note(`saved permission "${key}": allow to ${persistPermission(cwd, key, "allow")}`)
+        } catch (error) {
+          note(`could not save the permission: ${error instanceof Error ? error.message : String(error)}`, "error")
+        }
+      }),
+    [ask, config.permission, config.persistGrants, cwd, note],
+  )
+
+  /**
+   * Replaces the history the model carries with a summary. The on-screen transcript is
+   * deliberately left alone: it is what the user reads, and shrinking it would look like
+   * jarvis had lost the conversation. Only the model's view gets smaller.
+   */
+  const runCompact = useCallback(
+    async (reason: "manual" | "auto" | "overflow") => {
+      const active = sessionRef.current
+      setCompacting(true)
+      try {
+        const { dropped } = await compactSession(config, active)
+        note(`compacted ${dropped} messages into a summary${reason === "manual" ? "" : ` (${reason})`}`)
+        // The occupancy figure described history the model no longer carries. Cost stays:
+        // that money was really spent.
+        setContextTokens(0)
+        return true
+      } catch (error) {
+        note(error instanceof Error ? error.message : String(error), error instanceof NothingToCompact ? "info" : "error")
+        return false
+      } finally {
+        setCompacting(false)
+      }
+    },
+    [config, note],
   )
 
   const send = useCallback(
     (prompt: string, options: { agent?: string; model?: string } = {}) => {
       const active = sessionRef.current
+      lastPrompt.current = prompt
       setItems((current) => [...current, { kind: "user", text: prompt }])
-      appendMessages(active, [{ role: "user", content: prompt }])
+      // `@screenshot.png` becomes something the model can actually look at.
+      const attached = attach(prompt, cwd)
+      for (const line of attached.notes) note(line)
+      appendMessages(active, [{ role: "user", content: attached.content }])
       setBusy(true)
       setInFlight({ input: 0, output: 0, cost: 0 })
+      // Everything this turn writes undoes as one step.
+      beginGroup(active.id)
       const controller = new AbortController()
       abort.current = controller
 
-      void run({
-        config,
-        cwd,
-        messages: active.messages,
-        gate,
-        agent: options.agent ?? agent,
-        model: options.model ?? model,
-        extraTools: mcpTools,
-        extensions,
-        sessionID: active.id,
-        abort: controller.signal,
-        onEvent: (event) => {
-          setItems((current) => applyEvent(current, event))
-          if (event.type === "usage") setInFlight(event.usage)
-        },
-      })
-        .then((result) => {
+      // Reads `active.messages` when called, not when defined, so a retry after
+      // compaction sends the shortened history rather than the one that overflowed.
+      const attempt = () =>
+        run({
+          config,
+          cwd,
+          messages: active.messages,
+          gate,
+          agent: options.agent ?? agent,
+          model: options.model ?? model,
+          extraTools: mcpTools,
+          extensions,
+          sessionID: active.id,
+          read: read.current,
+          abort: controller.signal,
+          onEvent: (event) => {
+            setItems((current) => applyEvent(current, event))
+            if (event.type === "usage") setInFlight(event.usage)
+          },
+        })
+
+      void (async () => {
+        try {
+          // Nobody wants to discover a runaway loop on next month's invoice.
+          if (config.maxCost > 0 && spent.current >= ceiling.current) {
+            const answer = await ask({
+              tool: "budget",
+              title: `this session has cost $${spent.current.toFixed(2)}`,
+              detail: `The configured ceiling is $${config.maxCost.toFixed(2)} (maxCost). Continue?`,
+            })
+            if (answer === "reject") {
+              note(`stopped at $${spent.current.toFixed(2)} — raise maxCost or start a new session`)
+              return
+            }
+            // Ask again after another maxCost, not on every turn from here on.
+            ceiling.current = spent.current + config.maxCost
+          }
+
+          let result
+          try {
+            result = await attempt()
+          } catch (error) {
+            // The window filled up. Summarizing and retrying is the only thing that can
+            // help, and the alternative is a dead session.
+            if (controller.signal.aborted || !isOverflow(error)) throw error
+            note("context window exceeded — compacting and retrying")
+            if (!(await runCompact("overflow"))) throw error
+            result = await attempt()
+          }
+
           appendMessages(active, result.messages)
+          spent.current += result.usage.cost
           setTotal((current) => ({
             input: current.input + result.usage.input,
             output: current.output + result.usage.output,
             cost: current.cost + result.usage.cost,
           }))
-        })
-        .catch((error: unknown) => {
+          setContextLimit(result.contextLimit)
+          setContextTokens(result.contextTokens)
+
+          // A better label than the first line of the prompt, which is useless when the
+          // prompt was a pasted stack trace. One cheap call, once per session.
+          if (!titled.current) {
+            titled.current = true
+            void generateTitle(config, active.messages)
+              .then((title) => {
+                if (title) setTitle(active, title)
+              })
+              .catch(() => {
+                // The derived title is already in place; a failed rename is not worth saying.
+              })
+          }
+
+          if (result.interrupted) note("interrupted")
+          else if (result.contextLimit && result.contextTokens > result.contextLimit * COMPACT_AT) {
+            await runCompact("auto")
+          }
+        } catch (error) {
           if (controller.signal.aborted) note("interrupted")
           else note(error instanceof Error ? error.message : String(error), "error")
-        })
-        .finally(() => {
+        } finally {
+          endGroup(active.id)
           abort.current = null
           setBusy(false)
           setInFlight({ input: 0, output: 0, cost: 0 })
           setPermission(null)
-        })
+        }
+      })()
     },
-    [agent, config, cwd, extensions, gate, mcpTools, model, note],
+    [agent, ask, config, cwd, extensions, gate, mcpTools, model, note, runCompact],
+  )
+
+  /**
+   * Sends the last prompt again. The point is the optional model: when a turn fails or
+   * answers badly, trying the same question on a stronger model is the obvious next move
+   * and otherwise means retyping it.
+   */
+  const retry = useCallback(
+    (override?: string) => {
+      if (!lastPrompt.current) return note("nothing to retry yet")
+      note(`retrying${override ? ` with ${override}` : ""}`)
+      send(lastPrompt.current, override ? { model: override } : {})
+    },
+    [note, send],
   )
 
   const swap = useCallback((next: Session, transcript: Item[]) => {
     setSession(next)
     sessionRef.current = next
     setItems(transcript)
+    read.current.clear()
+    titled.current = next.messages.length > 0
   }, [])
 
   return {
     session,
     items,
     busy,
+    compacting,
+    contextLimit,
+    contextTokens,
     permission,
     usage: {
       input: total.input + inFlight.input,
@@ -172,10 +325,34 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
       cost: total.cost + inFlight.cost,
     },
     send,
+    retry,
     note,
+    compact: useCallback(() => void runCompact("manual"), [runCompact]),
+    history: useCallback(
+      (direction: "undo" | "redo") => {
+        const active = sessionRef.current
+        const result = direction === "undo" ? undo(active.id) : redo(active.id)
+        if ("error" in result) return note(result.error)
+        // The files on disk no longer match what the model was told they contain.
+        for (const path of result.files) read.current.delete(path)
+        note(`${direction} — ${result.files.length} file${result.files.length === 1 ? "" : "s"} restored`)
+      },
+      [note],
+    ),
+    export: useCallback(() => {
+      const active = sessionRef.current
+      const file = join(cwd, `jarvis-${active.id}.md`)
+      try {
+        writeFileSync(file, exportMarkdown(active.id))
+        note(`exported to ${file}`)
+      } catch (error) {
+        note(error instanceof Error ? error.message : String(error), "error")
+      }
+    }, [cwd, note]),
     newSession: useCallback(() => {
       swap(createSession(cwd), [])
       setTotal({ input: 0, output: 0, cost: 0 })
+      setContextTokens(0)
     }, [cwd, swap]),
     resume: useCallback(
       (id: string) => {

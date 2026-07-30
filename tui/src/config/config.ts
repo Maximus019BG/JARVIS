@@ -90,10 +90,29 @@ export const ConfigSchema = z
     theme: z.string().default("jarvis"),
     /** UI motion. `reduced` keeps the spinner only; `JARVIS_MOTION` overrides this. */
     animations: z.enum(["full", "reduced", "off"]).default("full"),
+    /** Modal editing in the prompt box. Starts in insert; escape for normal. */
+    vim: z.boolean().default(false),
     /** Extra instruction files appended to the system prompt. Globs allowed. */
     instructions: z.array(z.string()).default([]),
+    /**
+     * Glob -> commands run after a matching file is written, with `$FILE` substituted.
+     * Failures come back to the model. This is how formatting and diagnostics reach the
+     * agent: `{ "**\/*.ts": ["bunx prettier --write $FILE", "bunx tsc --noEmit"] }`.
+     */
+    check: z.record(z.string(), z.array(z.string())).default({}),
     /** Max tool-call steps in one turn before the loop stops. */
     maxSteps: z.number().default(200),
+    /**
+     * Stop and ask once a session has cost this much in USD, then again after every
+     * further increment of it. `0` disables the check.
+     */
+    maxCost: z.number().default(0),
+    /**
+     * Write "always allow" answers into the project's `.jarvis/jarvis.jsonc` so they
+     * outlive the process. Off by default: granting a permission should not silently
+     * edit a file you may have committed.
+     */
+    persistGrants: z.boolean().default(false),
   })
   .strict()
 

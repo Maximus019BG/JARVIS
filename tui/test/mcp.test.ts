@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { join } from "node:path"
-import { ConfigSchema } from "../src/config/config.ts"
+import { ConfigSchema, type Permission } from "../src/config/config.ts"
 import { startMcp, toolName } from "../src/extend/mcp.ts"
+import { constantAsker, PermissionGate } from "../src/permission.ts"
+import { gateTools, type ToolSet } from "../src/tools/index.ts"
 
 const config = ConfigSchema.parse({
   mcp: {
@@ -34,5 +36,31 @@ describe("startMcp", () => {
 
   test("an isError result becomes a thrown tool error", async () => {
     expect(call(toolName("fixture", "explode"), {})).rejects.toThrow("boom")
+  })
+})
+
+describe("gateTools", () => {
+  const shout = toolName("fixture", "shout")
+  const gated = (rules: Record<string, Permission>, allow: boolean) =>
+    gateTools(session.tools, new PermissionGate(rules, constantAsker(allow)), new Set())
+
+  const run = async (tools: ToolSet, name: string) =>
+    await (tools[name] as { execute: (i: unknown, o: unknown) => Promise<string> }).execute({ text: "hi" }, {})
+
+  test("MCP tools ask by default and a rejection stops the call", async () => {
+    expect(run(gated({}, false), shout)).rejects.toThrow(/permission denied for mcp/)
+    expect(await run(gated({}, true), shout)).toBe("HI")
+  })
+
+  test("prefix rules address individual MCP tools", async () => {
+    // Matched by subject, which is the name minus the `mcp_` namespace.
+    expect(run(gated({ "mcp:fixture_shout": "deny" }, true), shout)).rejects.toThrow(/permission denied/)
+    // A deny on a sibling tool leaves this one alone; the asker is never consulted.
+    expect(await run(gated({ "mcp:fixture_explode": "deny", "mcp:fixture_shout": "allow" }, false), shout)).toBe("HI")
+  })
+
+  test("exempt tools are left untouched", async () => {
+    const exempt = gateTools(session.tools, new PermissionGate({}, constantAsker(false)), new Set([shout]))
+    expect(await run(exempt, shout)).toBe("HI")
   })
 })

@@ -19,6 +19,8 @@ const KEY_HELP: [keyof Keymap, string][] = [
   ["filePicker", "insert file path"],
   ["newSession", "new session"],
   ["clear", "clear screen"],
+  ["scrollUp", "scroll up a page"],
+  ["scrollDown", "scroll down a page"],
   ["scrollHalfUp", "scroll up"],
   ["scrollHalfDown", "scroll down"],
   ["scrollBottom", "jump to newest"],
@@ -27,7 +29,7 @@ const KEY_HELP: [keyof Keymap, string][] = [
 export function help(keymap: Keymap): string {
   const width = Math.max(...KEY_HELP.map(([action]) => describe(keymap[action]).length))
   return [
-    "type / for commands and @ for files",
+    "type / for commands, @ for files, and ! to run a shell command",
     "",
     "keys",
     ...KEY_HELP.map(([action, label]) => `  ${describe(keymap[action]).padEnd(width)}  ${label}`),
@@ -83,12 +85,22 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return turn.newSession()
     case "clear":
       return turn.clear()
+    case "compact":
+      return turn.compact()
     case "model":
       return openPicker("model")
     case "agent":
       return openPicker("agent")
     case "sessions":
       return openPicker("session")
+    case "export":
+      return turn.export()
+    case "retry":
+      return turn.retry(args || undefined)
+    case "undo":
+      return turn.history("undo")
+    case "redo":
+      return turn.history("redo")
     case "theme":
       return openPicker("theme")
     case "mcp":

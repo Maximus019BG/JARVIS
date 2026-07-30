@@ -280,6 +280,10 @@
         "off"
       ]
     },
+    "vim": {
+      "default": false,
+      "type": "boolean"
+    },
     "instructions": {
       "default": [],
       "type": "array",
@@ -287,9 +291,30 @@
         "type": "string"
       }
     },
+    "check": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
     "maxSteps": {
       "default": 200,
       "type": "number"
+    },
+    "maxCost": {
+      "default": 0,
+      "type": "number"
+    },
+    "persistGrants": {
+      "default": false,
+      "type": "boolean"
     }
   },
   "additionalProperties": false

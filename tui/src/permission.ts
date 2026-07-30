@@ -46,8 +46,22 @@ export function resolvePermission(
   return best?.permission ?? fallback
 }
 
-/** Anything that mutates the workspace asks unless the user opts out. */
-export const DEFAULT_RULES: Record<string, Permission> = { write: "ask", edit: "ask", bash: "ask", task: "allow" }
+/**
+ * Anything that mutates the workspace asks unless the user opts out. `mcp` covers every
+ * MCP tool: third-party code whose side effects jarvis cannot inspect, so it asks by
+ * default. Custom `.jarvis/tools` are the user's own code and fall through to `allow`.
+ */
+export const DEFAULT_RULES: Record<string, Permission> = {
+  write: "ask",
+  edit: "ask",
+  bash: "ask",
+  task: "allow",
+  mcp: "ask",
+  // The URL comes from the model, which may have read it out of untrusted file content, so
+  // an unprompted fetch is an exfiltration path. Allow families of hosts with
+  // `"webfetch:https://docs."` rather than opening it wholesale.
+  webfetch: "ask",
+}
 
 /**
  * Lets a plugin decide a request before the user is asked. Injected rather than
@@ -68,18 +82,20 @@ export class PermissionGate {
     /** Shared with derived gates so "always allow" survives agent and turn changes. */
     private readonly granted = new Set<string>(),
     private readonly override?: PermissionOverride,
+    /** Called when the user answers "always", for callers that want to persist it. */
+    private readonly onGrant?: (request: PermissionRequest) => void,
   ) {
     this.rules = { ...DEFAULT_RULES, ...rules }
   }
 
   /** Agent-level overrides layered on top of the config rules. */
   withRules(overrides: Record<string, Permission>) {
-    return new PermissionGate({ ...this.rules, ...overrides }, this.asker, this.granted, this.override)
+    return new PermissionGate({ ...this.rules, ...overrides }, this.asker, this.granted, this.override, this.onGrant)
   }
 
   /** Attaches a plugin decider; keeps the same rules, asker and grants. */
   withOverride(override: PermissionOverride) {
-    return new PermissionGate(this.rules, this.asker, this.granted, override)
+    return new PermissionGate(this.rules, this.asker, this.granted, override, this.onGrant)
   }
 
   async check(request: PermissionRequest): Promise<void> {
@@ -90,7 +106,10 @@ export class PermissionGate {
     if (this.granted.has(key)) return
     const answer = await this.asker(request)
     if (answer === "reject") throw new PermissionDenied(request.tool)
-    if (answer === "always") this.granted.add(key)
+    if (answer === "always") {
+      this.granted.add(key)
+      this.onGrant?.(request)
+    }
   }
 }
 

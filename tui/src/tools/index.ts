@@ -1,4 +1,7 @@
 import type { Tool } from "ai"
+import { MCP_PREFIX } from "../extend/mcp.ts"
+import type { PermissionGate } from "../permission.ts"
+import { bashOutputTool } from "./background.ts"
 import { bashTool } from "./bash.ts"
 import { editTool } from "./edit.ts"
 import { globTool } from "./glob.ts"
@@ -6,6 +9,8 @@ import { grepTool } from "./grep.ts"
 import { listTool } from "./list.ts"
 import { readTool } from "./read.ts"
 import { taskTool } from "./task.ts"
+import { todoTool } from "./todo.ts"
+import { webfetchTool } from "./webfetch.ts"
 import { writeTool } from "./write.ts"
 import type { ToolContext } from "./context.ts"
 
@@ -24,9 +29,43 @@ export function builtinTools(ctx: ToolContext, agents: { name: string; descripti
     glob: globTool(ctx),
     grep: grepTool(ctx),
     list: listTool(ctx),
+    todo: todoTool(ctx),
+    webfetch: webfetchTool(ctx),
+    bash_output: bashOutputTool(ctx),
   }
   if (ctx.spawn && agents.length > 0) tools.task = taskTool(ctx, agents)
   return tools
+}
+
+/**
+ * Wraps every tool that does not already gate itself in a permission check, so an MCP
+ * server's `delete_repo` cannot run unprompted. MCP tools report as tool `mcp` with the
+ * bare tool name as the subject, which the existing prefix matcher turns into usable
+ * rules for free: `"mcp": "ask"`, `"mcp:github_": "allow"`, `"mcp:github_delete": "deny"`.
+ */
+export function gateTools(tools: ToolSet, gate: PermissionGate, exempt: Set<string>): ToolSet {
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, definition]) => {
+      const execute = definition.execute
+      if (exempt.has(name) || typeof execute !== "function") return [name, definition]
+      const mcp = name.startsWith(MCP_PREFIX)
+      return [
+        name,
+        {
+          ...definition,
+          execute: async (input: unknown, options: unknown) => {
+            await gate.check({
+              tool: mcp ? "mcp" : name,
+              title: `run ${name}`,
+              detail: JSON.stringify(input, null, 2),
+              subject: mcp ? name.slice(MCP_PREFIX.length) : name,
+            })
+            return (execute as (i: unknown, o: unknown) => unknown)(input, options)
+          },
+        },
+      ]
+    }),
+  )
 }
 
 /**

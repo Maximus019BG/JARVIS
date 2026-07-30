@@ -34,5 +34,22 @@
     "write": "ask",
     "edit": "ask",
     "bash": "ask"
+    // "mcp" and "webfetch" default to "ask". Prefixes narrow them:
+    // "bash:git ": "allow", "mcp:github_": "allow", "webfetch:https://docs.": "allow"
+  },
+
+  // Run after a matching file is written; failures go back to the model. This is how
+  // formatting and diagnostics reach the agent, without an LSP.
+  "check": {
+    "**/*.ts": ["bunx tsc --noEmit"]
   }
+
+  // Stop and ask once a session has cost this much, then every increment after.
+  // "maxCost": 5,
+
+  // Save "always allow" answers into .jarvis/jarvis.jsonc instead of losing them on exit.
+  // "persistGrants": true,
+
+  // Modal editing in the prompt box. Starts in insert; escape for normal.
+  // "vim": true
 }

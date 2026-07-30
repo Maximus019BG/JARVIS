@@ -4,9 +4,16 @@ import type { PermissionGate } from "../permission.ts"
 
 export class ToolError extends Error {}
 
+/** Truncates tool output so one runaway command cannot fill the context window. */
+export function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}\n…(${text.length - max} more bytes)` : text
+}
+
 export type ToolContext = {
   /** Workspace root. Tools cannot touch anything outside it. */
   cwd: string
+  /** Glob -> commands to run after a file matching it is written. */
+  check?: Record<string, string[]>
   /** Git worktree root, or `cwd` when not in a repo. Passed to custom tools. */
   worktree: string
   gate: PermissionGate

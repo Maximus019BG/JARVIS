@@ -21,17 +21,21 @@ export function segments(options: {
   branch?: string
   usage: Usage
   contextLimit?: number
+  /** Prompt tokens on the last turn — the honest measure of how full the window is. */
+  contextTokens?: number
   width: number
 }): { left: string; right: string } {
-  const { model, cwd, branch, usage, contextLimit, width } = options
+  const { model, cwd, branch, usage, contextLimit, contextTokens = 0, width } = options
   const tokens = usage.input + usage.output
 
   const optional = [
     usage.cost > 0 ? `$${usage.cost.toFixed(4)}` : undefined,
     branch,
     basename(cwd),
-    tokens > 0 && contextLimit
-      ? `${thousands(tokens)}/${thousands(contextLimit)} ${Math.round((tokens / contextLimit) * 100)}%`
+    // Session totals are the wrong numerator here: they count the same history once per
+    // step, so a long turn would read as 300% of a window it never filled.
+    contextLimit && contextTokens > 0
+      ? `${thousands(contextTokens)}/${thousands(contextLimit)} ${Math.round((contextTokens / contextLimit) * 100)}%`
       : tokens > 0
         ? `${thousands(tokens)} tokens`
         : undefined,
@@ -59,6 +63,8 @@ export function Status({
   agent,
   usage,
   contextLimit,
+  contextTokens,
+  vim,
   busy,
   width,
   hint,
@@ -71,6 +77,9 @@ export function Status({
   agent: string
   usage: Usage
   contextLimit?: number
+  contextTokens?: number
+  /** Vim mode, when vim mode is on at all. */
+  vim?: "normal" | "insert"
   busy: boolean
   width: number
   hint: string
@@ -80,13 +89,14 @@ export function Status({
     if (dot.current) dot.current.opacity = 0.45 + 0.55 * t
   })
 
-  const { left, right } = segments({ model, cwd, branch, usage, contextLimit, width })
+  const { left, right } = segments({ model, cwd, branch, usage, contextLimit, contextTokens, width })
 
   return (
     <box style={{ flexDirection: "row", width: "100%", backgroundColor: theme.panel, paddingLeft: 1, paddingRight: 1 }}>
       <text ref={dot} fg={busy ? theme.warning : theme.muted}>
         {busy ? "● " : "○ "}
       </text>
+      {vim && <text fg={vim === "insert" ? theme.success : theme.accent}>{`${vim === "insert" ? "INS" : "NOR"} `}</text>}
       <text fg={theme.accent}>{agent}</text>
       <text fg={theme.muted}>{`  ${left}`}</text>
       <box style={{ flexGrow: 1 }} />

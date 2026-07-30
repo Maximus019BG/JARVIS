@@ -11,6 +11,7 @@ import { loadCommands, parseCommandLine } from "../extend/command.ts"
 import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
 import { runCommand } from "./builtin-commands.ts"
+import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { PermissionPrompt, Picker } from "./components/dialog.tsx"
 import { Editor, type EditorHandle } from "./components/editor.tsx"
@@ -67,7 +68,11 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
   const history = useRef<string[]>([])
   const browse = useRef({ index: -1, draft: "" })
 
-  const contextLimit = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
+  // The config value is available before the first turn; the turn's value can also come
+  // from the models.dev catalog, so it wins once a turn has actually resolved the model.
+  const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
+  const contextLimit = turn.contextLimit ?? configured
+  const vim = useVim(editor, config.vim)
 
   const dispatch = useCallback(
     (name: string, args: string) => {
@@ -85,16 +90,30 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
     [commands, extensions, keymap, mcp, turn],
   )
 
+  const shell = useCallback(
+    (command: string) => {
+      if (!command) return
+      const result = Bun.spawnSync(["bash", "-c", command], { cwd, env: { ...process.env, JARVIS: "1" } })
+      const output = [result.stdout.toString(), result.stderr.toString()].filter((part) => part.trim()).join("\n")
+      turn.note(`! ${command}\n${output.trimEnd() || `(exit ${result.exitCode})`}`, result.exitCode === 0 ? "info" : "error")
+    },
+    [cwd, turn],
+  )
+
   const submit = useCallback(
     (text: string) => {
       history.current.push(text)
       browse.current = { index: -1, draft: "" }
       setSuggestion(null)
+      vim.reset()
+      // `!cmd` runs a shell command without spending a turn on it, for the constant
+      // small checks — git status, a test run — that do not need the model at all.
+      if (text.startsWith("!")) return shell(text.slice(1).trim())
       const parsed = parseCommandLine(text)
       if (parsed) dispatch(parsed.name, parsed.args)
       else turn.send(text)
     },
-    [dispatch, turn],
+    [dispatch, shell, turn],
   )
 
   const change = useCallback(
@@ -173,6 +192,10 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
     if (turn.permission || picker) return
     const is = (action: Action) => matches(key, keymap[action])
 
+    // Normal-mode keys are commands, not text, so vim gets the first look. It declines
+    // anything it does not map — including ctrl chords and everything in insert mode.
+    if (vim.handle(key)) return key.stopPropagation()
+
     if (suggestion) {
       const count = suggestion.choices.length
       if (key.name === "up" || key.name === "down") {
@@ -235,7 +258,9 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
         <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
       </scrollbox>
 
-      {turn.busy && <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} />}
+      {(turn.busy || turn.compacting) && (
+        <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
+      )}
 
       {suggestion && !turn.permission && !picker && (
         <Suggestions
@@ -283,7 +308,9 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
         agent={agent}
         usage={turn.usage}
         contextLimit={contextLimit}
-        busy={turn.busy}
+        contextTokens={turn.contextTokens}
+        vim={vim.mode}
+        busy={turn.busy || turn.compacting}
         width={width}
         hint={quitting ? `press ${describe(keymap.exit)} again to exit` : `${describe(keymap.palette)} commands`}
       />

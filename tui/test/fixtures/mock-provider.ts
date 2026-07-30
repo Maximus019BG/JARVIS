@@ -1,3 +1,4 @@
+import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider"
 import { MockLanguageModelV4, simulateReadableStream } from "ai/test"
 
 export type MockPart =
@@ -32,13 +33,33 @@ function chunks(parts: MockPart[]) {
   return out
 }
 
+declare global {
+  /** What `doGenerate` returns. Used by the non-streaming calls, i.e. compaction. */
+  var mockText: string
+}
+
 /** Discovered by provider.ts the same way a real `@ai-sdk/*` package would be. */
 export function createMock() {
   return (modelId: string) =>
     new MockLanguageModelV4({
       provider: "mock",
       modelId,
+      doGenerate: async (options): Promise<LanguageModelV4GenerateResult> => {
+        globalThis.mockCalls.push(options)
+        return {
+          content: [{ type: "text", text: globalThis.mockText ?? "summary" }],
+          finishReason: { unified: "stop", raw: "stop" },
+          usage: {
+            inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 5, text: 5, reasoning: 0 },
+          },
+          warnings: [],
+        }
+      },
       doStream: async (options) => {
+        // A real provider's fetch rejects on an aborted signal; the mock must too, or
+        // interrupt handling can never be tested.
+        options.abortSignal?.throwIfAborted()
         globalThis.mockCalls.push(options)
         const parts = globalThis.mockSteps.shift() ?? [{ type: "text" as const, text: "done" }]
         return { stream: simulateReadableStream({ chunks: chunks(parts) as never[], chunkDelayInMs: null }) }

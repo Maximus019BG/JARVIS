@@ -8,7 +8,7 @@ import { systemPrompt } from "./prompt.ts"
 import { defaultModelID, resolveModel, type ResolvedModel } from "./provider.ts"
 import { customTools } from "../extend/custom-tools.ts"
 import { skillTool } from "../extend/skill-tool.ts"
-import { builtinTools, filterTools, MAX_DEPTH, ToolError, type ToolSet } from "../tools/index.ts"
+import { builtinTools, filterTools, gateTools, MAX_DEPTH, ToolError, type ToolSet } from "../tools/index.ts"
 
 export type Usage = { input: number; output: number; cost: number }
 
@@ -37,6 +37,11 @@ export type RunOptions = {
   extensions?: Extensions
   /** Session id, passed to custom tools and plugin hooks. */
   sessionID?: string
+  /**
+   * Files read so far, keyed to the mtime they had when read. Owned by the caller so it
+   * survives across turns; a fresh map per turn would make the model re-read every file.
+   */
+  read?: Map<string, number>
   abort?: AbortSignal
   depth?: number
   onEvent?: (event: AgentEvent) => void
@@ -47,6 +52,16 @@ export type RunResult = {
   messages: ModelMessage[]
   text: string
   usage: Usage
+  /** True when the abort signal cut the turn short. `messages` holds the completed steps. */
+  interrupted?: boolean
+  /** The resolved model's context window, when known, so the caller can decide to compact. */
+  contextLimit?: number
+  /**
+   * Prompt tokens on the final step, i.e. how full the window actually got. `usage.input`
+   * sums every step and so counts the same history once per step; it is right for cost and
+   * wrong for occupancy.
+   */
+  contextTokens: number
 }
 
 function cost(model: ResolvedModel, input: number, output: number): number {
@@ -75,6 +90,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     extraTools,
     extensions = NO_EXTENSIONS,
     sessionID = "local",
+    read = new Map<string, number>(),
     abort,
     depth = 0,
     onEvent = () => {},
@@ -105,6 +121,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
             agent: name,
             model: agents[name]?.model,
             messages: [{ role: "user", content: prompt }],
+            // Shared, not copied: a file the subagent read shouldn't force the parent to re-read.
+            read,
             depth: depth + 1,
             onEvent: (event) => onEvent({ type: "sub", agent: name, event }),
           })
@@ -114,27 +132,38 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const ctx = {
     cwd,
+    check: config.check,
     worktree: extensions.worktree,
     gate: agentGate,
-    read: new Set<string>(),
+    read,
     depth,
     agent: agent.name,
     sessionID,
     spawn,
   }
+  const builtins = builtinTools(ctx, spawn ? spawnableAgents(agents) : [])
+  const custom = customTools(extensions.tools, ctx)
   const available = {
-    ...builtinTools(ctx, spawn ? spawnableAgents(agents) : []),
+    ...builtins,
     ...(extensions.skills.length > 0 ? { skill: skillTool(ctx, extensions.skills) } : {}),
-    ...customTools(extensions.tools, ctx),
+    ...custom,
     ...extraTools,
   }
-  const tools = wrapTools(filterTools(available, agent.tools, agent.defaultTools), plugins, {
-    sessionID,
-    agent: agent.name,
-  })
+  // Built-ins, skills and custom tools call the gate themselves with a useful title and
+  // detail. Everything else — MCP, plugin-contributed tools — gets the generic check, so
+  // nothing reaches the model ungated.
+  const selfGated = new Set([...Object.keys(builtins), ...Object.keys(custom), "skill"])
+  const gated = gateTools(filterTools(available, agent.tools, agent.defaultTools), agentGate, selfGated)
+  const tools = wrapTools(gated, plugins, { sessionID, agent: agent.name })
 
+  const contextLimit = model.info.contextLimit
   const outgoing = { messages }
   await fire(plugins, "chat.message", { agent: agent.name, model: modelID, sessionID }, outgoing)
+
+  // Fallback history for an abort that throws instead of ending the stream. A finished
+  // step always holds each tool call paired with its result, which is what providers
+  // require; a half-finished step is dropped rather than sent back orphaned.
+  const completed: ModelMessage[] = []
 
   const result = streamText({
     model: model.model,
@@ -145,57 +174,77 @@ export async function run(options: RunOptions): Promise<RunResult> {
     stopWhen: stepCountIs(config.maxSteps),
     abortSignal: abort,
     providerOptions: model.info.options as Record<string, Record<string, never>> | undefined,
+    onStepFinish: ({ response }) => {
+      completed.push(...response.messages)
+    },
     onError: ({ error }) => emit({ type: "error", message: errorMessage(error) }),
   })
 
   let text = ""
+  let contextTokens = 0
   const usage: Usage = { input: 0, output: 0, cost: 0 }
 
-  for await (const part of result.fullStream) {
-    switch (part.type) {
-      case "text-delta":
-        text += part.text
-        emit({ type: "text", text: part.text })
-        break
-      case "reasoning-delta":
-        emit({ type: "reasoning", text: part.text })
-        break
-      case "tool-call":
-        emit({ type: "tool-start", id: part.toolCallId, name: part.toolName, input: part.input })
-        break
-      case "tool-result":
-        emit({
-          type: "tool-end",
-          id: part.toolCallId,
-          name: part.toolName,
-          output: stringify(part.output),
-          failed: false,
-        })
-        break
-      case "tool-error":
-        emit({
-          type: "tool-end",
-          id: part.toolCallId,
-          name: part.toolName,
-          output: errorMessage(part.error),
-          failed: true,
-        })
-        break
-      case "finish-step":
-        usage.input += part.usage.inputTokens ?? 0
-        usage.output += part.usage.outputTokens ?? 0
-        usage.cost = cost(model, usage.input, usage.output)
-        emit({ type: "usage", usage: { ...usage } })
-        break
-      case "error":
-        emit({ type: "error", message: errorMessage(part.error) })
-        break
-      default:
-        break
+  try {
+    for await (const part of result.fullStream) {
+      switch (part.type) {
+        case "text-delta":
+          text += part.text
+          emit({ type: "text", text: part.text })
+          break
+        case "reasoning-delta":
+          emit({ type: "reasoning", text: part.text })
+          break
+        case "tool-call":
+          emit({ type: "tool-start", id: part.toolCallId, name: part.toolName, input: part.input })
+          break
+        case "tool-result":
+          emit({
+            type: "tool-end",
+            id: part.toolCallId,
+            name: part.toolName,
+            output: stringify(part.output),
+            failed: false,
+          })
+          break
+        case "tool-error":
+          emit({
+            type: "tool-end",
+            id: part.toolCallId,
+            name: part.toolName,
+            output: errorMessage(part.error),
+            failed: true,
+          })
+          break
+        case "finish-step":
+          contextTokens = part.usage.inputTokens ?? contextTokens
+          usage.input += part.usage.inputTokens ?? 0
+          usage.output += part.usage.outputTokens ?? 0
+          usage.cost = cost(model, usage.input, usage.output)
+          emit({ type: "usage", usage: { ...usage } })
+          break
+        case "error":
+          emit({ type: "error", message: errorMessage(part.error) })
+          break
+        default:
+          break
+      }
     }
+  } catch (error) {
+    // An abort usually ends the stream cleanly and is handled below. It only lands here if
+    // it interrupted something mid-flight, and then the finished steps are still worth
+    // keeping so the next turn knows what already touched disk.
+    if (!abort?.aborted) throw error
+    return { messages: completed, text, usage, interrupted: true, contextLimit, contextTokens }
   }
 
-  return { messages: await result.responseMessages, text, usage }
+  return {
+    messages: await result.responseMessages,
+    text,
+    usage,
+    interrupted: abort?.aborted,
+    contextLimit,
+    contextTokens,
+  }
 }
 
 /** The model an agent will actually use, for display before a run starts. */

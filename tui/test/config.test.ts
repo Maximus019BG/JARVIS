@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { parse as parseJsonc } from "jsonc-parser"
 import { ConfigSchema, merge, substitute, configFiles, ConfigError } from "../src/config/config.ts"
+import { persistPermission } from "../src/config/persist.ts"
+import { catalogKey, modelInfo } from "../src/agent/catalog.ts"
 import { parseModelID, listModels, defaultModelID } from "../src/agent/provider.ts"
 import { parseArgs } from "../src/index.tsx"
 
@@ -75,6 +78,19 @@ describe("parseModelID", () => {
   })
 })
 
+describe("catalogKey", () => {
+  test("maps an npm package to its models.dev provider name", () => {
+    // So `provider.velocity` pointing at `@ai-sdk/anthropic` still finds Anthropic's models.
+    expect(catalogKey("@ai-sdk/anthropic")).toBe("anthropic")
+    expect(catalogKey("@openrouter/ai-sdk-provider")).toBe("ai-sdk")
+    expect(catalogKey("ollama-ai-provider")).toBe("ollama-ai")
+  })
+
+  test("stays off the network under test, so nothing depends on models.dev being up", async () => {
+    expect(await modelInfo(["anthropic"], "claude-opus-4-5")).toEqual({})
+  })
+})
+
 describe("model listing", () => {
   const config = ConfigSchema.parse({
     provider: {
@@ -103,5 +119,32 @@ describe("parseArgs", () => {
 
   test("a flag missing its value is an error", () => {
     expect(() => parseArgs(["--model"])).toThrow()
+  })
+})
+
+describe("persistPermission", () => {
+  test("adds a rule while leaving comments and other keys intact", () => {
+    const root = tmp()
+    mkdirSync(join(root, ".git"), { recursive: true })
+    mkdirSync(join(root, ".jarvis"), { recursive: true })
+    const file = join(root, ".jarvis", "jarvis.jsonc")
+    writeFileSync(file, '{\n  // keep me\n  "theme": "light"\n}\n')
+
+    expect(persistPermission(root, "bash:git ", "allow")).toBe(file)
+    const after = readFileSync(file, "utf8")
+    expect(after).toContain("// keep me")
+    expect(after).toContain('"theme": "light"')
+    // And it parses back to the merged result.
+    const parsed = ConfigSchema.parse(parseJsonc(after))
+    expect(parsed.permission["bash:git "]).toBe("allow")
+    expect(parsed.theme).toBe("light")
+  })
+
+  test("creates the config when the project has none", () => {
+    const root = tmp()
+    mkdirSync(join(root, ".git"), { recursive: true })
+    const file = persistPermission(root, "webfetch", "allow")
+    expect(file).toBe(join(root, ".jarvis", "jarvis.jsonc"))
+    expect(parseJsonc(readFileSync(file, "utf8")).permission).toEqual({ webfetch: "allow" })
   })
 })

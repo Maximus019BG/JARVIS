@@ -19,6 +19,9 @@ export type EditorHandle = {
   replaceToken: (token: string, value: string) => void
   /** True when the cursor is on the first (or last) line, so history can claim the key. */
   atEdge: (edge: "first" | "last") => boolean
+  /** Cursor offset, read and written by vim mode. */
+  cursor: () => number
+  setCursor: (offset: number) => void
 }
 
 export function Editor({
@@ -52,6 +55,12 @@ export function Editor({
       const text = current.plainText
       current.editBuffer.setText(`${text.slice(0, text.length - token.length)}${value} `)
       current.cursorOffset = current.plainText.length
+    },
+    cursor: () => ref.current?.cursorOffset ?? 0,
+    setCursor: (offset: number) => {
+      const current = ref.current
+      if (!current) return
+      current.cursorOffset = Math.max(0, Math.min(offset, current.plainText.length))
     },
     atEdge: (edge: "first" | "last") => {
       const current = ref.current

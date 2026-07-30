@@ -3,6 +3,7 @@ import { join } from "node:path"
 import type { LanguageModel } from "ai"
 import type { Config, ModelConfig, ProviderConfig } from "../config/config.ts"
 import { dataDir } from "../config/paths.ts"
+import { catalogKey, modelInfo } from "./catalog.ts"
 
 export class ProviderError extends Error {}
 
@@ -94,7 +95,11 @@ export async function resolveModel(config: Config, id: string): Promise<Resolved
   if (!providerConfig.enabled) throw new ProviderError(`provider "${providerID}" is disabled`)
   const provider = await loadProvider(providerID, providerConfig)
   const model = provider.languageModel ? provider.languageModel(modelID) : provider(modelID)
-  return { providerID, modelID, id, model, info: providerConfig.models[modelID] ?? {} }
+  const configured = providerConfig.models[modelID] ?? {}
+  // Nothing left for the catalog to add, so don't go looking.
+  const complete = configured.contextLimit !== undefined && configured.cost !== undefined
+  const known = complete ? {} : await modelInfo([providerID, catalogKey(providerConfig.npm)], modelID)
+  return { providerID, modelID, id, model, info: { ...known, ...configured } }
 }
 
 /** Every model declared in the config, as "provider/model" ids. */

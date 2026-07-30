@@ -8,6 +8,7 @@ import { configDir } from "../config/paths.ts"
 import { listModels } from "../agent/provider.ts"
 import { openSession } from "../agent/session.ts"
 import { loadTheme } from "../config/theme.ts"
+import { killBackground } from "../tools/background.ts"
 import { App } from "./app.tsx"
 import { resolveMotion } from "./motion.ts"
 
@@ -47,7 +48,11 @@ export async function startTui(options: StartOptions) {
 
   // Ctrl-C is handled in the app so it can interrupt a running turn first.
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
-  process.on("exit", () => void mcp.close())
+  // Covers every exit path, so a backgrounded dev server never outlives the session.
+  process.on("exit", () => {
+    killBackground()
+    void mcp.close()
+  })
 
   createRoot(renderer).render(
     <App

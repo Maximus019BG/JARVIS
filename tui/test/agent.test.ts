@@ -106,6 +106,57 @@ describe("run", () => {
     expect(names).not.toContain("bash")
   })
 
+  test("an interrupted turn reports itself and keeps the steps it finished", async () => {
+    const cwd = workspace()
+    writeFileSync(join(cwd, "hello.txt"), "line one\n")
+    script([{ type: "tool", id: "c1", name: "read", input: { filePath: "hello.txt" } }], [{ type: "text", text: "ok" }])
+
+    const controller = new AbortController()
+    const result = await run({
+      config,
+      cwd,
+      messages: [{ role: "user", content: "read it" }],
+      gate: new PermissionGate(config.permission, constantAsker(true)),
+      abort: controller.signal,
+      // Interrupt once the first step has produced its tool result.
+      onEvent: (event) => {
+        if (event.type === "tool-end") controller.abort()
+      },
+    })
+
+    expect(result.interrupted).toBe(true)
+    // The finished step survives, with the call and its result paired.
+    const serialized = JSON.stringify(result.messages)
+    expect(serialized).toContain("c1")
+    expect(serialized).toContain("line one")
+    // The model was never asked for the second step.
+    expect(globalThis.mockCalls).toHaveLength(1)
+  })
+
+  test("reads carry across turns when the caller owns the map", async () => {
+    const cwd = workspace()
+    writeFileSync(join(cwd, "a.txt"), "one\n")
+    const read = new Map<string, number>()
+    const gate = new PermissionGate(config.permission, constantAsker(true))
+    const messages = [{ role: "user" as const, content: "go" }]
+
+    script([{ type: "tool", id: "c1", name: "read", input: { filePath: "a.txt" } }], [{ type: "text", text: "read it" }])
+    await run({ config, cwd, messages, gate, read })
+
+    // A second turn edits without re-reading; the shared map is what makes that legal.
+    script([{ type: "tool", id: "c2", name: "edit", input: { filePath: "a.txt", oldString: "one", newString: "two" } }], [
+      { type: "text", text: "edited" },
+    ])
+    const { events } = await (async () => {
+      const events: AgentEvent[] = []
+      await run({ config, cwd, messages, gate, read, onEvent: (event) => events.push(event) })
+      return { events }
+    })()
+
+    expect(events.find((e) => e.type === "tool-end" && e.name === "edit")).toMatchObject({ failed: false })
+    expect(await Bun.file(join(cwd, "a.txt")).text()).toBe("two\n")
+  })
+
   test("delegates to a subagent and returns its text", async () => {
     script(
       [{ type: "tool", id: "c1", name: "task", input: { agent: "plan", prompt: "look around", description: "look" } }],

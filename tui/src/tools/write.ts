@@ -2,7 +2,9 @@ import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 import { tool } from "ai"
 import { z } from "zod"
+import { runChecks } from "./check.ts"
 import { displayPath, markRead, resolvePath, type ToolContext } from "./context.ts"
+import { record } from "./snapshot.ts"
 
 export const writeTool = (ctx: ToolContext) =>
   tool({
@@ -24,9 +26,11 @@ export const writeTool = (ctx: ToolContext) =>
         subject: name,
       })
 
+      record(ctx.sessionID, absolute)
       await mkdir(dirname(absolute), { recursive: true })
       await Bun.write(absolute, content)
       await markRead(ctx, absolute)
-      return `${existed ? "overwrote" : "created"} ${name} (${content.split("\n").length} lines)`
+      const summary = `${existed ? "overwrote" : "created"} ${name} (${content.split("\n").length} lines)`
+      return summary + (await runChecks(ctx, absolute))
     },
   })
