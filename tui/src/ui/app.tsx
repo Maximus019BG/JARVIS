@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { useKeyboard, useTerminalDimensions } from "@opentui/react"
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DEFAULT_AGENT, loadAgents, resolveAgent } from "../agent/agent-def.ts"
 import { listModels } from "../agent/provider.ts"
 import type { Session } from "../agent/session.ts"
@@ -42,6 +42,8 @@ export type AppProps = {
 
 const SCROLL_LINES = 10
 const QUIT_WINDOW_MS = 2000
+/** How long the status line acknowledges an auto-copied selection. */
+const COPIED_MS = 1500
 
 export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motion, ...initial }: AppProps) {
   const { width, height } = useTerminalDimensions()
@@ -73,6 +75,28 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
   const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
   const contextLimit = turn.contextLimit ?? configured
   const vim = useVim(editor, config.vim)
+
+  /**
+   * Selecting text copies it, the way a terminal's own primary selection works — reaching
+   * for a copy key after highlighting a path or an error is pure friction. OSC 52 so it
+   * reaches the real clipboard even over ssh.
+   */
+  const renderer = useRenderer()
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const onSelection = () => {
+      const selection = renderer.getSelection()
+      // Fires continuously while dragging; only the finished selection is worth copying.
+      if (!selection || selection.isDragging) return
+      const text = selection.getSelectedText()
+      if (!text) return
+      if (!renderer.copyToClipboardOSC52(text)) return
+      setCopied(true)
+      setTimeout(() => setCopied(false), COPIED_MS)
+    }
+    renderer.on("selection", onSelection)
+    return () => void renderer.off("selection", onSelection)
+  }, [renderer])
 
   const dispatch = useCallback(
     (name: string, args: string) => {
@@ -278,7 +302,22 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
           motion={motion}
           onAnswer={turn.permission.answer}
         />
-      ) : picker ? (
+      ) : (
+        // The editor stays mounted under the picker so the half-written prompt behind the
+        // modal is still visible, and is there again the moment the modal closes.
+        <Editor
+          theme={theme}
+          keymap={keymap}
+          motion={motion}
+          busy={turn.busy}
+          focused={!picker}
+          handle={editor}
+          onSubmit={submit}
+          onChange={change}
+        />
+      )}
+
+      {picker && !turn.permission && (
         <Picker
           title={PICKER_TITLES[picker]}
           choices={pickerChoices(picker, { config, cwd, agents, commands, files })}
@@ -286,16 +325,6 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
           motion={motion}
           onPick={pick}
           onCancel={() => setPicker(null)}
-        />
-      ) : (
-        <Editor
-          theme={theme}
-          keymap={keymap}
-          motion={motion}
-          busy={turn.busy}
-          handle={editor}
-          onSubmit={submit}
-          onChange={change}
         />
       )}
 
@@ -312,7 +341,13 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
         vim={vim.mode}
         busy={turn.busy || turn.compacting}
         width={width}
-        hint={quitting ? `press ${describe(keymap.exit)} again to exit` : `${describe(keymap.palette)} commands`}
+        hint={
+          copied
+            ? "copied to clipboard"
+            : quitting
+              ? `press ${describe(keymap.exit)} again to exit`
+              : `${describe(keymap.palette)} commands`
+        }
       />
     </box>
   )

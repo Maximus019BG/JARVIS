@@ -7,7 +7,7 @@ import { loadCommands } from "../src/extend/command.ts"
 import { ConfigSchema, configFiles } from "../src/config/config.ts"
 import { ancestors, projectRoot, resourceDirs, resourceFiles } from "../src/config/discover.ts"
 
-import { listThemes, loadTheme } from "../src/config/theme.ts"
+import { listThemes, loadTheme, THEMES } from "../src/config/theme.ts"
 
 /** A repo with a `.git` marker, so the upward walk is bounded like a real project. */
 function repo() {
@@ -107,7 +107,9 @@ describe("themes from .jarvis", () => {
   test("a malformed theme file falls back instead of throwing", () => {
     const root = repo()
     put(join(root, ".jarvis", "themes", "broken.json"), "{ not json")
-    expect(loadTheme("broken", root).accent).toBe("#58a6ff")
+    // Compared against the built-in rather than a literal, so retuning the palette is not
+    // a test failure.
+    expect(loadTheme("broken", root).accent).toBe(THEMES.jarvis!.accent)
   })
 })
 

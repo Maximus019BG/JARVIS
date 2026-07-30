@@ -29,6 +29,7 @@ export function Editor({
   keymap,
   motion,
   busy,
+  focused = true,
   handle,
   onSubmit,
   onChange,
@@ -37,6 +38,8 @@ export function Editor({
   keymap: Keymap
   motion: MotionLevel
   busy: boolean
+  /** False while a modal is open, so its keystrokes do not also land in the buffer. */
+  focused?: boolean
   handle: Ref<EditorHandle>
   onSubmit: (text: string) => void
   onChange: (text: string) => void
@@ -93,7 +96,7 @@ export function Editor({
     >
       <textarea
         ref={ref}
-        focused={!busy}
+        focused={focused && !busy}
         placeholder={busy ? `working… ${describe(keymap.interrupt)} to stop` : "ask jarvis, or / for commands"}
         placeholderColor={theme.muted}
         textColor={theme.fg}

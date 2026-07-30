@@ -1,6 +1,6 @@
 import type { BoxRenderable, ScrollBoxRenderable, SelectOption } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
-import { useMemo, useRef, useState } from "react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
 import type { PermissionRequest } from "../../permission.ts"
 import type { Theme } from "../../config/theme.ts"
 import { useEnter, type MotionLevel } from "../motion.ts"
@@ -8,8 +8,33 @@ import { useEnter, type MotionLevel } from "../motion.ts"
 export type Choice = { value: string; label: string; hint?: string }
 
 /**
+ * Floats its child over the whole app rather than taking a slot at the bottom. No
+ * backdrop: a terminal has no alpha, so a filled one would blank the transcript instead of
+ * dimming it — the child's own border and panel background are what read as "on top".
+ */
+function Modal({ children }: { children: ReactNode }) {
+  return (
+    <box
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 100,
+      }}
+    >
+      {children}
+    </box>
+  )
+}
+
+/**
  * The one list picker, reused for models, agents, sessions and commands. Typing
- * filters; enter picks; escape cancels.
+ * filters; enter picks; escape cancels. Presented as a centered modal, so choosing a model
+ * does not shove the prompt you were writing off the screen.
  */
 export function Picker({
   title,
@@ -48,42 +73,52 @@ export function Picker({
     value: choice.value,
   }))
 
-  const height = Math.min(16, filtered.length + 2)
+  const { width: columns, height: rows } = useTerminalDimensions()
+  // A choice with a hint renders as two lines, name over description. Counting one line
+  // each would show half the list and hide the rest behind a scrollbar for no reason.
+  const perRow = filtered.some((choice) => choice.hint) ? 2 : 1
+  const height = Math.max(3, Math.min(filtered.length * perRow + 2, Math.floor(rows * 0.7)))
+  const width = Math.max(28, Math.min(76, columns - 8))
   useEnter(box, motion, { ms: 140, height })
 
   return (
-    <box
-      ref={box}
-      title={query ? `${title} — ${query}` : title}
-      titleColor={theme.accent}
-      bottomTitle={`↑↓ move · enter select · esc cancel · ${filtered.length}/${choices.length}`}
-      style={{
-        border: true,
-        borderColor: theme.border,
-        backgroundColor: theme.panel,
-        flexDirection: "column",
-        height,
-        minHeight: 3,
-      }}
-    >
-      {options.length === 0 ? (
-        <text fg={theme.muted}>no matches — esc to cancel</text>
-      ) : (
-        <select
-          focused
-          options={options}
-          showScrollIndicator
-          wrapSelection
-          backgroundColor={theme.panel}
-          textColor={theme.fg}
-          descriptionColor={theme.muted}
-          selectedBackgroundColor={theme.selection}
-          selectedTextColor={theme.fg}
-          onSelect={(_, option) => option && onPick(String(option.value))}
-          style={{ flexGrow: 1 }}
-        />
-      )}
-    </box>
+    <Modal>
+      <box
+        ref={box}
+        title={query ? `${title} — ${query}` : title}
+        titleColor={theme.accent}
+        bottomTitle={`↑↓ move · enter select · esc cancel · ${filtered.length}/${choices.length}`}
+        style={{
+          border: true,
+          borderColor: theme.accent,
+          backgroundColor: theme.panel,
+          flexDirection: "column",
+          height,
+          width,
+          minHeight: 3,
+          paddingLeft: 1,
+          paddingRight: 1,
+        }}
+      >
+        {options.length === 0 ? (
+          <text fg={theme.muted}>no matches — esc to cancel</text>
+        ) : (
+          <select
+            focused
+            options={options}
+            showScrollIndicator
+            wrapSelection
+            backgroundColor={theme.panel}
+            textColor={theme.fg}
+            descriptionColor={theme.muted}
+            selectedBackgroundColor={theme.selection}
+            selectedTextColor={theme.fg}
+            onSelect={(_, option) => option && onPick(String(option.value))}
+            style={{ flexGrow: 1 }}
+          />
+        )}
+      </box>
+    </Modal>
   )
 }
 
