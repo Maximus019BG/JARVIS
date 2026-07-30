@@ -1,0 +1,119 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import type { LanguageModel } from "ai"
+import type { Config, ModelConfig, ProviderConfig } from "./config.ts"
+import { dataDir } from "./paths.ts"
+
+export class ProviderError extends Error {}
+
+/** Where provider npm packages named in the config get installed on demand. */
+const packageDir = join(dataDir, "packages")
+
+async function importPackage(npm: string): Promise<Record<string, unknown>> {
+  try {
+    return (await import(npm)) as Record<string, unknown>
+  } catch {
+    // not resolvable from jarvis itself — fall through to the managed dir
+  }
+  if (!existsSync(packageDir)) mkdirSync(packageDir, { recursive: true })
+  const manifest = join(packageDir, "package.json")
+  if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({ name: "jarvis-packages", private: true }))
+
+  // Bun.resolveSync falls back to the global install cache, where peer deps are not
+  // wired up, so check for a real node_modules install instead of relying on it.
+  if (!existsSync(join(packageDir, "node_modules", ...npm.split("/")))) {
+    // AI SDK providers peer-depend on zod, so it has to be installed alongside them.
+    const install = Bun.spawnSync(["bun", "add", npm, "zod"], { cwd: packageDir, stdout: "pipe", stderr: "pipe" })
+    if (install.exitCode !== 0) {
+      throw new ProviderError(`failed to install ${npm}: ${install.stderr.toString().trim()}`)
+    }
+  }
+  return (await import(Bun.resolveSync(npm, packageDir))) as Record<string, unknown>
+}
+
+type ProviderFactory = (options: Record<string, unknown>) => unknown
+
+function pickFactory(mod: Record<string, unknown>, name: string | undefined, npm: string): ProviderFactory {
+  if (name) {
+    const explicit = mod[name]
+    if (typeof explicit !== "function") throw new ProviderError(`${npm} has no callable export "${name}"`)
+    return explicit as ProviderFactory
+  }
+  const candidate = Object.entries(mod).find(([key, value]) => key.startsWith("create") && typeof value === "function")
+  if (!candidate) throw new ProviderError(`${npm} exports no create* factory; set provider.export in the config`)
+  return candidate[1] as ProviderFactory
+}
+
+/** AI SDK ProviderV2, or a bare callable provider from older packages. */
+type Provider = ((modelID: string) => LanguageModel) & { languageModel?: (modelID: string) => LanguageModel }
+
+const loaded = new Map<string, Promise<Provider>>()
+
+function loadProvider(providerID: string, config: ProviderConfig): Promise<Provider> {
+  const cached = loaded.get(providerID)
+  if (cached) return cached
+  const promise = (async () => {
+    const mod = await importPackage(config.npm)
+    const created: unknown = pickFactory(mod, config.export, config.npm)(config.options)
+    const callable = typeof created === "function"
+    const hasLanguageModel = typeof (created as Provider | undefined)?.languageModel === "function"
+    if (!callable && !hasLanguageModel) {
+      throw new ProviderError(`${config.npm} factory did not return an AI SDK provider`)
+    }
+    return created as Provider
+  })()
+  loaded.set(providerID, promise)
+  return promise
+}
+
+export type ResolvedModel = {
+  providerID: string
+  modelID: string
+  /** "providerID/modelID" — the string form used in config and the UI. */
+  id: string
+  model: LanguageModel
+  info: ModelConfig
+}
+
+/** Splits on the first slash only, so model ids may themselves contain slashes. */
+export function parseModelID(id: string): { providerID: string; modelID: string } {
+  const slash = id.indexOf("/")
+  if (slash <= 0 || slash === id.length - 1) {
+    throw new ProviderError(`model "${id}" must be in "provider/model" form`)
+  }
+  return { providerID: id.slice(0, slash), modelID: id.slice(slash + 1) }
+}
+
+export async function resolveModel(config: Config, id: string): Promise<ResolvedModel> {
+  const { providerID, modelID } = parseModelID(id)
+  const providerConfig = config.provider[providerID]
+  if (!providerConfig) {
+    const known = Object.keys(config.provider).join(", ") || "none configured"
+    throw new ProviderError(`unknown provider "${providerID}" (known: ${known})`)
+  }
+  if (!providerConfig.enabled) throw new ProviderError(`provider "${providerID}" is disabled`)
+  const provider = await loadProvider(providerID, providerConfig)
+  const model = provider.languageModel ? provider.languageModel(modelID) : provider(modelID)
+  return { providerID, modelID, id, model, info: providerConfig.models[modelID] ?? {} }
+}
+
+/** Every model declared in the config, as "provider/model" ids. */
+export function listModels(config: Config): { id: string; name: string; provider: string }[] {
+  return Object.entries(config.provider)
+    .filter(([, provider]) => provider.enabled)
+    .flatMap(([providerID, provider]) =>
+      Object.entries(provider.models).map(([modelID, model]) => ({
+        id: `${providerID}/${modelID}`,
+        name: model.name ?? modelID,
+        provider: provider.name ?? providerID,
+      })),
+    )
+}
+
+/** The model to use when the caller has no preference. */
+export function defaultModelID(config: Config): string {
+  if (config.model) return config.model
+  const first = listModels(config)[0]
+  if (!first) throw new ProviderError("no models configured — add a `provider` entry to jarvis.jsonc")
+  return first.id
+}
