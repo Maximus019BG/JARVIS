@@ -1,8 +1,8 @@
-import type { Config } from "./config.ts"
-import { projectRoot } from "./discover.ts"
+import type { Config } from "../config/config.ts"
+import { projectRoot } from "../config/discover.ts"
 import { loadPlugins, NO_PLUGINS, type Plugins } from "./plugin.ts"
 import { loadSkills, type Skill } from "./skill.ts"
-import { loadCustomTools, type CustomToolDefinition } from "./tools/custom.ts"
+import { loadCustomTools, type CustomToolDefinition } from "./custom-tools.ts"
 
 /**
  * Everything a `.jarvis` directory contributes at runtime, loaded once at startup

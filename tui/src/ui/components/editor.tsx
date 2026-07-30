@@ -1,8 +1,8 @@
 import type { TextareaRenderable } from "@opentui/core"
 import { useImperativeHandle, useRef, type Ref } from "react"
-import type { Keymap } from "../keybinds.ts"
-import { describe } from "../keybinds.ts"
-import type { Theme } from "../theme.ts"
+import type { Keymap } from "../../config/keybinds.ts"
+import { describe } from "../../config/keybinds.ts"
+import type { Theme } from "../../config/theme.ts"
 
 export type EditorHandle = {
   /** Current text, for submitting or for computing completions. */

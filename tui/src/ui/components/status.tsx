@@ -1,6 +1,6 @@
 import { basename } from "node:path"
-import type { Usage } from "../agent.ts"
-import type { Theme } from "../theme.ts"
+import type { Usage } from "../../agent/agent.ts"
+import type { Theme } from "../../config/theme.ts"
 
 export function Status({
   theme,

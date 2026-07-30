@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import type { ModelMessage } from "ai"
-import { sessionDir } from "./paths.ts"
+import { sessionDir } from "../config/paths.ts"
 
 export type SessionHeader = {
   id: string

@@ -1,6 +1,6 @@
-import type { Theme } from "../theme.ts"
+import type { Theme } from "../../config/theme.ts"
 import { Markdown } from "./markdown.tsx"
-import { summarize, type Item } from "./transcript.ts"
+import { summarize, type Item } from "../transcript.ts"
 
 const OUTPUT_LINES = 8
 

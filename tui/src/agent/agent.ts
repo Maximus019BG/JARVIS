@@ -1,14 +1,14 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai"
 import { agentPrompt, loadAgents, resolveAgent, spawnableAgents, type Agent } from "./agent-def.ts"
-import type { Config } from "./config.ts"
-import { NO_EXTENSIONS, type Extensions } from "./extensions.ts"
-import { PermissionDenied, type PermissionGate } from "./permission.ts"
-import { fire, wrapTools } from "./plugin.ts"
+import type { Config } from "../config/config.ts"
+import { NO_EXTENSIONS, type Extensions } from "../extend/extensions.ts"
+import { PermissionDenied, type PermissionGate } from "../permission.ts"
+import { fire, wrapTools } from "../extend/plugin.ts"
 import { systemPrompt } from "./prompt.ts"
 import { defaultModelID, resolveModel, type ResolvedModel } from "./provider.ts"
-import { customTools } from "./tools/custom.ts"
-import { skillTool } from "./tools/skill.ts"
-import { builtinTools, filterTools, MAX_DEPTH, ToolError, type ToolSet } from "./tools/index.ts"
+import { customTools } from "../extend/custom-tools.ts"
+import { skillTool } from "../extend/skill-tool.ts"
+import { builtinTools, filterTools, MAX_DEPTH, ToolError, type ToolSet } from "../tools/index.ts"
 
 export type Usage = { input: number; output: number; cost: number }
 

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import matter from "gray-matter"
-import { AgentConfigSchema, type AgentConfig, type Config } from "./config.ts"
-import { resourceFiles } from "./discover.ts"
+import { AgentConfigSchema, type AgentConfig, type Config } from "../config/config.ts"
+import { resourceFiles } from "../config/discover.ts"
 
 export type Agent = AgentConfig & { name: string; description: string }
 

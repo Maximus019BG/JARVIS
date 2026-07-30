@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { run, type AgentEvent } from "../src/agent.ts"
-import { ConfigSchema } from "../src/config.ts"
-import { loadExtensions } from "../src/extensions.ts"
-import { init } from "../src/init.ts"
+import { run, type AgentEvent } from "../src/agent/agent.ts"
+import { ConfigSchema } from "../src/config/config.ts"
+import { loadExtensions } from "../src/extend/extensions.ts"
+import { init } from "../src/cli/init.ts"
 import { constantAsker, PermissionGate } from "../src/permission.ts"
-import { loadSkills } from "../src/skill.ts"
-import { toInputSchema } from "../src/tools/custom.ts"
+import { loadSkills } from "../src/extend/skill.ts"
+import { toInputSchema } from "../src/extend/custom-tools.ts"
 import type { MockPart } from "./fixtures/mock-provider.ts"
 
 const config = ConfigSchema.parse({
@@ -268,8 +268,8 @@ describe("init", () => {
   test("the scaffolded agent and command show up", async () => {
     const cwd = repo()
     init(cwd)
-    const { loadAgents } = await import("../src/agent-def.ts")
-    const { loadCommands } = await import("../src/command.ts")
+    const { loadAgents } = await import("../src/agent/agent-def.ts")
+    const { loadCommands } = await import("../src/extend/command.ts")
     expect(Object.keys(loadAgents(config, cwd))).toContain("example")
     expect(loadCommands(cwd).map((command) => command.name)).toContain("example")
   })

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { basename, join, relative } from "node:path"
 import matter from "gray-matter"
-import { resourceDirs } from "./discover.ts"
+import { resourceDirs } from "../config/discover.ts"
 
 export type Skill = {
   name: string

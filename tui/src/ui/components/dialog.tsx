@@ -1,8 +1,8 @@
 import type { SelectOption } from "@opentui/core"
 import { useKeyboard } from "@opentui/react"
 import { useMemo, useState } from "react"
-import type { PermissionRequest } from "../permission.ts"
-import type { Theme } from "../theme.ts"
+import type { PermissionRequest } from "../../permission.ts"
+import type { Theme } from "../../config/theme.ts"
 
 export type Choice = { value: string; label: string; hint?: string }
 

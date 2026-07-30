@@ -1,7 +1,7 @@
 import { tool } from "ai"
 import { z } from "zod"
-import { skillFiles, type Skill } from "../skill.ts"
-import { ToolError, type ToolContext } from "./context.ts"
+import { skillFiles, type Skill } from "./skill.ts"
+import { ToolError, type ToolContext } from "../tools/context.ts"
 
 /**
  * One tool for every skill, so the context window only carries names and one-line

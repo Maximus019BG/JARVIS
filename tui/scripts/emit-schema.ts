@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { join } from "node:path"
 import { z } from "zod"
-import { ConfigSchema } from "../src/config.ts"
+import { ConfigSchema } from "../src/config/config.ts"
 
 /** The zod schema is the source of truth; this makes editors aware of it too. */
 const schema = {

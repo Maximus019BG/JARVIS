@@ -1,5 +1,5 @@
 import { RGBA, SyntaxStyle } from "@opentui/core"
-import type { Theme } from "../theme.ts"
+import type { Theme } from "../../config/theme.ts"
 
 const cache = new Map<Theme, SyntaxStyle>()
 

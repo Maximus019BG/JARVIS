@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ConfigSchema, merge, substitute, configFiles, ConfigError } from "../src/config.ts"
-import { parseModelID, listModels, defaultModelID } from "../src/provider.ts"
+import { ConfigSchema, merge, substitute, configFiles, ConfigError } from "../src/config/config.ts"
+import { parseModelID, listModels, defaultModelID } from "../src/agent/provider.ts"
 import { parseArgs } from "../src/index.tsx"
 
 const tmp = () => mkdtempSync(join(tmpdir(), "jarvis-test-"))

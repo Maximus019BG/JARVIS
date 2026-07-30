@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { expand, loadCommands, parseCommandLine } from "../src/command.ts"
-import { describe as describeChord, loadKeymap, matches, parseChord } from "../src/keybinds.ts"
-import { loadTheme, THEMES } from "../src/theme.ts"
+import { expand, loadCommands, parseCommandLine } from "../src/extend/command.ts"
+import { describe as describeChord, loadKeymap, matches, parseChord } from "../src/config/keybinds.ts"
+import { loadTheme, THEMES } from "../src/config/theme.ts"
 import { applyEvent, summarize, type Item } from "../src/ui/transcript.ts"
 
 describe("applyEvent", () => {

@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { LanguageModel } from "ai"
-import type { Config, ModelConfig, ProviderConfig } from "./config.ts"
-import { dataDir } from "./paths.ts"
+import type { Config, ModelConfig, ProviderConfig } from "../config/config.ts"
+import { dataDir } from "../config/paths.ts"
 
 export class ProviderError extends Error {}
 

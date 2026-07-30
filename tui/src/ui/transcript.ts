@@ -1,4 +1,4 @@
-import type { AgentEvent } from "../agent.ts"
+import type { AgentEvent } from "../agent/agent.ts"
 
 export type Item =
   | { kind: "user"; text: string }

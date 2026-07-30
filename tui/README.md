@@ -259,7 +259,7 @@ runs deny unless you pass `--yes`. Agents can tighten this with their own
 ### Themes
 
 `"theme": "jarvis"` or `"light"`, or drop a `themes/<name>.json` in any `.jarvis`
-directory overriding any subset of the tokens in [src/theme.ts](src/theme.ts).
+directory overriding any subset of the tokens in [src/config/theme.ts](src/config/theme.ts).
 `/theme` switches at runtime.
 
 ### Keybinds

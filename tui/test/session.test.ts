@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { appendMessages, createSession, deriveTitle, listSessions, loadSession, openSession } from "../src/session.ts"
+import { appendMessages, createSession, deriveTitle, listSessions, loadSession, openSession } from "../src/agent/session.ts"
 
 const cwd = `/tmp/jarvis-session-test-${Math.random().toString(36).slice(2)}`
 

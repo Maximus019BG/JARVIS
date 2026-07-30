@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { loadCommands } from "./command.ts"
-import { ConfigError, loadConfig, configFiles } from "./config.ts"
-import { ProviderError, defaultModelID, listModels } from "./provider.ts"
-import { listThemes } from "./theme.ts"
+import { loadCommands } from "./extend/command.ts"
+import { ConfigError, loadConfig, configFiles } from "./config/config.ts"
+import { ProviderError, defaultModelID, listModels } from "./agent/provider.ts"
+import { listThemes } from "./config/theme.ts"
 
 /** Hardcoded because a compiled binary has no package.json to read. */
 export const VERSION = "0.1.0"
@@ -78,7 +78,7 @@ async function main() {
 
   switch (command) {
     case "init": {
-      const { init } = await import("./init.ts")
+      const { init } = await import("./cli/init.ts")
       const { created, skipped } = init()
       for (const name of created) process.stdout.write(`created .jarvis/${name}\n`)
       for (const name of skipped) process.stdout.write(`kept    .jarvis/${name}\n`)
@@ -90,8 +90,8 @@ async function main() {
       return
     }
     case "config": {
-      const { loadExtensions } = await import("./extensions.ts")
-      const { loadAgents } = await import("./agent-def.ts")
+      const { loadExtensions } = await import("./extend/extensions.ts")
+      const { loadAgents } = await import("./agent/agent-def.ts")
       const cwd = process.cwd()
       const files = configFiles(cwd)
       process.stdout.write(files.length ? `config files:\n${files.map((f) => `  ${f}`).join("\n")}\n` : "no config files found\n")
@@ -122,7 +122,7 @@ async function main() {
       return
     }
     case "run": {
-      const { runHeadless } = await import("./headless.ts")
+      const { runHeadless } = await import("./cli/headless.ts")
       await runHeadless({ config, prompt: args.join(" "), model: flags.model, agent: flags.agent, yes: flags.yes })
       return
     }

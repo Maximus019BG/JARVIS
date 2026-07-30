@@ -16,7 +16,7 @@ the same way:
 
 ```bash
 docker compose -f docker/compose.yaml run --rm jarvis models
-docker compose -f docker/compose.yaml run --rm jarvis run "what does src/agent.ts do?"
+docker compose -f docker/compose.yaml run --rm jarvis run "what does src/agent/agent.ts do?"
 docker compose -f docker/compose.yaml run --rm jarvis init
 ```
 

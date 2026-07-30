@@ -1,9 +1,9 @@
 import type { ModelMessage } from "ai"
-import { run, type AgentEvent } from "./agent.ts"
-import type { Config } from "./config.ts"
-import { loadExtensions } from "./extensions.ts"
-import { startMcp } from "./mcp.ts"
-import { constantAsker, PermissionGate } from "./permission.ts"
+import { run, type AgentEvent } from "../agent/agent.ts"
+import type { Config } from "../config/config.ts"
+import { loadExtensions } from "../extend/extensions.ts"
+import { startMcp } from "../extend/mcp.ts"
+import { constantAsker, PermissionGate } from "../permission.ts"
 
 export type HeadlessOptions = {
   config: Config

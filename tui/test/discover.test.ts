@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { loadAgents } from "../src/agent-def.ts"
-import { loadCommands } from "../src/command.ts"
-import { ConfigSchema, configFiles } from "../src/config.ts"
-import { ancestors, projectRoot, resourceDirs, resourceFiles } from "../src/discover.ts"
+import { loadAgents } from "../src/agent/agent-def.ts"
+import { loadCommands } from "../src/extend/command.ts"
+import { ConfigSchema, configFiles } from "../src/config/config.ts"
+import { ancestors, projectRoot, resourceDirs, resourceFiles } from "../src/config/discover.ts"
 
-import { listThemes, loadTheme } from "../src/theme.ts"
+import { listThemes, loadTheme } from "../src/config/theme.ts"
 
 /** A repo with a `.git` marker, so the upward walk is bounded like a real project. */
 function repo() {

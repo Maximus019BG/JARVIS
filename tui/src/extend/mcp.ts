@@ -2,8 +2,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { dynamicTool, jsonSchema } from "ai"
-import type { Config, McpConfig } from "./config.ts"
-import type { ToolSet } from "./tools/index.ts"
+import type { Config, McpConfig } from "../config/config.ts"
+import type { ToolSet } from "../tools/index.ts"
 
 export type McpStatus = { server: string; tools: number; error?: string }
 

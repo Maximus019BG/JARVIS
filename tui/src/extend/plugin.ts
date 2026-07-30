@@ -1,9 +1,9 @@
 import type { ModelMessage } from "ai"
-import type { Config, Permission } from "./config.ts"
-import { resourceFiles } from "./discover.ts"
-import type { PermissionRequest } from "./permission.ts"
-import type { CustomToolDefinition } from "./tools/custom.ts"
-import type { ToolSet } from "./tools/index.ts"
+import type { Config, Permission } from "../config/config.ts"
+import { resourceFiles } from "../config/discover.ts"
+import type { PermissionRequest } from "../permission.ts"
+import type { CustomToolDefinition } from "./custom-tools.ts"
+import type { ToolSet } from "../tools/index.ts"
 
 /**
  * Hooks a `.jarvis/plugins/*.ts` file may return. Each one exists because jarvis

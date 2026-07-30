@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { basename } from "node:path"
 import matter from "gray-matter"
-import { resourceFiles } from "./discover.ts"
+import { resourceFiles } from "../config/discover.ts"
 
 /** Built-ins are handled by the UI; markdown ones expand into a user message. */
 export type Command =

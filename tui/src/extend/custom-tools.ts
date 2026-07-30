@@ -1,9 +1,9 @@
 import { basename } from "node:path"
 import { dynamicTool, jsonSchema } from "ai"
 import { z } from "zod"
-import { resourceFiles } from "../discover.ts"
-import type { ToolContext } from "./context.ts"
-import type { ToolSet } from "./index.ts"
+import { resourceFiles } from "../config/discover.ts"
+import type { ToolContext } from "../tools/context.ts"
+import type { ToolSet } from "../tools/index.ts"
 
 /** What a `.jarvis/tools/*.ts` export has to look like. */
 export type CustomToolDefinition = {

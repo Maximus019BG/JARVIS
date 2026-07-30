@@ -1,4 +1,4 @@
-import type { Permission } from "./config.ts"
+import type { Permission } from "./config/config.ts"
 
 export class PermissionDenied extends Error {
   constructor(tool: string) {

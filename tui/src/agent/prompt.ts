@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import type { Config } from "./config.ts"
-import { ancestors } from "./discover.ts"
-import { configDir } from "./paths.ts"
+import type { Config } from "../config/config.ts"
+import { ancestors } from "../config/discover.ts"
+import { configDir } from "../config/paths.ts"
 
 /** Project instruction files, nearest last so the most specific guidance reads last. */
 const INSTRUCTION_NAMES = ["JARVIS.md", "AGENTS.md"]

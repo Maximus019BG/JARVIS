@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { join } from "node:path"
-import { ConfigSchema } from "../src/config.ts"
-import { startMcp, toolName } from "../src/mcp.ts"
+import { ConfigSchema } from "../src/config/config.ts"
+import { startMcp, toolName } from "../src/extend/mcp.ts"
 
 const config = ConfigSchema.parse({
   mcp: {
