@@ -35,3 +35,13 @@ export function suggest(text: string, commands: Command[], files: string[]): Sug
 
   return undefined
 }
+
+/**
+ * The text that replaces the token when a choice is taken. Commands complete to their
+ * displayed `/name`, files to the bare path — the `@` was only the trigger.
+ */
+export function completion(suggestion: Suggestion, index: number): string | undefined {
+  const choice = suggestion.choices[index]
+  if (!choice) return undefined
+  return suggestion.kind === "command" ? choice.label : choice.value
+}

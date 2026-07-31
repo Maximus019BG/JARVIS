@@ -122,7 +122,7 @@ export function Picker({
   )
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /** Preamble lines of a unified patch, which the diff view does not render. */
 const PATCH_HEADER = /^(Index: |={10,}$|--- |\+\+\+ |@@ )/

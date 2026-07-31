@@ -6,9 +6,10 @@ import { expand, loadCommands, parseCommandLine, type Command } from "../src/ext
 import { describe as describeChord, loadKeymap, matches, parseChord } from "../src/config/keybinds.ts"
 import { loadTheme, THEMES } from "../src/config/theme.ts"
 import type { Session } from "../src/agent/session.ts"
-import { segments } from "../src/ui/components/status.tsx"
+import { segments, type Part } from "../src/ui/components/status.tsx"
+import { parseGit } from "../src/ui/git.ts"
 import { lerpHex, resolveMotion } from "../src/ui/motion.ts"
-import { suggest } from "../src/ui/suggest.ts"
+import { completion, suggest } from "../src/ui/suggest.ts"
 import { applyEvent, summarize, type Item } from "../src/ui/transcript.ts"
 import { restore } from "../src/ui/use-turn.ts"
 
@@ -135,6 +136,22 @@ describe("suggest", () => {
     expect(suggest("/review src/a.ts", commands, files)).toBeUndefined()
     expect(suggest("email me@example.com ok", commands, files)).toBeUndefined()
   })
+
+  test("commands complete to the slash form, files drop the trigger", () => {
+    expect(completion(suggest("/re", commands, files)!, 0)).toBe("/review")
+    expect(completion(suggest("@src/ui/a", commands, files)!, 0)).toBe("src/ui/app.tsx")
+    expect(completion(suggest("/re", commands, files)!, 9)).toBeUndefined()
+  })
+
+  test("a fully typed command completes to itself, which is how enter still sends it", () => {
+    // The submit handler compares the completion against the token: equal means the user
+    // typed the whole thing and enter should send, not re-complete.
+    const result = suggest("/help", commands, files)!
+    expect(completion(result, 0)).toBe(result.token)
+    // One more character to match and enter completes instead.
+    const partial = suggest("/hel", commands, files)!
+    expect(completion(partial, 0)).not.toBe(partial.token)
+  })
 })
 
 describe("motion", () => {
@@ -155,21 +172,67 @@ describe("motion", () => {
   })
 })
 
+describe("parseGit", () => {
+  test("a clean tree on a tracked branch", () => {
+    expect(parseGit("## main...origin/main\n")).toEqual({ branch: "main", dirty: false })
+  })
+
+  test("ahead/behind counts do not leak into the branch name", () => {
+    expect(parseGit("## main...origin/main [ahead 1, behind 2]\n")).toEqual({ branch: "main", dirty: false })
+  })
+
+  test("an untracked branch has no upstream to split on", () => {
+    expect(parseGit("## refactor/full-rewrite\n")).toEqual({ branch: "refactor/full-rewrite", dirty: false })
+  })
+
+  test("any changed file makes the tree dirty", () => {
+    expect(parseGit("## main...origin/main\n M src/a.ts\n?? b.ts\n")).toEqual({ branch: "main", dirty: true })
+  })
+
+  test("a detached head names no branch", () => {
+    expect(parseGit("## HEAD (no branch)\n M src/a.ts\n")).toEqual({ branch: undefined, dirty: true })
+  })
+
+  test("no output at all is not a repo", () => {
+    expect(parseGit("")).toEqual({ branch: undefined, dirty: false })
+  })
+})
+
 describe("status segments", () => {
   const usage = { input: 30_000, output: 12_000, cost: 0.42 }
+  const flat = (parts: Part[]) => parts.map((part) => part.text).join("")
 
   test("a wide terminal shows everything, with context as a percentage", () => {
     const { left, right } = segments({
       model: "anthropic/claude-opus-4-5",
       cwd: "/home/me/project",
-      branch: "main",
+      git: { branch: "main", dirty: false },
       usage,
       contextLimit: 200_000,
       contextTokens: 42_000,
       width: 200,
     })
     expect(left).toBe("anthropic/claude-opus-4-5")
-    expect(right).toBe("$0.4200  main  project  42.0k/200.0k 21%")
+    expect(flat(right)).toBe("$0.4200  project ⑂ main  42.0k/200.0k 21%")
+  })
+
+  test("the branch is colored apart from the directory it sits next to", () => {
+    const { right } = segments({
+      model: "m",
+      cwd: "/home/me/project",
+      git: { branch: "main", dirty: true },
+      usage,
+      width: 200,
+    })
+    expect(flat(right)).toContain("project ⑂ main*")
+    expect(right.find((part) => part.text === "main")?.tone).toBe("accent")
+    expect(right.find((part) => part.text === "*")?.tone).toBe("warning")
+  })
+
+  test("outside a repo the location is just the directory", () => {
+    const { right } = segments({ model: "m", cwd: "/home/me/project", usage, width: 200 })
+    expect(flat(right)).toContain("$0.4200  project  ")
+    expect(flat(right)).not.toContain("⑂")
   })
 
   test("the percentage tracks window occupancy, not the session total", () => {
@@ -183,30 +246,47 @@ describe("status segments", () => {
       contextTokens: 60_000,
       width: 200,
     })
-    expect(right).toContain("60.0k/200.0k 30%")
+    expect(flat(right)).toContain("60.0k/200.0k 30%")
   })
 
   test("without a measured prompt size it falls back to the session token count", () => {
     const { right } = segments({ model: "m", cwd: "/p", usage, contextLimit: 200_000, width: 200 })
-    expect(right).toContain("42.0k tokens")
+    expect(flat(right)).toContain("42.0k tokens")
   })
 
   test("a narrow terminal drops extras but never the token count", () => {
     const narrow = segments({
       model: "anthropic/claude-opus-4-5",
       cwd: "/home/me/project",
-      branch: "main",
+      git: { branch: "main", dirty: false },
       usage,
       contextLimit: 200_000,
       contextTokens: 42_000,
       width: 70,
     })
-    expect(narrow.right).toBe("42.0k/200.0k 21%")
+    expect(flat(narrow.right)).toBe("42.0k/200.0k 21%")
+  })
+
+  test("a branch never survives without the directory that locates it", () => {
+    // The location is one droppable group, so no width can leave a bare branch name behind.
+    for (let width = 0; width < 200; width++) {
+      const { right } = segments({
+        model: "m",
+        cwd: "/home/me/project",
+        git: { branch: "very-long-branch-name", dirty: true },
+        usage,
+        contextLimit: 200_000,
+        contextTokens: 42_000,
+        width,
+      })
+      const text = flat(right)
+      expect(text.includes("very-long-branch-name")).toBe(text.includes("project"))
+    }
   })
 
   test("without a declared context limit it falls back to a raw token count", () => {
     const { right } = segments({ model: "m", cwd: "/tmp/x", usage, width: 200 })
-    expect(right).toContain("42.0k tokens")
+    expect(flat(right)).toContain("42.0k tokens")
   })
 })
 

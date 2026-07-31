@@ -21,13 +21,6 @@ export type StartOptions = {
   cwd?: string
 }
 
-/** Current branch, read once at startup so the status line never spawns git per render. */
-function gitBranch(cwd: string): string | undefined {
-  const result = Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd, stderr: "ignore" })
-  const branch = result.success ? result.stdout.toString().trim() : ""
-  return branch && branch !== "HEAD" ? branch : undefined
-}
-
 export async function startTui(options: StartOptions) {
   const cwd = options.cwd ?? process.cwd()
   const session = openSession(cwd, { id: options.session, resume: options.resume })
@@ -62,7 +55,6 @@ export async function startTui(options: StartOptions) {
       mcp={mcp}
       extensions={extensions}
       notes={notes}
-      branch={gitBranch(cwd)}
       theme={loadTheme(options.config.theme, cwd)}
       motion={resolveMotion(options.config.animations)}
       keymap={loadKeymap(options.config.keybinds)}

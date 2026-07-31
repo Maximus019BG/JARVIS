@@ -15,7 +15,10 @@ export type Item =
       startedAt: number
       endedAt?: number
     }
-  | { kind: "note"; text: string; level: "info" | "error" }
+  | Note
+
+/** A one-line remark in the transcript: startup warnings, tool-call counts, failures. */
+export type Note = { kind: "note"; text: string; level: "info" | "error" }
 
 /**
  * Folds a stream of agent events into the list the UI renders. Text deltas append

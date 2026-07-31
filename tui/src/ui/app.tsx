@@ -18,10 +18,13 @@ import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
 import { Suggestions } from "./components/suggestions.tsx"
+import { Toasts, useToasts } from "./components/toast.tsx"
 import { Welcome } from "./components/welcome.tsx"
+import { readGit } from "./git.ts"
 import type { MotionLevel } from "./motion.ts"
 import { listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
-import { suggest, type Suggestion } from "./suggest.ts"
+import { completion, suggest, type Suggestion } from "./suggest.ts"
+import type { Item, Note } from "./transcript.ts"
 import { useTurn } from "./use-turn.ts"
 
 export type AppProps = {
@@ -32,7 +35,6 @@ export type AppProps = {
   extensions: Extensions
   /** Startup warnings and first-run guidance, shown as notes in the transcript. */
   notes: string[]
-  branch?: string
   theme: Theme
   motion: MotionLevel
   keymap: Keymap
@@ -45,7 +47,7 @@ const QUIT_WINDOW_MS = 2000
 /** How long the status line acknowledges an auto-copied selection. */
 const COPIED_MS = 1500
 
-export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motion, ...initial }: AppProps) {
+export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...initial }: AppProps) {
   const { width, height } = useTerminalDimensions()
   const agents = useMemo(() => loadAgents(config, cwd), [config, cwd])
   const commands = useMemo(() => loadCommands(cwd), [cwd])
@@ -63,6 +65,10 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [selected, setSelected] = useState(0)
   const [quitting, setQuitting] = useState(false)
+  const { toasts, toast } = useToasts()
+  // The agent checks out branches and edits files, so a value read once at startup goes stale
+  // mid-session. Refreshed between turns instead: one spawn per turn, never during one.
+  const [git, setGit] = useState(() => readGit(cwd))
 
   const turn = useTurn({ config, cwd, extensions, mcpTools: mcp.tools, session: initial.session, notes, agent, model })
   const editor = useRef<EditorHandle>(null)
@@ -75,6 +81,22 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
   const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
   const contextLimit = turn.contextLimit ?? configured
   const vim = useVim(editor, config.vim)
+
+  useEffect(() => {
+    if (turn.busy) return
+    setGit(readGit(cwd))
+  }, [turn.busy, cwd])
+
+  // An error note lands at the bottom of a transcript the user may have scrolled away from,
+  // so it can go unseen for the rest of the turn. Toast the newest one as well.
+  const lastError = useRef<Note | undefined>(undefined)
+  useEffect(() => {
+    const isError = (item: Item): item is Note => item.kind === "note" && item.level === "error"
+    const latest = turn.items.findLast(isError)
+    if (!latest || latest === lastError.current) return
+    lastError.current = latest
+    toast(latest.text, "error")
+  }, [turn.items, toast])
 
   /**
    * Selecting text copies it, the way a terminal's own primary selection works — reaching
@@ -152,9 +174,9 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
   )
 
   const accept = useCallback(() => {
-    const choice = suggestion?.choices[selected]
-    if (!suggestion || !choice) return
-    editor.current?.replaceToken(suggestion.token, suggestion.kind === "command" ? choice.label : choice.value)
+    const value = suggestion && completion(suggestion, selected)
+    if (!suggestion || !value) return
+    editor.current?.replaceToken(suggestion.token, value)
     setSuggestion(null)
   }, [selected, suggestion])
 
@@ -230,6 +252,17 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
         accept()
         return key.stopPropagation()
       }
+      // Enter completes too — reaching for tab is friction when the strip is already
+      // showing what you meant. An exact match is the exception: `/clear` is fully typed,
+      // so Enter there means send, and swallowing it would demand a second press.
+      if (is("submit")) {
+        const value = completion(suggestion, selected)
+        if (value && value !== suggestion.token) {
+          accept()
+          return key.stopPropagation()
+        }
+        setSuggestion(null)
+      }
       if (key.name === "escape") {
         setSuggestion(null)
         return key.stopPropagation()
@@ -278,7 +311,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
           scrollbarOptions: { trackOptions: { foregroundColor: theme.border, backgroundColor: theme.bg } },
         }}
       >
-        <Welcome theme={theme} keymap={keymap} cwd={cwd} branch={branch} model={model} agent={agent} />
+        <Welcome theme={theme} keymap={keymap} cwd={cwd} git={git} model={model} agent={agent} />
         <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
       </scrollbox>
 
@@ -291,7 +324,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
           suggestion={suggestion}
           selected={selected}
           theme={theme}
-          hint={`${describe(keymap.acceptSuggestion)} complete · ${describe(keymap.submit)} send · esc dismiss`}
+          hint={`${describe(keymap.acceptSuggestion)} or ${describe(keymap.submit)} complete · esc dismiss`}
         />
       )}
 
@@ -332,7 +365,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
         theme={theme}
         motion={motion}
         cwd={cwd}
-        branch={branch}
+        git={git}
         model={model}
         agent={agent}
         usage={turn.usage}
@@ -349,6 +382,8 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, branch, motio
               : `${describe(keymap.palette)} commands`
         }
       />
+
+      <Toasts toasts={toasts} theme={theme} motion={motion} />
     </box>
   )
 }
