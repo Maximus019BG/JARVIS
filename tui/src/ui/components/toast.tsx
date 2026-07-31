@@ -54,6 +54,7 @@ function Card({ toast, theme, motion }: { toast: Toast; theme: Theme; motion: Mo
       ref={box}
       style={{
         border: true,
+        borderStyle: "rounded",
         borderColor: color,
         backgroundColor: theme.panel,
         flexDirection: "row",

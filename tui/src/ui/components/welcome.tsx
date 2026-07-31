@@ -1,4 +1,5 @@
 import { homedir } from "node:os"
+import { useTerminalDimensions } from "@opentui/react"
 import { VERSION } from "../../index.tsx"
 import { describe, type Keymap } from "../../config/keybinds.ts"
 import type { Theme } from "../../config/theme.ts"
@@ -18,6 +19,7 @@ export function Welcome({
   git,
   model,
   agent,
+  empty,
 }: {
   theme: Theme
   keymap: Keymap
@@ -25,17 +27,34 @@ export function Welcome({
   git?: Git
   model: string
   agent: string
+  /** No messages yet, so there is room for the wordmark instead of a version string. */
+  empty: boolean
 }) {
+  const { width: columns } = useTerminalDimensions()
+  // `block` is 66 columns of JARVIS; `tiny` says the same thing in 20 when there is no room.
+  const font = columns >= 70 ? "block" : "tiny"
   const keys = [
     ["/", "commands"],
     ["@", "files"],
-    [describe(keymap.agentPicker), "agent"],
+    // The arrows only switch agents while the buffer is empty, which is exactly the state
+    // anyone reading this block is in. `shift+tab` still opens the searchable list.
+    ["←→", "agent"],
     [describe(keymap.sessionPicker), "sessions"],
   ]
 
   return (
-    <box style={{ flexDirection: "column", width: "100%", paddingTop: 1 }}>
-      <text fg={theme.accent}>{`jarvis ${VERSION}`}</text>
+    // Centred when empty, so the lines under the wordmark stack under its middle rather than
+    // hugging the left edge of a centred block.
+    <box style={{ flexDirection: "column", width: "100%", paddingTop: 1, alignItems: empty ? "center" : "flex-start" }}>
+      {empty ? (
+        <box style={{ flexDirection: "column", alignItems: "center", paddingBottom: 1 }}>
+          {/* An array of colors is rendered as a gradient, so the wordmark gets one for free. */}
+          <ascii-font text="JARVIS" font={font} color={[theme.accent, theme.tool]} />
+          <text fg={theme.dim}>{VERSION}</text>
+        </box>
+      ) : (
+        <text fg={theme.accent}>{`jarvis ${VERSION}`}</text>
+      )}
       <box style={{ flexDirection: "row" }}>
         <text fg={theme.hint}>{tilde(cwd)}</text>
         {git?.branch && <text fg={theme.dim}>{` ${BRANCH_MARK}`}</text>}

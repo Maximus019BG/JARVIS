@@ -1,4 +1,4 @@
-import type { BoxRenderable, ScrollBoxRenderable, SelectOption } from "@opentui/core"
+import type { BoxRenderable, ScrollBoxRenderable, SelectOption, SelectRenderable } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useMemo, useRef, useState, type ReactNode } from "react"
 import type { PermissionRequest } from "../../permission.ts"
@@ -12,7 +12,7 @@ export type Choice = { value: string; label: string; hint?: string }
  * backdrop: a terminal has no alpha, so a filled one would blank the transcript instead of
  * dimming it — the child's own border and panel background are what read as "on top".
  */
-function Modal({ children }: { children: ReactNode }) {
+export function Modal({ children }: { children: ReactNode }) {
   return (
     <box
       style={{
@@ -42,6 +42,7 @@ export function Picker({
   theme,
   motion,
   onPick,
+  onDelete,
   onCancel,
 }: {
   title: string
@@ -49,16 +50,39 @@ export function Picker({
   theme: Theme
   motion: MotionLevel
   onPick: (value: string) => void
+  /** When given, `shift+D` removes the highlighted entry after a confirmation. */
+  onDelete?: (value: string) => void
   onCancel: () => void
 }) {
   const [query, setQuery] = useState("")
+  /** The entry `shift+D` is asking about. Nothing is removed until `y`. */
+  const [pending, setPending] = useState<Choice | null>(null)
   const box = useRef<BoxRenderable>(null)
+  // Read at press time rather than mirrored into state: the select owns the highlight, and
+  // a copy would only be a second thing that can be wrong.
+  const list = useRef<SelectRenderable>(null)
   const filtered = useMemo(() => {
     const needle = query.toLowerCase()
     return choices.filter((choice) => `${choice.label} ${choice.hint ?? ""}`.toLowerCase().includes(needle))
   }, [choices, query])
 
   useKeyboard((key) => {
+    // The confirmation owns every key while it is up, so a stray letter cannot both answer
+    // it and land in the filter. Only `y` deletes; anything else backs out.
+    if (pending) {
+      if (key.name === "y") onDelete?.(pending.value)
+      setPending(null)
+      return
+    }
+    // Before the filter, or shift+D would just type a `d` into the query. Case-insensitive
+    // filtering means stealing the capital costs the user nothing.
+    if (onDelete && key.name === "d" && key.shift && !key.ctrl && !key.meta) {
+      // `selectedIndex` is a setter with no getter, so it reads back undefined — the
+      // method is the only way to ask the select where the highlight actually is.
+      const target = filtered[list.current?.getSelectedIndex() ?? 0]
+      if (target) setPending(target)
+      return
+    }
     if (key.name === "escape") onCancel()
     else if (key.name === "backspace") setQuery((value) => value.slice(0, -1))
     // opentui names the space bar "space", so it needs its own case or multi-word
@@ -85,12 +109,21 @@ export function Picker({
     <Modal>
       <box
         ref={box}
-        title={query ? `${title} — ${query}` : title}
-        titleColor={theme.accent}
-        bottomTitle={`↑↓ move · enter select · esc cancel · ${filtered.length}/${choices.length}`}
+        title={pending ? `delete "${clip(pending.label, 30)}"?` : query ? `${title} — ${query}` : title}
+        titleColor={pending ? theme.error : theme.accent}
+        // A bottom title wider than the box is dropped silently rather than clipped, so the
+        // keys have to be kept short enough to survive — losing the one line that says
+        // `shift+D` deletes is how a destructive key becomes a surprise.
+        bottomTitle={clip(
+          pending
+            ? "y delete · any other key keeps it"
+            : `↑↓ enter${onDelete ? " · shift+D del" : ""} · esc · ${filtered.length}/${choices.length}`,
+          width - 4,
+        )}
         style={{
           border: true,
-          borderColor: theme.accent,
+          borderStyle: "rounded",
+          borderColor: pending ? theme.error : theme.accent,
           backgroundColor: theme.panel,
           flexDirection: "column",
           height,
@@ -104,6 +137,7 @@ export function Picker({
           <text fg={theme.muted}>no matches — esc to cancel</text>
         ) : (
           <select
+            ref={list}
             focused
             options={options}
             showScrollIndicator
@@ -174,6 +208,7 @@ export function PermissionPrompt({
       bottomTitle={lines.length > visible ? `${lines.length} lines · ctrl+u/d scroll` : undefined}
       style={{
         border: true,
+        borderStyle: "rounded",
         borderColor: theme.warning,
         backgroundColor: theme.panel,
         flexDirection: "column",

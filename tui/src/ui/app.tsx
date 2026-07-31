@@ -3,14 +3,14 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DEFAULT_AGENT, loadAgents, resolveAgent } from "../agent/agent-def.ts"
 import { listModels } from "../agent/provider.ts"
-import type { Session } from "../agent/session.ts"
+import { deleteSession, type Session } from "../agent/session.ts"
 import type { Config } from "../config/config.ts"
 import { describe, matches, type Action, type Keymap } from "../config/keybinds.ts"
 import { loadTheme, type Theme } from "../config/theme.ts"
 import { loadCommands, parseCommandLine } from "../extend/command.ts"
 import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
-import { runCommand } from "./builtin-commands.ts"
+import { KEY_HELP, runCommand } from "./builtin-commands.ts"
 import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { PermissionPrompt, Picker } from "./components/dialog.tsx"
@@ -19,6 +19,8 @@ import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
 import { Suggestions } from "./components/suggestions.tsx"
 import { Toasts, useToasts } from "./components/toast.tsx"
+import { Panel, panelBody, type PanelContent } from "./components/panel.tsx"
+import { tutorialContent } from "./tutorial.ts"
 import { Welcome } from "./components/welcome.tsx"
 import { readGit } from "./git.ts"
 import type { MotionLevel } from "./motion.ts"
@@ -62,9 +64,13 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     () => initial.model ?? agents[initial.agent ?? DEFAULT_AGENT]?.model ?? listModels(config)[0]?.id ?? "no model",
   )
   const [picker, setPicker] = useState<PickerKind | null>(null)
+  /** Read-only overlay content: the tutorial, or /provider output. */
+  const [panel, setPanel] = useState<PanelContent | null>(null)
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [selected, setSelected] = useState(0)
   const [quitting, setQuitting] = useState(false)
+  /** Whether the arming press also killed a turn, so the hint can say both things happened. */
+  const [interrupted, setInterrupted] = useState(false)
   const { toasts, toast } = useToasts()
   // The agent checks out branches and edits files, so a value read once at startup goes stale
   // mid-session. Refreshed between turns instead: one spawn per turn, never during one.
@@ -74,10 +80,15 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
   const editor = useRef<EditorHandle>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const history = useRef<string[]>([])
+  // The agent and model as of the last switch. Key repeat batches several presses into one
+  // React commit, so cycling has to read these rather than the state it is about to set.
+  const activeAgent = useRef(agent)
+  const activeModel = useRef(model)
   const browse = useRef({ index: -1, draft: "" })
 
   // The config value is available before the first turn; the turn's value can also come
   // from the models.dev catalog, so it wins once a turn has actually resolved the model.
+  const empty = turn.items.length === 0
   const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
   const contextLimit = turn.contextLimit ?? configured
   const vim = useVim(editor, config.vim)
@@ -129,11 +140,15 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
         keymap,
         mcp,
         extensions,
+        config,
+        cwd,
+        width,
         openPicker: setPicker,
+        openPanel: setPanel,
         quit: () => process.exit(0),
       })
     },
-    [commands, extensions, keymap, mcp, turn],
+    [commands, config, cwd, extensions, keymap, mcp, turn, width],
   )
 
   const shell = useCallback(
@@ -202,19 +217,79 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     editor.current?.set(entries[state.index]!)
   }, [])
 
+  /** The one place a model is switched, so no caller can leave the ref behind the state. */
+  const selectModel = useCallback((value: string) => {
+    activeModel.current = value
+    setModel(value)
+  }, [])
+
+  /** The one place an agent is switched, so the picker and the arrow keys cannot diverge. */
+  const selectAgent = useCallback(
+    (value: string) => {
+      activeAgent.current = value
+      setAgent(value)
+      const chosen = resolveAgent(agents, value)
+      if (chosen.model) selectModel(chosen.model)
+    },
+    [agents, selectModel],
+  )
+
+  /**
+   * Steps through a list of names, wrapping. Shared by the agent and model cycles because the
+   * only thing that differs is the list: both read a ref rather than the state they are about
+   * to set, since key repeat lands several presses inside one React batch and a stale read
+   * would make every press in the batch pick the same target.
+   */
+  const step = (names: string[], from: string, direction: -1 | 1): string | undefined => {
+    if (names.length < 2) return undefined
+    const index = names.indexOf(from)
+    // A name from the command line need not be in the list; start from the top.
+    return index === -1 ? names[0] : names[(index + direction + names.length) % names.length]
+  }
+
+  const cycleAgent = useCallback(
+    (direction: -1 | 1) => {
+      const next = step(Object.keys(agents), activeAgent.current, direction)
+      if (next) selectAgent(next)
+    },
+    [agents, selectAgent],
+  )
+
+  const cycleModel = useCallback(
+    (direction: -1 | 1) => {
+      // The picker's order, so tab and ctrl+o agree on what "next" means.
+      const next = step(
+        listModels(config).map((entry) => entry.id),
+        activeModel.current,
+        direction,
+      )
+      if (next) selectModel(next)
+    },
+    [config, selectModel],
+  )
+
+  /**
+   * Deletes a session from the picker. The live one is refused rather than deleted: the turn
+   * in flight would keep appending to a file that no longer exists, and the user would have
+   * no way back to the conversation on screen.
+   */
+  const removeSession = useCallback(
+    (id: string) => {
+      if (id === turn.session.id) return toast("that is the session you are in", "warn")
+      toast(deleteSession(id) ? "session deleted" : "session was already gone", "info")
+    },
+    [toast, turn.session.id],
+  )
+
   const pick = useCallback(
     (value: string) => {
       const kind = picker
       setPicker(null)
       switch (kind) {
         case "model":
-          return setModel(value)
-        case "agent": {
-          setAgent(value)
-          const chosen = resolveAgent(agents, value)
-          if (chosen.model) setModel(chosen.model)
-          return
-        }
+          return selectModel(value)
+        case "agent":
+          return selectAgent(value)
         case "session":
           return turn.resume(value)
         case "command":
@@ -228,15 +303,28 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
           return
       }
     },
-    [agents, cwd, dispatch, picker, turn],
+    [cwd, dispatch, picker, selectAgent, selectModel, turn],
   )
 
   // The permission prompt and the picker own the keyboard while they are open. Everything
   // else is dispatched here first — these handlers run before the focused textarea sees
   // the key, so `stopPropagation` is what keeps the completion strip from also typing.
   useKeyboard((key) => {
-    if (turn.permission || picker) return
     const is = (action: Action) => matches(key, keymap[action])
+
+    // Quitting outranks every overlay. An open picker or panel used to swallow ctrl+c
+    // entirely, which is the same trap a running turn used to be: the moments you most want
+    // out are the ones where nothing was listening.
+    if (is("exit")) {
+      if (quitting) process.exit(0)
+      setInterrupted(turn.interrupt())
+      setQuitting(true)
+      setTimeout(() => setQuitting(false), QUIT_WINDOW_MS)
+      return key.stopPropagation()
+    }
+
+    // Otherwise the prompt, the picker and the panel own the keyboard; each closes itself.
+    if (turn.permission || picker || panel) return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -276,15 +364,26 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
       }
     }
 
-    if (is("exit")) {
-      // A stray ctrl+c should not end the session; the first press only interrupts or warns.
-      if (turn.interrupt()) return
-      if (quitting) process.exit(0)
-      setQuitting(true)
-      setTimeout(() => setQuitting(false), QUIT_WINDOW_MS)
-    } else if (is("interrupt")) turn.interrupt()
+    // Left and right belong to the cursor whenever there is text to move through. An empty
+    // buffer has none, so there they switch agents — the same trade up and down make with
+    // history above. Not in the keymap for the same reason those are not: the binding is
+    // only half a key, the other half is the state of the buffer.
+    if ((key.name === "left" || key.name === "right") && !key.ctrl && !key.meta && !editor.current?.text()) {
+      cycleAgent(key.name === "left" ? -1 : 1)
+      return key.stopPropagation()
+    }
+
+    // Tab on an empty buffer steps the model. Forward only — shift+tab is the agent picker —
+    // and safe to claim here because the completion strip already returned above when open.
+    if (key.name === "tab" && !key.shift && !key.ctrl && !key.meta && !editor.current?.text()) {
+      cycleModel(1)
+      return key.stopPropagation()
+    }
+
+    if (is("interrupt")) turn.interrupt()
     else if (is("clear")) turn.clear()
     else if (is("palette")) setPicker("command")
+    else if (is("tutorial")) setPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     else if (is("modelPicker")) setPicker("model")
     else if (is("agentPicker")) setPicker("agent")
     else if (is("sessionPicker")) setPicker("session")
@@ -297,35 +396,39 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
   })
 
+  const welcome = <Welcome theme={theme} keymap={keymap} cwd={cwd} git={git} model={model} agent={agent} empty={empty} />
+
   return (
     <box style={{ flexDirection: "column", width: "100%", height: "100%", backgroundColor: theme.bg }}>
-      <scrollbox
-        ref={scroll}
-        stickyScroll
-        stickyStart="bottom"
-        style={{
-          flexGrow: 1,
-          rootOptions: { backgroundColor: theme.bg },
-          viewportOptions: { backgroundColor: theme.bg },
-          contentOptions: { backgroundColor: theme.bg, paddingLeft: 1, paddingRight: 1 },
-          scrollbarOptions: { trackOptions: { foregroundColor: theme.border, backgroundColor: theme.bg } },
-        }}
-      >
-        <Welcome theme={theme} keymap={keymap} cwd={cwd} git={git} model={model} agent={agent} />
-        <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
-      </scrollbox>
+      {/* An empty session has nothing to scroll, so it gets a plain flex box that can centre
+          the wordmark. The scrollbox cannot: it is anchored to the bottom and its content box
+          hugs its children, so there is no free space inside it to centre against. */}
+      {empty ? (
+        <box style={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}>{welcome}</box>
+      ) : (
+        <scrollbox
+          ref={scroll}
+          stickyScroll
+          stickyStart="bottom"
+          style={{
+            flexGrow: 1,
+            rootOptions: { backgroundColor: theme.bg },
+            viewportOptions: { backgroundColor: theme.bg },
+            contentOptions: { backgroundColor: theme.bg, paddingLeft: 1, paddingRight: 1 },
+            scrollbarOptions: { trackOptions: { foregroundColor: theme.border, backgroundColor: theme.bg } },
+          }}
+        >
+          {welcome}
+          <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
+        </scrollbox>
+      )}
 
       {(turn.busy || turn.compacting) && (
         <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
       )}
 
       {suggestion && !turn.permission && !picker && (
-        <Suggestions
-          suggestion={suggestion}
-          selected={selected}
-          theme={theme}
-          hint={`${describe(keymap.acceptSuggestion)} or ${describe(keymap.submit)} complete · esc dismiss`}
-        />
+        <Suggestions suggestion={suggestion} selected={selected} theme={theme} />
       )}
 
       {turn.permission ? (
@@ -343,11 +446,23 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
           keymap={keymap}
           motion={motion}
           busy={turn.busy}
-          focused={!picker}
+          focused={!picker && !panel}
           handle={editor}
           onSubmit={submit}
           onChange={change}
         />
+      )}
+
+      {/* Under the input rather than under the list: the keys describe what enter and tab
+          will do to the buffer, so they read best next to the buffer. */}
+      {suggestion && !turn.permission && !picker && (
+        // A box, not `paddingLeft` on the text: padding on a `<text>` is ignored, and the
+        // line has to start where the editor's own text does or it reads as unrelated.
+        <box style={{ paddingLeft: 2 }}>
+          <text fg={theme.hint}>
+            {`${describe(keymap.acceptSuggestion)} or ${describe(keymap.submit)} complete · esc dismiss`}
+          </text>
+        </box>
       )}
 
       {picker && !turn.permission && (
@@ -357,9 +472,14 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
           theme={theme}
           motion={motion}
           onPick={pick}
+          onDelete={picker === "session" ? removeSession : undefined}
           onCancel={() => setPicker(null)}
         />
       )}
+
+      {/* The status line is panel-coloured and the editor no longer has a bottom border to
+          end on, so without this row the input and the status run together as one block. */}
+      <box style={{ height: 1 }} />
 
       <Status
         theme={theme}
@@ -378,10 +498,14 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
           copied
             ? "copied to clipboard"
             : quitting
-              ? `press ${describe(keymap.exit)} again to exit`
+              ? // Two things can have just happened, and conflating them reads as if the
+                // turn is still running.
+                `${interrupted ? "interrupted · " : ""}${describe(keymap.exit)} again to exit`
               : `${describe(keymap.palette)} commands`
         }
       />
+
+      {panel && <Panel content={panel} theme={theme} motion={motion} onClose={() => setPanel(null)} />}
 
       <Toasts toasts={toasts} theme={theme} motion={motion} />
     </box>

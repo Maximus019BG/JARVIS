@@ -22,6 +22,12 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: "redo", description: "Re-apply the changes that /undo reverted", kind: "builtin" },
   { name: "theme", description: "Pick the color theme", kind: "builtin" },
   { name: "mcp", description: "Show MCP server status", kind: "builtin" },
+  {
+    name: "provider",
+    description: "View, add, change or delete providers — /provider stats for usage",
+    kind: "builtin",
+  },
+  { name: "tutorial", description: "Show what everything on screen does", kind: "builtin" },
   { name: "extensions", description: "Show loaded custom tools, skills and plugins", kind: "builtin" },
   { name: "exit", description: "Quit jarvis", kind: "builtin" },
 ]

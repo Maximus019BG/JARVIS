@@ -17,6 +17,8 @@ export type Action =
   | "scrollBottom"
   /** Takes the highlighted `/` or `@` completion; inert when the strip is closed. */
   | "acceptSuggestion"
+  /** Opens the tutorial overlay. Not ctrl+h: many terminals send that for backspace. */
+  | "tutorial"
 
 export const DEFAULT_KEYBINDS: Record<Action, string> = {
   submit: "return",
@@ -38,6 +40,7 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   scrollHalfDown: "ctrl+d",
   scrollBottom: "end",
   acceptSuggestion: "tab",
+  tutorial: "ctrl+g",
 }
 
 export type Chord = { name: string; ctrl: boolean; shift: boolean; meta: boolean }

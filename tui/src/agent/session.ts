@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import type { ModelMessage } from "ai"
 import { sessionDir } from "../config/paths.ts"
@@ -191,6 +191,17 @@ export function listSessions(cwd?: string): SessionHeader[] {
     }
   }
   return found.sort((a, b) => b.mtime - a.mtime).map((entry) => entry.header)
+}
+
+/**
+ * Removes a session's file. Irreversible — the transcript is the only copy — so the caller
+ * is expected to have confirmed. Returns false when there was nothing there to remove.
+ */
+export function deleteSession(id: string): boolean {
+  const file = path(id)
+  if (!existsSync(file)) return false
+  rmSync(file)
+  return true
 }
 
 export function latestSession(cwd: string): Session | undefined {

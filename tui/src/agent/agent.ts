@@ -1,6 +1,7 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai"
 import { agentPrompt, loadAgents, resolveAgent, spawnableAgents, type Agent } from "./agent-def.ts"
 import type { Config } from "../config/config.ts"
+import { explainAuth } from "../config/provider-status.ts"
 import { NO_EXTENSIONS, type Extensions } from "../extend/extensions.ts"
 import { PermissionDenied, type PermissionGate } from "../permission.ts"
 import { fire, wrapTools } from "../extend/plugin.ts"
@@ -62,6 +63,13 @@ export type RunResult = {
    * wrong for occupancy.
    */
   contextTokens: number
+  /** The model this turn actually used, as `provider/model`, for per-provider accounting. */
+  model: string
+  /**
+   * Set when the turn failed and the failure was already reported as an `error` event. The
+   * caller must not report it again — it is here so a caller can still tell the turn failed.
+   */
+  error?: string
 }
 
 function cost(model: ResolvedModel, input: number, output: number): number {
@@ -177,11 +185,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
     onStepFinish: ({ response }) => {
       completed.push(...response.messages)
     },
-    onError: ({ error }) => emit({ type: "error", message: errorMessage(error) }),
+    // No `onError` here: `fullStream` already yields the same failure as an `error` part, and
+    // reporting it from both is how one missing API key became three identical messages.
   })
 
   let text = ""
   let contextTokens = 0
+  /** The last failure already emitted, so the rethrow below can avoid repeating it. */
+  let reported: string | undefined
   const usage: Usage = { input: 0, output: 0, cost: 0 }
 
   try {
@@ -223,7 +234,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
           emit({ type: "usage", usage: { ...usage } })
           break
         case "error":
-          emit({ type: "error", message: errorMessage(part.error) })
+          // Explained here rather than at the transcript, so the throw path below compares
+          // against the same string and still recognises it as already reported.
+          reported = explainAuth(errorMessage(part.error), config, cwd, model.providerID)
+          emit({ type: "error", message: reported })
           break
         default:
           break
@@ -234,16 +248,26 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // it interrupted something mid-flight, and then the finished steps are still worth
     // keeping so the next turn knows what already touched disk.
     if (!abort?.aborted) throw error
-    return { messages: completed, text, usage, interrupted: true, contextLimit, contextTokens }
+    return { messages: completed, text, usage, interrupted: true, contextLimit, contextTokens, model: model.id }
   }
 
-  return {
-    messages: await result.responseMessages,
-    text,
-    usage,
-    interrupted: abort?.aborted,
-    contextLimit,
-    contextTokens,
+  try {
+    return {
+      messages: await result.responseMessages,
+      text,
+      usage,
+      interrupted: abort?.aborted,
+      contextLimit,
+      contextTokens,
+      model: model.id,
+    }
+  } catch (error) {
+    // The same failure the stream already emitted arrives here again when the promise
+    // rejects. Throwing would have the caller note it a second time, so hand it back as
+    // data instead. A failure that was never emitted still throws and is reported once.
+    const message = explainAuth(errorMessage(error), config, cwd, model.providerID)
+    if (message !== reported) throw error
+    return { messages: completed, text, usage, contextLimit, contextTokens, model: model.id, error: message }
   }
 }
 

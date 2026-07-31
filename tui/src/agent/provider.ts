@@ -50,6 +50,16 @@ type Provider = ((modelID: string) => LanguageModel) & { languageModel?: (modelI
 
 const loaded = new Map<string, Promise<Provider>>()
 
+/**
+ * Drops a cached factory so the next `resolveModel` rebuilds it from the current config.
+ * Needed because `/provider change` edits the config in place, and without this the old
+ * factory — built with the old options — would keep serving every turn until a restart.
+ */
+export const forgetProvider = (providerID?: string): void => {
+  if (providerID) loaded.delete(providerID)
+  else loaded.clear()
+}
+
 function loadProvider(providerID: string, config: ProviderConfig): Promise<Provider> {
   const cached = loaded.get(providerID)
   if (cached) return cached

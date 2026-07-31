@@ -1,4 +1,8 @@
+import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
+import { panelBody, type PanelContent } from "./components/panel.tsx"
+import { providerCommand } from "./provider-command.ts"
+import { tutorialContent } from "./tutorial.ts"
 import { expand, type Command } from "../extend/command.ts"
 import { summary, type Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
@@ -6,12 +10,13 @@ import type { PickerKind } from "./pickers.ts"
 import type { Turn } from "./use-turn.ts"
 
 /** Every binding, described from the live keymap so it cannot drift from the config. */
-const KEY_HELP: [keyof Keymap, string][] = [
+export const KEY_HELP: [keyof Keymap, string][] = [
+  ["tutorial", "what everything does"],
   ["submit", "send"],
   ["newline", "newline"],
   ["acceptSuggestion", "take the / or @ completion"],
   ["interrupt", "interrupt"],
-  ["exit", "quit (twice when idle)"],
+  ["exit", "quit (twice)"],
   ["palette", "commands"],
   ["modelPicker", "model"],
   ["agentPicker", "agent"],
@@ -61,7 +66,13 @@ export type CommandDeps = {
   keymap: Keymap
   mcp: McpSession
   extensions: Extensions
+  config: Config
+  cwd: string
+  /** Terminal columns, so /provider stats can size its bars to the window. */
+  width: number
   openPicker: (kind: PickerKind) => void
+  /** Shows read-only content in the scrollable overlay. */
+  openPanel: (content: PanelContent) => void
   quit: () => void
 }
 
@@ -71,7 +82,7 @@ export type CommandDeps = {
  * command table is readable in one place.
  */
 export function runCommand(command: Command, args: string, deps: CommandDeps): void {
-  const { turn, keymap, mcp, extensions, openPicker, quit } = deps
+  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, quit } = deps
 
   if (command.kind === "prompt") {
     turn.send(expand(command, args), { agent: command.agent, model: command.model })
@@ -105,6 +116,10 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return openPicker("theme")
     case "mcp":
       return turn.note(mcpReport(mcp))
+    case "provider":
+      return openPanel(providerCommand(args, { config, cwd, width: panelBody(width) }))
+    case "tutorial":
+      return openPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     case "extensions":
       return turn.note(extensionReport(extensions))
     case "exit":

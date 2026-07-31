@@ -84,13 +84,21 @@ export function Editor({
     <box
       ref={box}
       style={{
-        border: true,
+        // A single rail on the left instead of a box: the prompt is the one thing that is
+        // always there, and four sides of frame around it is four sides of noise. The busy
+        // oscillator still owns this color, so the rail is what breathes during a turn.
+        border: ["left"],
         borderColor: busy && motion !== "full" ? theme.warning : theme.border,
         backgroundColor: theme.panel,
-        minHeight: 3,
-        maxHeight: 10,
+        minHeight: 1,
+        // One more than before, so the new padding does not cost two lines of visible prompt.
+        maxHeight: 12,
         paddingLeft: 1,
         paddingRight: 1,
+        // Breathing room above and below the text. The rail is drawn at the box edge, so it
+        // runs the full height of the padding rather than stopping at the first line.
+        paddingTop: 1,
+        paddingBottom: 1,
         width: "100%",
       }}
     >

@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react"
 import { run, type Usage } from "../agent/agent.ts"
 import { attach } from "../agent/attach.ts"
 import { compactSession, generateTitle, isOverflow, NothingToCompact } from "../agent/compact.ts"
+import { providerOf, record } from "../agent/metrics.ts"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -191,6 +192,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
       for (const line of attached.notes) note(line)
       appendMessages(active, [{ role: "user", content: attached.content }])
       setBusy(true)
+      const started = Date.now()
       setInFlight({ input: 0, output: 0, cost: 0 })
       // Everything this turn writes undoes as one step.
       beginGroup(active.id)
@@ -248,6 +250,19 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           }
 
           appendMessages(active, result.messages)
+          // An interruption records as a success: the tokens were really spent and the
+          // provider did not fail. `result.error` is set when the failure was already
+          // reported as an event, so it counts as a failure without being noted twice.
+          record({
+            at: started,
+            ms: Date.now() - started,
+            provider: providerOf(result.model),
+            model: result.model,
+            input: result.usage.input,
+            output: result.usage.output,
+            cost: result.usage.cost,
+            error: result.error,
+          })
           spent.current += result.usage.cost
           setTotal((current) => ({
             input: current.input + result.usage.input,
@@ -276,7 +291,23 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           }
         } catch (error) {
           if (controller.signal.aborted) note("interrupted")
-          else note(error instanceof Error ? error.message : String(error), "error")
+          else {
+            const message = error instanceof Error ? error.message : String(error)
+            note(message, "error")
+            // A hard failure never reached a response, so the SDK reports no usage. The
+            // model is the one asked for rather than the one `run` resolved, which is only
+            // wrong when an agent overrides it — a misattributed failure, never a wrong total.
+            record({
+              at: started,
+              ms: Date.now() - started,
+              provider: providerOf(options.model ?? model),
+              model: options.model ?? model,
+              input: 0,
+              output: 0,
+              cost: 0,
+              error: message,
+            })
+          }
         } finally {
           endGroup(active.id)
           abort.current = null
