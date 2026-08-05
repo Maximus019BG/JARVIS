@@ -192,6 +192,12 @@ export default function BlueprintsPage() {
     );
   };
 
+  const handleHistoryBlueprint = (blueprint: Blueprint) => {
+    void router.push(
+      `/app/blueprints/${blueprint.workstationId}/${blueprint.id}/${blueprint.createdBy}/history`,
+    );
+  };
+
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -326,6 +332,7 @@ export default function BlueprintsPage() {
             onDelete={handleDeleteBlueprint}
             onClone={handleCloneBlueprint}
             onRun={handleRunBlueprint}
+            onHistory={handleHistoryBlueprint}
           />
 
           {/* Pagination */}

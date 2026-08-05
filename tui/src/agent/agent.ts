@@ -1,5 +1,6 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai"
 import { agentPrompt, loadAgents, resolveAgent, spawnableAgents, type Agent } from "./agent-def.ts"
+import { blueprintRoot } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
 import { explainAuth } from "../config/provider-status.ts"
 import { NO_EXTENSIONS, type Extensions } from "../extend/extensions.ts"
@@ -142,6 +143,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     cwd,
     check: config.check,
     worktree: extensions.worktree,
+    blueprints: blueprintRoot(config),
     gate: agentGate,
     read,
     depth,

@@ -1,4 +1,5 @@
 import type { Tool } from "ai"
+import { blueprintTools } from "../blueprint/tools.ts"
 import { MCP_PREFIX } from "../extend/mcp.ts"
 import type { PermissionGate } from "../permission.ts"
 import { bashOutputTool } from "./background.ts"
@@ -32,6 +33,7 @@ export function builtinTools(ctx: ToolContext, agents: { name: string; descripti
     todo: todoTool(ctx),
     webfetch: webfetchTool(ctx),
     bash_output: bashOutputTool(ctx),
+    ...blueprintTools(ctx, ctx.blueprints),
   }
   if (ctx.spawn && agents.length > 0) tools.task = taskTool(ctx, agents)
   return tools

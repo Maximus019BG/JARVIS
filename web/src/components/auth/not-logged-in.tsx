@@ -4,7 +4,10 @@ import { LoaderCircle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { type auth } from "~/lib/auth";
+// `import type`, not `import { type … }`: under verbatimModuleSyntax the latter still
+// emits a runtime import, which drags the server-only auth module (and postgres) into
+// this client component and fails the build.
+import type { auth } from "~/lib/auth";
 
 interface Props {
   children: React.ReactNode;

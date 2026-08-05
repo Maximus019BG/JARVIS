@@ -16,6 +16,12 @@ export type ToolContext = {
   check?: Record<string, string[]>
   /** Git worktree root, or `cwd` when not in a repo. Passed to custom tools. */
   worktree: string
+  /**
+   * Root of the blueprint store — its own git repo, outside the workspace. Deliberately
+   * separate from `cwd`, so blueprint tools clamp names with `safeName` instead of
+   * `resolvePath`.
+   */
+  blueprints: string
   gate: PermissionGate
   /**
    * Absolute path to the mtime it had when read, for the whole session. `edit` requires

@@ -12,7 +12,8 @@ import {
   Play,
   MoreVertical,
   Star,
-  Tag
+  Tag,
+  History
 } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
@@ -35,6 +36,7 @@ interface BlueprintCardProps {
   onClone?: (blueprint: Blueprint) => void;
   onRun?: (blueprint: Blueprint) => void;
   onView?: (blueprint: Blueprint) => void;
+  onHistory?: (blueprint: Blueprint) => void;
 }
 
 export function BlueprintCard({
@@ -43,7 +45,8 @@ export function BlueprintCard({
   onDelete,
   onClone,
   onRun,
-  onView
+  onView,
+  onHistory
 }: BlueprintCardProps) {
   const handleCardClick = () => {
     onView?.(blueprint);
@@ -101,6 +104,12 @@ export function BlueprintCard({
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(blueprint); }}>
                       <Edit3 className="h-4 w-4 mr-2" />
                       Edit
+                    </DropdownMenuItem>
+                  )}
+                  {onHistory && (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onHistory(blueprint); }}>
+                      <History className="h-4 w-4 mr-2" />
+                      Version history
                     </DropdownMenuItem>
                   )}
                   {onClone && (

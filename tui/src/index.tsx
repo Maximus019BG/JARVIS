@@ -15,6 +15,17 @@ usage:
   jarvis init                  scaffold a .jarvis directory in this project
   jarvis models                list configured models
   jarvis config                show config files, agents, tools, skills and plugins
+  jarvis pair [url]            pair this device with the jarvis cloud
+  jarvis device                show this device's pairing
+  jarvis pi [blueprint]        draw with your hands onto a projector
+  jarvis pi calibrate          align the camera to the projected sheet
+  jarvis pi models             download the hand-tracking models
+
+pi options:
+  --source <rpicam|webcam|script|replay>   frame source (default rpicam)
+  --replay <file>              NDJSON capture to replay
+  --port <n>                   projector server port (default 7331)
+  --width/--height/--fps       camera format (default 640x480@30)
 
 options:
   -m, --model <provider/model> override the model
@@ -119,6 +130,43 @@ async function main() {
       for (const model of models) {
         process.stdout.write(`${model.id === active ? "*" : " "} ${model.id}\n`)
       }
+      return
+    }
+    case "pair": {
+      const { pair } = await import("./cli/pair.ts")
+      // Name defaults to the hostname; it is renameable on the web approval screen.
+      await pair({ baseUrl: args[0] })
+      return
+    }
+    case "device": {
+      const { showDevice } = await import("./cli/pair.ts")
+      showDevice()
+      return
+    }
+    case "pi": {
+      const { runPi } = await import("./pi/index.ts")
+      const flag = (name: string) => {
+        const found = flags.rest.find((arg) => arg.startsWith(`--${name}=`))
+        if (found) return found.split("=")[1]
+        const index = flags.rest.indexOf(`--${name}`)
+        return index >= 0 ? flags.rest[index + 1] : undefined
+      }
+      const sub = args.find((arg) => !arg.startsWith("--"))
+      const source = (flag("source") ?? "rpicam") as "rpicam" | "webcam" | "script" | "replay"
+      const width = Number(flag("width") ?? 640)
+      const height = Number(flag("height") ?? 480)
+      const fps = Number(flag("fps") ?? 30)
+      await runPi({
+        config,
+        // `calibrate` and `models` are modes, not blueprint names.
+        blueprint: sub && !["calibrate", "models"].includes(sub) ? sub : "sketch",
+        port: Number(flag("port") ?? 7331),
+        source,
+        replayPath: flag("replay"),
+        camera: { width, height, fps },
+        calibrateOnly: sub === "calibrate",
+        modelsOnly: sub === "models",
+      })
       return
     }
     case "run": {

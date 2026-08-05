@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { eq, and } from "drizzle-orm";
@@ -13,6 +14,16 @@ export async function POST(
 ) {
   try {
     const { workstationId, blueprintId } = await ctx.params;
+
+    // This route used to be deliberately unauthenticated — "the device authenticates by
+    // providing the workstation ID" — which meant anyone holding an id could write. Devices
+    // now have real bearer tokens and use /api/blueprint/push, so this path is
+    // browser-only and requires a session plus ownership of the workstation below.
+    const session = await auth.api.getSession({ headers: _request.headers });
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Parse and validate request body in one go
     const data = blueprintSaveSchema.parse(await _request.json());
 
@@ -43,8 +54,6 @@ export async function POST(
     const decodedWorkstationId = decodeId(workstationId, secret);
     const decodedBlueprintId = decodeId(blueprintId, secret);
 
-    // Device authenticates by providing the workstation ID; do not require a user session here.
-
     const workstationExists = await db
       .select()
       .from(workstation)
@@ -61,8 +70,9 @@ export async function POST(
       );
     }
 
-    // The device provided the workstation ID; we trust the device to reference the correct workstation.
-    // (If you need device-level auth later, add header-based tokens or a device registry.)
+    if (workstationRecord.userId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // Save or update blueprint
     const existing = await db

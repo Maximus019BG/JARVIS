@@ -1,0 +1,26 @@
+[Unit]
+Description=JARVIS hand-drawing daemon
+Documentation=https://github.com/Maximus019BG/JARVIS
+# The camera is not ready the instant the network is; ordering after both avoids a
+# restart loop on a cold boot.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+# jarvis reads its config from the invoking user's XDG directories, so these must match
+# the account that ran `jarvis pair` and `jarvis pi calibrate`.
+Environment=XDG_CONFIG_HOME=/home/%i/.config
+Environment=XDG_DATA_HOME=/home/%i/.local/share
+ExecStart=/home/%i/.local/bin/jarvis pi
+Restart=on-failure
+RestartSec=3
+# The vision worker is a child process; killing the group stops it too rather than
+# leaving an orphan holding the camera.
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

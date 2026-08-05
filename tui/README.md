@@ -292,12 +292,166 @@ Every conversation is append-only JSONL under
 `~/.local/share/jarvis/sessions/`. `--continue` resumes the newest session for the
 current directory, `--session <id>` a specific one, and `ctrl+r` picks from a list.
 
+## Blueprints
+
+2D technical drawings, stored as JSON and versioned with git. `blueprint` creates and
+lists them, `blueprint_edit` draws with a batch of operations, `blueprint_view` renders
+them as braille, SVG or raw JSON. Every edit is committed automatically, so `blueprint`
+`action: "history"` and `blueprint_view` `at: "<sha>"` reach any past version.
+
+```
+/blueprint                   list the store
+/blueprint plate             draw one in the terminal, with its history
+```
+
+The store is its own git repo at `~/.local/share/jarvis/blueprints/<workspace>`, kept
+outside your project so it never nests a `.git` inside it:
+
+```jsonc
+"blueprint": {
+  "workspace": "default",   // maps to a workstation in the web app
+  "dir": "~/drawings"       // optional, overrides the location entirely
+}
+```
+
+Blueprint names are restricted to lowercase letters, digits and hyphens — these tools
+address a store outside the workspace, so the name is the sandbox.
+
+`install.sh` seeds a `draftsman` agent and a `blueprint-drafting` skill into
+`~/.config/jarvis`. Delete either and re-run it to get the original back.
+
+### Syncing to the cloud
+
+`jarvis pair` connects this machine to a JARVIS web instance. It prints a short code and a
+URL; enter the code in the web app, which shows the device's name and fingerprint and asks
+which blueprints it may reach. This is the OAuth 2.0 device authorization grant (RFC 8628),
+so no password or token is ever typed on the device.
+
+```
+jarvis pair                        pair against http://localhost:3000
+jarvis pair https://jarvis.example pair against a deployment
+jarvis device                      show this device's pairing
+```
+
+Credentials land in `~/.local/share/jarvis/credentials.json` at mode `600` — deliberately
+not `jarvis.jsonc`, which people commit. `JARVIS_CLOUD_URL` sets the default address.
+
+The `blueprint_sync` tool then pushes and pulls:
+
+```
+blueprint_sync { action: "push", name: "plate" }
+```
+
+Every local commit becomes a version on the web, with its history and diffs. Pushes are
+fast-forward only: if the server moved on, the push is rejected, the two versions are
+three-way merged locally by entity id, and the merge is pushed instead. When both sides
+edited the same entity **both survive** — yours keeps its id, theirs is renamed `e7-b` —
+and the conflict is reported rather than resolved. Nothing is ever silently dropped.
+
+Access is enforced server-side per blueprint, so a device granted one drawing gets a 403
+on any other regardless of what it asks for.
+
+### Drawing with your hands
+
+`jarvis pi` turns a Raspberry Pi with a camera and a projector into a drawing surface. Pinch
+to draw, and the stroke is fitted to a real entity — a line, circle, rectangle or curve —
+and committed to git like any other edit.
+
+```
+jarvis pi models             download the hand-tracking models (once)
+jarvis pi calibrate          align the camera to the projected sheet
+jarvis pi plate              draw into the `plate` blueprint
+```
+
+| Gesture | Action |
+|---|---|
+| pinch thumb and index | pen down; release commits the stroke |
+| point, hold ~400 ms | cycle the tool (auto · line · polyline · rect · circle · arc · path) |
+| open palm | discard the stroke in progress |
+| closed fist | undo the last entity |
+| two hands pinching | zoom |
+
+In `auto` the shape is inferred from what you drew; pick a tool and it is forced, so a
+wobbly oval under the circle tool becomes a circle. Strokes snap to nearby endpoints, which
+is what makes hand-drawn shapes actually join.
+
+**Calibrate before drawing, and again whenever the projector moves.** Four markers are
+projected in turn; pinch on each. The reported mean error is in millimetres — under about
+2 mm is good, and anything over 5 mm warns. Nothing can derive this: it depends on where the
+projector is sitting.
+
+The projected view is at `http://localhost:7331/projector`. It is display-only — the daemon
+sends it flattened geometry and ignores anything it sends back, so the browser can crash or
+be closed without the drawing noticing. On the Pi it runs full-screen under `cage`, a ~2 MB
+single-application Wayland compositor, which is how Raspberry Pi OS Lite gets a browser onto
+HDMI without installing a desktop:
+
+```
+sudo apt install cage chromium-browser rpicam-apps
+./install.sh --pi
+sudo systemctl enable --now jarvis-pi@$USER jarvis-kiosk@$USER
+```
+
+Every threshold is a physical tuning knob and lives in config, because the right values
+depend on the rig and on how firmly a particular person pinches:
+
+```jsonc
+"blueprint": {
+  "pi": {
+    "camera": { "width": 640, "height": 480, "fps": 30 },
+    "gestures": {
+      "pinchEnter": 0.32,   // fraction of hand span that closes the pen
+      "pinchExit": 0.45,    // the looser value that opens it — must be larger
+      "debounce": 3,        // frames a change must persist
+      "pointHoldMs": 400
+    },
+    "fit": { "tolerance": 1.2, "smoothing": 0.35, "snapGrid": 0 }
+  }
+}
+```
+
+Pinch distance is measured in hand spans rather than pixels, so leaning closer to the camera
+does not change the gesture, and the two thresholds give hysteresis — with a single value a
+finger resting on it toggles the pen every other frame.
+
+#### Without hardware
+
+`--source=script` runs a scripted hand through the whole pipeline, so the daemon, the
+projector, calibration and stroke fitting can all be exercised on a laptop:
+
+```
+jarvis pi calibrate --source=script
+jarvis pi demo --source=script
+```
+
+`--source=webcam` uses `ffmpeg` instead of `rpicam-vid` for a laptop camera, and
+`--source=replay --replay=<file>` replays a recorded NDJSON capture at its original pace.
+
+#### How the vision works
+
+Detection and landmarks both run in `onnxruntime-node`, in a **separate process** that emits
+one NDJSON line per frame. It is separate on purpose: it is a native addon and the biggest
+unknown on arm64, so a crash costs a restartable child rather than the daemon, and the same
+worker can be run under `node` if it misbehaves under Bun. Palm detection runs every half
+second and landmarks track in between, which is what keeps it inside a Pi's budget.
+
+`onnxruntime-node` is deliberately **not** a dependency — it is ~100 MB of native code only
+this path uses. Install it on the machine that needs it:
+
+```
+bun add onnxruntime-node
+```
+
+Swapping detection onto the IMX500's on-sensor accelerator later means writing one more
+`HandSource` and changing nothing else.
+
 ## Tools
 
-`read`, `write`, `edit`, `bash`, `glob`, `grep`, `list`, `task`, plus `skill` when
-skills exist, anything in `.jarvis/tools/`, and every MCP tool. Paths are resolved
-against the workspace root and rejected if they escape it; `edit` requires the file to
-have been read first and refuses an ambiguous match.
+`read`, `write`, `edit`, `bash`, `glob`, `grep`, `list`, `task`, `blueprint`,
+`blueprint_edit`, `blueprint_view`, plus `skill` when skills exist, anything in
+`.jarvis/tools/`, and every MCP tool. Paths are resolved against the workspace root and
+rejected if they escape it; `edit` requires the file to have been read first and refuses
+an ambiguous match.
 
 Agents pick from that set with a `tools` policy, and a trailing `*` matches by prefix:
 

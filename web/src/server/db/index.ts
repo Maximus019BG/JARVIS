@@ -15,6 +15,8 @@ import * as automationRunStep from "~/server/db/schemas/automation-run-step";
 import * as automationJob from "~/server/db/schemas/automation-job";
 import * as automationTrigger from "~/server/db/schemas/automation-trigger";
 import * as device from "~/server/db/schemas/device";
+import * as deviceLink from "~/server/db/schemas/device_link";
+import * as deviceGrant from "~/server/db/schemas/device_grant";
 import * as nonce from "~/server/db/schemas/nonce";
 import * as syncLog from "~/server/db/schemas/sync_log";
 import * as idempotencyKey from "~/server/db/schemas/idempotency_key";
@@ -43,6 +45,8 @@ export const schema = {
   ...automationJob,
   ...automationTrigger,
   ...device,
+  ...deviceLink,
+  ...deviceGrant,
   ...nonce,
   ...syncLog,
   ...idempotencyKey,

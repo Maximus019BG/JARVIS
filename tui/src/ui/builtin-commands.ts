@@ -1,3 +1,4 @@
+import { blueprintCommand } from "./blueprint-command.ts"
 import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
 import { panelBody, type PanelContent } from "./components/panel.tsx"
@@ -118,6 +119,8 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return turn.note(mcpReport(mcp))
     case "provider":
       return openPanel(providerCommand(args, { config, cwd, width: panelBody(width) }))
+    case "blueprint":
+      return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
     case "tutorial":
       return openPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     case "extensions":

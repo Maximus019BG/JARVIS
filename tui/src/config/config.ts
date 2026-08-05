@@ -100,6 +100,95 @@ export const ConfigSchema = z
      * agent: `{ "**\/*.ts": ["bunx prettier --write $FILE", "bunx tsc --noEmit"] }`.
      */
     check: z.record(z.string(), z.array(z.string())).default({}),
+    /**
+     * Where blueprints live and how they are versioned. The store is its own git repo,
+     * kept outside the project so it never nests a `.git` inside the user's own.
+     */
+    blueprint: z
+      .object({
+        /** Overrides the store root. Defaults to `<data dir>/blueprints/<workspace>`. */
+        dir: z.string().optional(),
+        /** Maps to a workstation in the web app. */
+        workspace: z.string().default("default"),
+        /**
+         * Hand-drawing on a Pi. Every one of these is a physical tuning knob: a projector's
+         * angle, a camera's exposure and how firmly a particular person pinches all shift
+         * the right values, and none of them can be derived. Defaults are a starting point,
+         * not an answer.
+         */
+        pi: z
+          .object({
+            port: z.number().default(7331),
+            /** Blueprint drawn into when none is named. */
+            sketch: z.string().default("sketch"),
+            camera: z
+              .object({
+                width: z.number().default(640),
+                height: z.number().default(480),
+                fps: z.number().default(30),
+              })
+              .default({ width: 640, height: 480, fps: 30 }),
+            gestures: z
+              .object({
+                /** Thumb-to-index gap, in hand spans, that closes the pen. */
+                pinchEnter: z.number().default(0.32),
+                /** The looser gap that opens it again — must exceed `pinchEnter`. */
+                pinchExit: z.number().default(0.45),
+                debounce: z.number().int().positive().default(3),
+                pointHoldMs: z.number().default(400),
+                minScore: z.number().default(0.6),
+                zoomDeadZone: z.number().default(0.08),
+              })
+              .default({
+                pinchEnter: 0.32,
+                pinchExit: 0.45,
+                debounce: 3,
+                pointHoldMs: 400,
+                minScore: 0.6,
+                zoomDeadZone: 0.08,
+              }),
+            fit: z
+              .object({
+                /** Simplification epsilon in drawing units; bigger discards more wobble. */
+                tolerance: z.number().default(1.2),
+                smoothing: z.number().default(0.35),
+                snapGrid: z.number().default(0),
+                snapRadius: z.number().default(3),
+              })
+              .default({ tolerance: 1.2, smoothing: 0.35, snapGrid: 0, snapRadius: 3 }),
+          })
+          .default({
+            port: 7331,
+            sketch: "sketch",
+            camera: { width: 640, height: 480, fps: 30 },
+            gestures: {
+              pinchEnter: 0.32,
+              pinchExit: 0.45,
+              debounce: 3,
+              pointHoldMs: 400,
+              minScore: 0.6,
+              zoomDeadZone: 0.08,
+            },
+            fit: { tolerance: 1.2, smoothing: 0.35, snapGrid: 0, snapRadius: 3 },
+          }),
+      })
+      .default({
+        workspace: "default",
+        pi: {
+          port: 7331,
+          sketch: "sketch",
+          camera: { width: 640, height: 480, fps: 30 },
+          gestures: {
+            pinchEnter: 0.32,
+            pinchExit: 0.45,
+            debounce: 3,
+            pointHoldMs: 400,
+            minScore: 0.6,
+            zoomDeadZone: 0.08,
+          },
+          fit: { tolerance: 1.2, smoothing: 0.35, snapGrid: 0, snapRadius: 3 },
+        },
+      }),
     /** Max tool-call steps in one turn before the loop stops. */
     maxSteps: z.number().default(200),
     /**

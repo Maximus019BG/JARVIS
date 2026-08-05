@@ -11,6 +11,7 @@ function setup(allow = true) {
   const ctx: ToolContext = {
     cwd,
     worktree: cwd,
+    blueprints: join(cwd, "blueprints"),
     gate: new PermissionGate({}, constantAsker(allow)),
     read: new Map<string, number>(),
     depth: 0,
