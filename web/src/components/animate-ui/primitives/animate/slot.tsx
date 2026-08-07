@@ -1,3 +1,5 @@
+"use client";
+
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
 /* eslint-disable @typescript-eslint/non-nullable-type-assertion-style */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */

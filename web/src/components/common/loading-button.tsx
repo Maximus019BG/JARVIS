@@ -1,7 +1,8 @@
+"use client";
+
 import { LoaderCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import React from "react";
-import useMeasure from "react-use-measure";
 import { Button } from "~/components/ui/button";
 
 interface Props extends React.ComponentProps<typeof Button> {
@@ -14,18 +15,14 @@ export function LoadingButton({
   children,
   ...props
 }: Props) {
-  const [ref, { width }] = useMeasure({ offsetSize: true });
-  const [currentWidth, setCurrentWidth] = React.useState<number | undefined>(
-    width,
-  );
+  const ref = React.useRef<HTMLButtonElement>(null);
+  const [currentWidth, setCurrentWidth] = React.useState<number>();
 
+  // Pin the width the button had before the spinner replaced its label, so
+  // swapping content doesn't make it collapse. Only sampled on that
+  // transition, which is why a ref read beats observing every resize.
   React.useEffect(() => {
-    if (!isLoading) {
-      setCurrentWidth(undefined);
-      return;
-    }
-    setCurrentWidth(width);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setCurrentWidth(isLoading ? ref.current?.offsetWidth : undefined);
   }, [isLoading]);
 
   function getKey(children: React.ReactNode) {
