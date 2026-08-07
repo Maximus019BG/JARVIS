@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { automation } from "~/server/db/schemas/automation";
 import { workstation } from "~/server/db/schemas/workstation";

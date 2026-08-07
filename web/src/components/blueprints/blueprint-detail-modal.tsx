@@ -76,7 +76,7 @@ export function BlueprintDetailModal({
       }
     }
     if (typeof meta === "object") {
-      return meta as Record<string, unknown>;
+      return meta;
     }
     return {};
   })();

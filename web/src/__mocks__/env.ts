@@ -6,7 +6,7 @@
  * variables directly from `process.env` so tests can set them in a
  * beforeEach block.
  */
-export const env = new Proxy({} as Record<string, string | undefined>, {
+export const env = new Proxy({}, {
   get(_target, key: string) {
     return process.env[key];
   },

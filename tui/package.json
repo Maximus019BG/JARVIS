@@ -9,9 +9,10 @@
   "scripts": {
     "setup": "./install.sh",
     "start": "bun run src/index.tsx",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "schema": "bun run scripts/emit-schema.ts",
-    "compile": "bun build --compile --outfile dist/jarvis src/index.tsx"
+    "compile": "bun build --compile --outfile dist/jarvis src/index.tsx && rm -f .*.bun-build"
   },
   "devDependencies": {
     "@types/bun": "latest",

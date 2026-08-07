@@ -65,7 +65,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
 
   const rows = body.allBlueprints
     ? [{ blueprintId: null as string | null }]
-    : requested.map((blueprintId) => ({ blueprintId: blueprintId as string | null }));
+    : requested.map((blueprintId) => ({ blueprintId: blueprintId }));
 
   await db.transaction(async (tx) => {
     await tx.delete(deviceGrant).where(eq(deviceGrant.deviceId, deviceId));

@@ -89,7 +89,7 @@ export const blueprintsApi = {
         page,
         limit,
         totalPages: Math.max(1, Math.ceil(blueprints.length / limit)),
-      } as BlueprintsResponse;
+      };
     }
     return data as BlueprintsResponse;
   },
@@ -141,7 +141,7 @@ export const blueprintsApi = {
 
   // Get recent blueprints across all workstations
   getRecentBlueprints: async (
-    limit: number = 10,
+    limit = 10,
   ): Promise<
     Array<{
       id: string;

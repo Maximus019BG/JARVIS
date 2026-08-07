@@ -212,7 +212,7 @@ function AnimateIcon({
   React.useEffect(() => {
     if (animate === undefined) return;
     setCurrentAnimation(typeof animate === "string" ? animate : animation);
-    if (animate) startAnimation(animate as TriggerProp);
+    if (animate) startAnimation(animate);
     else stopAnimation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animate]);
@@ -507,7 +507,7 @@ function IconWrapper<T extends string>({
 
       const finalAnimate: Trigger = (animate ??
         parentAnimate ??
-        inheritedAnimate) as Trigger;
+        inheritedAnimate);
 
       return (
         <AnimateIcon
@@ -640,7 +640,7 @@ function getVariants<
       result[key] = variant as T[Extract<keyof T, string>];
     }
   } else {
-    result = (animations[animationType as keyof V] as T) ?? animations.default;
+    result = (animations[animationType as keyof V]) ?? animations.default;
   }
 
   return result;

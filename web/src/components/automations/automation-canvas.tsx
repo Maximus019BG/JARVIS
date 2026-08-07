@@ -76,8 +76,8 @@ const AutomationCanvas = React.forwardRef<
     if (aNodes.length !== bNodes.length) return false;
     if (aEdges.length !== bEdges.length) return false;
     for (let i = 0; i < aNodes.length; i++) {
-      const an = aNodes[i] as Node<EditorNodeData>;
-      const bn = bNodes[i] as Node<EditorNodeData>;
+      const an = aNodes[i]!;
+      const bn = bNodes[i]!;
       if (an.id !== bn.id) return false;
       if (
         an.position?.x !== bn.position?.x ||
@@ -91,8 +91,8 @@ const AutomationCanvas = React.forwardRef<
         return false;
     }
     for (let i = 0; i < aEdges.length; i++) {
-      const ae = aEdges[i] as Edge;
-      const be = bEdges[i] as Edge;
+      const ae = aEdges[i]!;
+      const be = bEdges[i]!;
       if (ae.id !== be.id) return false;
       if (ae.source !== be.source || ae.target !== be.target) return false;
     }
@@ -131,7 +131,7 @@ const AutomationCanvas = React.forwardRef<
 
   useEffect(() => {
     if (isSyncingFromProp.current) return;
-    const current = { nodes, edges } as CanvasState;
+    const current = { nodes, edges };
     // if value equals current, then skip emitting
     if (isSameState(value, current)) return;
     // if already emitted this state, skip emitting again
@@ -246,7 +246,7 @@ const AutomationCanvas = React.forwardRef<
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onPaneContextMenu={(e) => onCanvasContextMenu(e as any)}
+            onPaneContextMenu={(e) => onCanvasContextMenu(e)}
             onInit={setRfInstance}
             onNodeContextMenu={onNodeContextMenu as any}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
@@ -261,7 +261,7 @@ const AutomationCanvas = React.forwardRef<
         <NodeConfigPanel
           selected={
             selected
-              ? { id: selected.id, data: selected.data as EditorNodeData }
+              ? { id: selected.id, data: selected.data }
               : null
           }
           onClose={() => setSelectedNodeId(null)}

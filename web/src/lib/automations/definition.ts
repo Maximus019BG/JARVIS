@@ -1,5 +1,5 @@
 import type { Edge, Node } from "reactflow";
-import { z } from "zod";
+import { type z } from "zod";
 
 import {
   getNodeRegistryItem,
@@ -31,7 +31,7 @@ export function editorGraphToDefinition(input: {
   const errors: string[] = [];
 
   const nodes: WorkflowDefinitionNode[] = input.nodes.map((n) => {
-    const data = n.data as EditorNodeData;
+    const data = n.data;
     return {
       id: n.id,
       type: data.nodeType,

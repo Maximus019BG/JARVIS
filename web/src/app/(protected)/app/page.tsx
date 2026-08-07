@@ -37,7 +37,7 @@ export default function DashboardPage() {
       try {
         const statsData = await blueprintsApi.getBlueprintStats();
         //Checks down below
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+         
         const recentData = await blueprintsApi.getRecentBlueprints(5);
         if (statsData && !('error' in statsData)) {
           setStats(statsData);
