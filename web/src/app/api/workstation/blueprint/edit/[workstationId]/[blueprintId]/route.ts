@@ -5,7 +5,6 @@ import { eq, and } from "drizzle-orm";
 import { workstation } from "~/server/db/schemas/workstation";
 import { blueprintSaveSchema } from "~/lib/validation/blueprints";
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 
 export async function POST(
   request: Request,
@@ -28,23 +27,10 @@ export async function POST(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    let secret: string;
-    try {
-      secret = getEncryptionSecret();
-    } catch (error) {
-      console.error("Encryption secret not configured:", error);
-      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
-    }
-
-    // This route was also the only one missing decodeId, so an obfuscated id from the
-    // client never matched and every edit silently created a new row.
-    const decodedWorkstationId = decodeId(workstationId, secret);
-    const decodedBlueprintId = decodeId(blueprintId, secret);
-
     const ws = await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1);
 
     const workstationRecord = ws[0];
@@ -63,8 +49,8 @@ export async function POST(
       .from(blueprint)
       .where(
         and(
-          eq(blueprint.id, decodedBlueprintId),
-          eq(blueprint.workstationId, decodedWorkstationId),
+          eq(blueprint.id, blueprintId),
+          eq(blueprint.workstationId, workstationId),
         ),
       )
       .limit(1);
@@ -82,8 +68,8 @@ export async function POST(
         })
         .where(
           and(
-            eq(blueprint.id, decodedBlueprintId),
-            eq(blueprint.workstationId, decodedWorkstationId),
+            eq(blueprint.id, blueprintId),
+            eq(blueprint.workstationId, workstationId),
           ),
         );
 
@@ -91,11 +77,11 @@ export async function POST(
     }
 
     await db.insert(blueprint).values({
-      id: decodedBlueprintId,
+      id: blueprintId,
       name: data.name ?? "Untitled Blueprint",
       createdAt: new Date(),
       metadata: data.data ? JSON.stringify(data.data) : null,
-      workstationId: decodedWorkstationId,
+      workstationId: workstationId,
       // Was `workstationId`, which is not a user id — the FK to `user` would reject it.
       createdBy: session.user.id,
     });

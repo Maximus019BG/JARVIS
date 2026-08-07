@@ -3,7 +3,6 @@ import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { device } from "~/server/db/schemas/device";
@@ -59,14 +58,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const workstationId = decodeId(body.workstationId, secret);
+  const workstationId = body.workstationId;
   const owned = (
     await db.select().from(workstation).where(eq(workstation.id, workstationId)).limit(1)
   )[0];
@@ -83,7 +75,7 @@ export async function POST(request: Request) {
 
   // Every named blueprint must live in the workstation being granted. Otherwise the
   // approval screen becomes a way to hand a device access to somebody else's drawing.
-  const requested = [...new Set(body.blueprintIds.map((id) => decodeId(id, secret)))];
+  const requested = [...new Set(body.blueprintIds.map((id) => id))];
   if (requested.length > 0) {
     const found = await db
       .select({ id: blueprint.id })

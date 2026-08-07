@@ -1,7 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { device } from "~/server/db/schemas/device";
 import { deviceGrant } from "~/server/db/schemas/device_grant";
@@ -12,17 +11,9 @@ export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const raw = new URL(request.url).searchParams.get("workstationId");
-  if (!raw) return NextResponse.json({ error: "workstationId is required" }, { status: 400 });
+  const workstationId = new URL(request.url).searchParams.get("workstationId");
+  if (!workstationId) return NextResponse.json({ error: "workstationId is required" }, { status: 400 });
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const workstationId = decodeId(raw, secret);
   const owned = (
     await db.select().from(workstation).where(eq(workstation.id, workstationId)).limit(1)
   )[0];

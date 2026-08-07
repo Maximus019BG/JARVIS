@@ -23,9 +23,6 @@ export async function sendPushNotification(
           "Content-Type": "application/json; charset=UTF-8",
         },
       })
-      .then((response) => {
-        console.log(response);
-      })
       .catch((error) => {
         // Throw error
         throw error;

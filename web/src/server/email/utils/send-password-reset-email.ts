@@ -23,8 +23,6 @@ export async function sendResetPasswordEmail(
   { user, url, token }: sendResetPasswordEmailProps,
   request?: Request,
 ) {
-  console.log(user, url, token);
-
   const requestedFrom = request
     ? await getIpLocationString(request)
     : "Unknown";

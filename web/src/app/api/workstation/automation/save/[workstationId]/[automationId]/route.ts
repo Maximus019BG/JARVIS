@@ -3,7 +3,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { automation } from "~/server/db/schemas/automation";
 import { automationVersion } from "~/server/db/schemas/automation-version";
@@ -34,15 +33,6 @@ export async function POST(
       { status: 404 },
     );
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch (error) {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedAutomationId = decodeId(automationId, secret);
 
   const data = automationSaveSchema.parse(await _request.json());
 
@@ -50,7 +40,7 @@ export async function POST(
     await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
   if (!workstationRecord || workstationRecord.userId !== session.user.id)
@@ -61,8 +51,8 @@ export async function POST(
     .from(automation)
     .where(
       and(
-        eq(automation.id, decodedAutomationId),
-        eq(automation.workstationId, decodedWorkstationId),
+        eq(automation.id, automationId),
+        eq(automation.workstationId, workstationId),
       ),
     )
     .limit(1);
@@ -78,20 +68,20 @@ export async function POST(
       })
       .where(
         and(
-          eq(automation.id, decodedAutomationId),
-          eq(automation.workstationId, decodedWorkstationId),
+          eq(automation.id, automationId),
+          eq(automation.workstationId, workstationId),
         ),
       );
   } else {
     await db.insert(automation).values({
-      id: decodedAutomationId,
+      id: automationId,
       name: data.name,
       status: "draft",
       publishedVersion: null,
       createdAt: new Date(),
       createdBy: workstationRecord.userId,
       metadata: data.data ? JSON.stringify(data.data) : null,
-      workstationId: decodedWorkstationId,
+      workstationId: workstationId,
       updatedAt: new Date(),
     });
   }
@@ -102,7 +92,7 @@ export async function POST(
     await db
       .select()
       .from(automationVersion)
-      .where(eq(automationVersion.automationId, decodedAutomationId))
+      .where(eq(automationVersion.automationId, automationId))
       .orderBy(desc(automationVersion.version))
       .limit(1)
   )[0];
@@ -111,7 +101,7 @@ export async function POST(
 
   await db.insert(automationVersion).values({
     id: crypto.randomUUID(),
-    automationId: decodedAutomationId,
+    automationId: automationId,
     version: nextVersion,
     editorGraph: data.data ?? { nodes: [], edges: [] },
     definition: null,

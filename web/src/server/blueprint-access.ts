@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { workstation } from "~/server/db/schemas/workstation";
@@ -18,19 +17,11 @@ export type SessionBlueprint = {
  */
 export async function requireBlueprint(
   request: Request,
-  rawBlueprintId: string,
+  blueprintId: string,
 ): Promise<SessionBlueprint | NextResponse> {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const blueprintId = decodeId(rawBlueprintId, secret);
   const found = (
     await db.select().from(blueprint).where(eq(blueprint.id, blueprintId)).limit(1)
   )[0];

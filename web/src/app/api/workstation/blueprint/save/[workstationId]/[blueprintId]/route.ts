@@ -3,7 +3,6 @@ import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { eq, and } from "drizzle-orm";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { workstation } from "~/server/db/schemas/workstation";
 import { z } from "zod";
 import { blueprintSaveSchema } from "~/lib/validation/blueprints";
@@ -38,27 +37,13 @@ export async function POST(
       return NextResponse.json({ error: "Blueprint not found" }, { status: 404 });
     }
 
-    // Get encryption secret from environment
-    let secret: string;
-    try {
-      secret = getEncryptionSecret();
-    } catch (error) {
-      console.error("Encryption secret not configured:", error);
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 },
-      );
-    }
-
     // Decode (or pass-through if not encrypted)
-    const decodedWorkstationId = decodeId(workstationId, secret);
-    const decodedBlueprintId = decodeId(blueprintId, secret);
 
     const workstationExists = await db
       .select()
       .from(workstation)
       .where(
-        eq(workstation.id, decodedWorkstationId),
+        eq(workstation.id, workstationId),
       )
       .limit(1);
 
@@ -80,8 +65,8 @@ export async function POST(
       .from(blueprint)
       .where(
         and(
-          eq(blueprint.id, decodedBlueprintId),
-          eq(blueprint.workstationId, decodedWorkstationId),
+          eq(blueprint.id, blueprintId),
+          eq(blueprint.workstationId, workstationId),
         ),
       )
       .limit(1);
@@ -96,20 +81,20 @@ export async function POST(
         })
         .where(
           and(
-            eq(blueprint.id, decodedBlueprintId),
-            eq(blueprint.workstationId, decodedWorkstationId),
+            eq(blueprint.id, blueprintId),
+            eq(blueprint.workstationId, workstationId),
           ),
         );
 
       return NextResponse.json({ success: true });
     } else {
       await db.insert(blueprint).values({
-        id: decodedBlueprintId,
+        id: blueprintId,
         name: data.name ?? "Untitled Blueprint",
         createdAt: new Date(),
         createdBy: workstationRecord.userId,
         metadata: data.data ? JSON.stringify(data.data) : null,
-        workstationId: decodedWorkstationId,
+        workstationId: workstationId,
         updatedAt: new Date(),
       });
 

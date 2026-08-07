@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { automation } from "~/server/db/schemas/automation";
 import { automationVersion } from "~/server/db/schemas/automation-version";
@@ -18,21 +17,12 @@ export async function GET(
   if (!session?.user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedAutomationId = decodeId(automationId, secret);
 
   const workstationRecord = (
     await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
   if (!workstationRecord || workstationRecord.userId !== session.user.id)
@@ -44,8 +34,8 @@ export async function GET(
       .from(automation)
       .where(
         and(
-          eq(automation.id, decodedAutomationId),
-          eq(automation.workstationId, decodedWorkstationId),
+          eq(automation.id, automationId),
+          eq(automation.workstationId, workstationId),
         ),
       )
       .limit(1)
@@ -62,7 +52,7 @@ export async function GET(
       createdBy: automationVersion.createdBy,
     })
     .from(automationVersion)
-    .where(eq(automationVersion.automationId, decodedAutomationId))
+    .where(eq(automationVersion.automationId, automationId))
     .orderBy(desc(automationVersion.version));
 
   return NextResponse.json({

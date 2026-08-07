@@ -3,7 +3,6 @@ import { db } from "~/server/db";
 import { automation } from "~/server/db/schemas/automation";
 import { workstation } from "~/server/db/schemas/workstation";
 import { eq, and } from "drizzle-orm";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { auth } from "~/lib/auth";
 
 export async function GET(
@@ -26,21 +25,12 @@ export async function GET(
       { status: 404 },
     );
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch (error) {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedAutomationId = decodeId(automationId, secret);
 
   const workstationRecord = (
     await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
   if (!workstationRecord || workstationRecord.userId !== session.user.id)
@@ -51,8 +41,8 @@ export async function GET(
     .from(automation)
     .where(
       and(
-        eq(automation.id, decodedAutomationId),
-        eq(automation.workstationId, decodedWorkstationId),
+        eq(automation.id, automationId),
+        eq(automation.workstationId, workstationId),
       ),
     )
     .limit(1);

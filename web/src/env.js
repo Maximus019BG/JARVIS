@@ -42,7 +42,6 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: z.string().min(1),
     GOOGLE_CLIENT_SECRET: z.string().min(1),
     RESEND_API_KEY: z.string().min(1),
-    ENCRYPTION_SECRET: z.string().min(8).max(256),
     AUTOMATION_WEBHOOK_SECRET: z.string().min(8),
   },
 
@@ -75,7 +74,6 @@ export const env = createEnv({
       process.env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
-    ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
     AUTOMATION_WEBHOOK_SECRET: process.env.AUTOMATION_WEBHOOK_SECRET,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },

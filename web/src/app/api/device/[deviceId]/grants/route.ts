@@ -3,7 +3,6 @@ import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { device } from "~/server/db/schemas/device";
@@ -34,13 +33,6 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
   const target = (await db.select().from(device).where(eq(device.id, deviceId)).limit(1))[0];
   if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -51,7 +43,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const requested = [...new Set(body.blueprintIds.map((id) => decodeId(id, secret)))];
+  const requested = [...new Set(body.blueprintIds.map((id) => id))];
   if (requested.length > 0) {
     const found = await db
       .select({ id: blueprint.id })

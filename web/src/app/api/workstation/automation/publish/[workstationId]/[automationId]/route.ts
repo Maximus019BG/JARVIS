@@ -3,7 +3,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { editorGraphToDefinition } from "~/lib/automations/definition";
 import { automation } from "~/server/db/schemas/automation";
@@ -24,21 +23,12 @@ export async function POST(
   if (!session?.user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedAutomationId = decodeId(automationId, secret);
 
   const workstationRecord = (
     await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
   if (!workstationRecord || workstationRecord.userId !== session.user.id)
@@ -53,8 +43,8 @@ export async function POST(
       .from(automation)
       .where(
         and(
-          eq(automation.id, decodedAutomationId),
-          eq(automation.workstationId, decodedWorkstationId),
+          eq(automation.id, automationId),
+          eq(automation.workstationId, workstationId),
         ),
       )
       .limit(1)
@@ -67,7 +57,7 @@ export async function POST(
     await db
       .select()
       .from(automationVersion)
-      .where(eq(automationVersion.automationId, decodedAutomationId))
+      .where(eq(automationVersion.automationId, automationId))
       .orderBy(desc(automationVersion.version))
       .limit(1)
   )[0];
@@ -90,7 +80,7 @@ export async function POST(
     // Create version 1
     await db.insert(automationVersion).values({
       id: crypto.randomUUID(),
-      automationId: decodedAutomationId,
+      automationId: automationId,
       version: 1,
       editorGraph: legacyGraph,
       definition: legacyDefinitionResult.definition,
@@ -133,8 +123,8 @@ export async function POST(
     })
     .where(
       and(
-        eq(automation.id, decodedAutomationId),
-        eq(automation.workstationId, decodedWorkstationId),
+        eq(automation.id, automationId),
+        eq(automation.workstationId, workstationId),
       ),
     );
 
