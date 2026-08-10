@@ -202,6 +202,19 @@ export const ConfigSchema = z
      * edit a file you may have committed.
      */
     persistGrants: z.boolean().default(false),
+    /**
+     * Mirror permission prompts to the paired cloud so they can be answered from a phone
+     * or the web app. Off by default, and not merely a preference: a prompt's detail
+     * carries the command about to run and unified diffs of private files, so turning
+     * this on sends that off the machine.
+     */
+    remoteApproval: z.boolean().default(false),
+    /**
+     * Upload session transcripts to the paired cloud so they can be read in the browser.
+     * Off by default: a transcript holds verbatim file contents, commands and tool output
+     * from whatever you pointed the agent at, and pairing was consent to sync blueprints.
+     */
+    syncSessions: z.boolean().default(false),
   })
   .strict()
 

@@ -5,8 +5,9 @@ export async function sendPushNotification(
   title: string,
   body: string,
 ): Promise<void> {
-  // Build the request body
-  if(typeof(expoPushToken) === null){
+  // Was `typeof(expoPushToken) === null`, which compares a string to null and is always
+  // false — so a null token used to reach Expo.
+  if (!expoPushToken) {
     throw new Error("no token found");
   }
   const reqBody = {

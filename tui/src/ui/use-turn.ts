@@ -4,6 +4,7 @@ import { run, type Usage } from "../agent/agent.ts"
 import { attach } from "../agent/attach.ts"
 import { compactSession, generateTitle, isOverflow, NothingToCompact } from "../agent/compact.ts"
 import { providerOf, record } from "../agent/metrics.ts"
+import { remoteAnswer } from "../agent/remote-approval.ts"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -125,19 +126,38 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
     setItems((current) => [...current, { kind: "note", text, level }])
   }, [])
 
-  /** Resolves a promise into the on-screen prompt. Shared by the gate and the cost guard. */
+  /**
+   * Resolves a promise into the on-screen prompt. Shared by the gate and the cost guard.
+   *
+   * With `remoteApproval` on, the same request also goes to the paired cloud and whichever
+   * side answers first wins: a local answer aborts the poll (which cancels the remote row),
+   * a remote answer takes the dialog down. `return local` on the giving-up branch is what
+   * keeps the loser harmless — the race simply carries on waiting for the terminal.
+   */
   const ask = useCallback(
-    (request: PermissionRequest) =>
-      new Promise<PermissionAnswer>((resolve) =>
+    (request: PermissionRequest) => {
+      const controller = new AbortController()
+      const local = new Promise<PermissionAnswer>((resolve) =>
         setPermission({
           request,
           answer: (answer) => {
             setPermission(null)
+            controller.abort()
             resolve(answer)
           },
         }),
-      ),
-    [],
+      )
+      if (!config.remoteApproval) return local
+      return Promise.race([
+        local,
+        remoteAnswer(request, controller.signal, note).then((answer) => {
+          if (!answer) return local
+          setPermission(null)
+          return answer
+        }),
+      ])
+    },
+    [config.remoteApproval, note],
   )
 
   const gate = useMemo(
@@ -262,6 +282,8 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
             output: result.usage.output,
             cost: result.usage.cost,
             error: result.error,
+            session: active.id,
+            agent: options.agent ?? agent,
           })
           spent.current += result.usage.cost
           setTotal((current) => ({
@@ -306,6 +328,8 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
               output: 0,
               cost: 0,
               error: message,
+              session: active.id,
+              agent: options.agent ?? agent,
             })
           }
         } finally {

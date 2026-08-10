@@ -12,6 +12,7 @@ const HELP = `jarvis — terminal coding agent
 usage:
   jarvis                       start the interactive TUI
   jarvis run <prompt...>       run one prompt headlessly and print the result
+  jarvis work [--root <dir>]   run automation agent jobs from the cloud in this directory
   jarvis init                  scaffold a .jarvis directory in this project
   jarvis models                list configured models
   jarvis config                show config files, agents, tools, skills and plugins
@@ -180,6 +181,13 @@ async function main() {
         session: flags.session,
         resume: flags.continue,
       })
+      return
+    }
+    case "work": {
+      const { work } = await import("./cli/work.ts")
+      const index = flags.rest.indexOf("--root")
+      const root = flags.rest.find((arg) => arg.startsWith("--root="))?.split("=")[1] ?? (index >= 0 ? flags.rest[index + 1] : undefined)
+      await work({ config, root })
       return
     }
     case undefined: {

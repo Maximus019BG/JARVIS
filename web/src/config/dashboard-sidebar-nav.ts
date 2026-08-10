@@ -2,6 +2,7 @@ import { Settings } from "~/components/animate-ui/icons/settings";
 import { ChartColumn } from "~/components/animate-ui/icons/chart-column";
 import { GalleryVerticalEnd } from "~/components/animate-ui/icons/gallery-horizontal-end";
 import { Fingerprint } from "~/components/animate-ui/icons/fingerprint";
+import { Hammer } from "~/components/animate-ui/icons/hammer";
 
 export const dashboardSidebarNav = [
   {
@@ -18,6 +19,14 @@ export const dashboardSidebarNav = [
     href: "/app/blueprints",
     isActive: (href: string) => {
       return href.startsWith("/app/blueprints");
+    },
+  },
+  {
+    title: "Sessions",
+    icon: Hammer,
+    href: "/app/sessions",
+    isActive: (href: string) => {
+      return href.startsWith("/app/sessions");
     },
   },
   {

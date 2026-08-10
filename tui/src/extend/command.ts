@@ -28,6 +28,7 @@ export const BUILTIN_COMMANDS: Command[] = [
     description: "View, add, change or delete providers — /provider stats for usage",
     kind: "builtin",
   },
+  { name: "stats", description: "Spend and tokens by model, agent and session — /stats <days>", kind: "builtin" },
   { name: "tutorial", description: "Show what everything on screen does", kind: "builtin" },
   { name: "extensions", description: "Show loaded custom tools, skills and plugins", kind: "builtin" },
   { name: "exit", description: "Quit jarvis", kind: "builtin" },

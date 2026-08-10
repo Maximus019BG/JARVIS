@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { bar, rollup, type MetricRecord } from "../src/agent/metrics.ts"
+import { bar, groupBy, rollup, type MetricRecord } from "../src/agent/metrics.ts"
 
 /** Local midnight `offset` days before `now`, plus `hours` — records land on a known day. */
 function at(now: number, offset: number, hours = 12): number {
@@ -123,5 +123,48 @@ describe("bar", () => {
   test("a remainder becomes a partial block rather than being dropped", () => {
     expect(bar(3, 8, 8)).toBe("███")
     expect(bar(7, 16, 8)).toBe("███▌")
+  })
+})
+
+describe("groupBy", () => {
+  const now = new Date(2026, 6, 31, 15, 0, 0).getTime()
+  const records: MetricRecord[] = [
+    ok({ at: at(now, 0), provider: "anthropic", model: "opus", cost: 1, session: "ses_a", agent: "build" }),
+    ok({ at: at(now, 0), provider: "anthropic", model: "opus", cost: 2, session: "ses_b", agent: "plan" }),
+    ok({ at: at(now, 1), provider: "openai", model: "gpt", cost: 0.5, session: "ses_a", agent: "build" }),
+    // A hard failure: zero tokens, but it still counts as a turn against its agent.
+    ok({ at: at(now, 1), provider: "openai", model: "gpt", cost: 0, input: 0, output: 0, error: "boom", session: "ses_a", agent: "build" }),
+    // Predates the session/agent fields entirely — must not invent a bucket.
+    ok({ at: at(now, 2), provider: "openai", model: "gpt", cost: 4 }),
+  ]
+
+  test("folds by model, dearest first", () => {
+    const groups = groupBy(records, (entry) => entry.model)
+    expect(groups.map((group) => group.key)).toEqual(["gpt", "opus"])
+    expect(groups[0]!.cost).toBeCloseTo(4.5)
+    expect(groups[0]!.turns).toBe(3)
+    expect(groups[0]!.failures).toBe(1)
+  })
+
+  test("folds by agent and sums tokens", () => {
+    const groups = groupBy(records, (entry) => entry.agent)
+    // plan's single $2 turn outranks build's three turns totalling $1.50.
+    expect(groups.map((group) => group.key)).toEqual(["plan", "build"])
+    const build = groups[1]!
+    expect(build.cost).toBeCloseTo(1.5)
+    // Three build turns, one of which reported no tokens.
+    expect(build.input).toBe(200)
+    expect(build.output).toBe(100)
+  })
+
+  test("drops records with no key instead of bucketing them together", () => {
+    const bySession = groupBy(records, (entry) => entry.session)
+    expect(bySession.map((group) => group.key)).toEqual(["ses_b", "ses_a"])
+    // The $4 legacy row is absent here, so it cannot masquerade as the top session.
+    expect(bySession.reduce((sum, group) => sum + group.cost, 0)).toBeCloseTo(3.5)
+  })
+
+  test("is empty for no records", () => {
+    expect(groupBy([], (entry) => entry.model)).toEqual([])
   })
 })

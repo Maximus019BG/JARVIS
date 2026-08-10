@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useSearchParams } from "next/navigation";
+import { ApprovalsCard } from "~/components/approvals/approvals-card";
 import { DevicesCard } from "~/components/devices/devices-card";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { useActiveWorkstation } from "~/lib/workstation-hooks";
@@ -53,6 +54,10 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <ApprovalsCard />
       </div>
 
       <div className="mt-4">

@@ -91,6 +91,15 @@ function FieldEditor({
           placeholder={field.placeholder ?? "{}"}
           onChange={(e) => onChange(safeJsonParse(e.target.value))}
         />
+      ) : field.type === "text" ? (
+        // Multi-line but never JSON-parsed: a prompt of "42" has to stay the string "42",
+        // and `json` would coerce it to a number and fail the schema at publish.
+        <Textarea
+          value={displayValue}
+          rows={6}
+          placeholder={field.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
       ) : (
         <Input
           value={displayValue}

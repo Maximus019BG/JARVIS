@@ -18,6 +18,8 @@ export type HeadlessOptions = {
   /** Continue the most recent session in `cwd`, as `--continue`. */
   resume?: boolean
   cwd?: string
+  /** Aborts the run from outside — a worker's per-job timeout, say. */
+  abort?: AbortSignal
 }
 
 /** Renders agent events as plain lines for non-interactive use and piping. */
@@ -59,6 +61,8 @@ export async function runHeadless(options: HeadlessOptions) {
   const controller = new AbortController()
   const onSigint = () => controller.abort()
   process.on("SIGINT", onSigint)
+  // Either an interrupt at the terminal or the caller's own signal ends the run.
+  const signal = options.abort ? AbortSignal.any([controller.signal, options.abort]) : controller.signal
   try {
     // Reads `session.messages` on each call, so the retry below sends the compacted history.
     const attempt = () =>
@@ -72,7 +76,7 @@ export async function runHeadless(options: HeadlessOptions) {
         extraTools: mcp.tools,
         extensions,
         sessionID: session.id,
-        abort: controller.signal,
+        abort: signal,
         onEvent: (event) => print(event),
       })
 
@@ -82,7 +86,7 @@ export async function runHeadless(options: HeadlessOptions) {
     } catch (error) {
       // Unattended runs go many steps deep and are the likeliest to fill the window, with
       // nobody watching to type /compact.
-      if (controller.signal.aborted || !isOverflow(error)) throw error
+      if (signal.aborted || !isOverflow(error)) throw error
       process.stderr.write("context window exceeded — compacting and retrying\n")
       const { dropped } = await compactSession(options.config, session)
       process.stderr.write(`compacted ${dropped} messages\n`)
@@ -92,6 +96,9 @@ export async function runHeadless(options: HeadlessOptions) {
     process.stdout.write("\n")
     const { input, output, cost } = result.usage
     process.stderr.write(`\n${input} in / ${output} out${cost > 0 ? ` / $${cost.toFixed(4)}` : ""}\n`)
+    // Returned rather than discarded so an in-process caller — `jarvis work` — can report
+    // the outcome without parsing stdout, which mixes text and tool traces.
+    return result
   } finally {
     process.off("SIGINT", onSigint)
     await mcp.close()

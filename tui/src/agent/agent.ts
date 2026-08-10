@@ -6,6 +6,7 @@ import { explainAuth } from "../config/provider-status.ts"
 import { NO_EXTENSIONS, type Extensions } from "../extend/extensions.ts"
 import { PermissionDenied, type PermissionGate } from "../permission.ts"
 import { fire, wrapTools } from "../extend/plugin.ts"
+import { providerOf, record } from "./metrics.ts"
 import { systemPrompt } from "./prompt.ts"
 import { defaultModelID, resolveModel, type ResolvedModel } from "./provider.ts"
 import { customTools } from "../extend/custom-tools.ts"
@@ -125,6 +126,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const spawn =
     depth < MAX_DEPTH
       ? async (name: string, prompt: string) => {
+          const at = Date.now()
           const result = await run({
             ...options,
             agent: name,
@@ -134,6 +136,21 @@ export async function run(options: RunOptions): Promise<RunResult> {
             read,
             depth: depth + 1,
             onEvent: (event) => onEvent({ type: "sub", agent: name, event }),
+          })
+          // The parent's usage accumulator only ever sees its own streamText steps, so
+          // without this a subagent's tokens are spent and invisible — missing from the
+          // status line and from every total.
+          record({
+            at,
+            ms: Date.now() - at,
+            provider: providerOf(result.model),
+            model: result.model,
+            input: result.usage.input,
+            output: result.usage.output,
+            cost: result.usage.cost,
+            error: result.error,
+            session: options.sessionID,
+            agent: name,
           })
           return result.text || "(the subagent returned no output)"
         }

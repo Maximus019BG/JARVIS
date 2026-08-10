@@ -7,6 +7,7 @@ import { startMcp } from "../extend/mcp.ts"
 import { configDir } from "../config/paths.ts"
 import { listModels } from "../agent/provider.ts"
 import { openSession } from "../agent/session.ts"
+import { pushSessions } from "../agent/session-sync.ts"
 import { loadTheme } from "../config/theme.ts"
 import { killBackground } from "../tools/background.ts"
 import { App } from "./app.tsx"
@@ -25,6 +26,14 @@ export async function startTui(options: StartOptions) {
   const cwd = options.cwd ?? process.cwd()
   const session = openSession(cwd, { id: options.session, resume: options.resume })
   const [mcp, extensions] = await Promise.all([startMcp(options.config), loadExtensions(options.config, cwd)])
+
+  // Fire-and-forget, and on startup rather than exit: ctrl-c twice never runs a clean
+  // shutdown, so an exit hook would be the one path that drops the session it was meant to
+  // save. Every finished session is therefore at most one launch behind. Skips the live one,
+  // which is still growing. No-op unless `syncSessions` is on.
+  void pushSessions(options.config, { skip: session.id }).catch(() => {
+    // A failed mirror must never delay or break starting up.
+  })
 
   const notes = [...extensions.errors, ...mcp.status.filter((s) => s.error).map((s) => `mcp ${s.server}: ${s.error}`)]
   // A fresh install has no providers yet. Say so in the transcript rather than

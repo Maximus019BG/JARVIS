@@ -20,6 +20,13 @@ export type MetricRecord = {
   cost: number
   /** Absent on success. Present means the turn ended in a provider or agent failure. */
   error?: string
+  /**
+   * Session the turn belonged to. Optional because every line written before this field
+   * existed still has to parse — an old metrics file is history, not a migration.
+   */
+  session?: string
+  /** Agent that ran the turn, subagents included. Optional for the same reason. */
+  agent?: string
 }
 
 const file = join(dataDir, "metrics.jsonl")
@@ -32,6 +39,10 @@ const file = join(dataDir, "metrics.jsonl")
  * `rollup` only ever looks at a recent window. Add rotation if a file crosses ~100MB.
  */
 export function record(entry: MetricRecord): void {
+  // The path comes from the ambient data dir, so anything exercising a code path that
+  // records — an agent test spawning a subagent, say — would otherwise append junk turns
+  // to the real history. Guarded here rather than in each test: one gate, every caller.
+  if (process.env.NODE_ENV === "test") return
   try {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
     appendFileSync(file, `${JSON.stringify(entry)}\n`)
@@ -167,6 +178,36 @@ export function rollup(records: MetricRecord[], days = 14, now = Date.now()): Pr
     })
   }
   return rolls.sort((a, b) => b.lastAt - a.lastAt)
+}
+
+export type Group = {
+  key: string
+  turns: number
+  failures: number
+  input: number
+  output: number
+  cost: number
+}
+
+/**
+ * Folds records by whatever `keyOf` returns, dearest first. Records with no key are
+ * dropped rather than bucketed under a placeholder: lines predating `session`/`agent`
+ * would otherwise pile into one meaningless row that looks like a real biggest spender.
+ */
+export function groupBy(records: MetricRecord[], keyOf: (entry: MetricRecord) => string | undefined): Group[] {
+  const groups = new Map<string, Group>()
+  for (const entry of records) {
+    const key = keyOf(entry)
+    if (!key) continue
+    const group = groups.get(key) ?? { key, turns: 0, failures: 0, input: 0, output: 0, cost: 0 }
+    group.turns += 1
+    if (entry.error) group.failures += 1
+    group.input += entry.input
+    group.output += entry.output
+    group.cost += entry.cost
+    groups.set(key, group)
+  }
+  return [...groups.values()].sort((a, b) => b.cost - a.cost || b.turns - a.turns)
 }
 
 const EIGHTHS = [..."▏▎▍▌▋▊▉"]

@@ -22,6 +22,8 @@ import * as syncLog from "~/server/db/schemas/sync_log";
 import * as idempotencyKey from "~/server/db/schemas/idempotency_key";
 import * as scriptFile from "~/server/db/schemas/script_file";
 import * as blueprintVersion from "~/server/db/schemas/blueprint_version";
+import * as approval from "~/server/db/schemas/approval";
+import * as agentSession from "~/server/db/schemas/agent_session";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -52,6 +54,8 @@ export const schema = {
   ...idempotencyKey,
   ...scriptFile,
   ...blueprintVersion,
+  ...approval,
+  ...agentSession,
 };
 
 export const db = drizzle(conn, {

@@ -3,6 +3,7 @@ import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
 import { panelBody, type PanelContent } from "./components/panel.tsx"
 import { providerCommand } from "./provider-command.ts"
+import { statsCommand } from "./stats-command.ts"
 import { tutorialContent } from "./tutorial.ts"
 import { expand, type Command } from "../extend/command.ts"
 import { summary, type Extensions } from "../extend/extensions.ts"
@@ -121,6 +122,8 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return openPanel(providerCommand(args, { config, cwd, width: panelBody(width) }))
     case "blueprint":
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
+    case "stats":
+      return openPanel(statsCommand(args, { width: panelBody(width) }))
     case "tutorial":
       return openPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     case "extensions":
