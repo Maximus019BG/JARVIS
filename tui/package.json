@@ -15,6 +15,7 @@
     "compile": "bun build --compile --outfile dist/jarvis src/index.tsx && rm -f .*.bun-build"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "^4.0.7",
     "@types/bun": "latest",
     "@types/diff": "^8.0.0",
     "@types/react": "^19.2.17"
@@ -24,6 +25,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@opentui/core": "^0.4.5",
     "@opentui/react": "^0.4.5",
     "ai": "^7.0.42",
     "diff": "^9.0.0",
