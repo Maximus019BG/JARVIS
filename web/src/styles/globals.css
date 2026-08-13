@@ -134,51 +134,61 @@
   --bp-accent-muted: oklch(0.5506 0.1038 174.82 / 14%);
 }
 
-/* Dark theme: cyanotype — pale cyan lines on deep navy. */
+/*
+ * Dark theme: neutral graphite — greys on near-black, with the teal accent doing the
+ * colour work.
+ *
+ * Every surface, text and rule token is chroma 0, i.e. a true grey. The lightness values
+ * are carried over unchanged from the previous navy palette, so contrast ratios and the
+ * relative ordering of the surfaces are exactly what they were; only the hue is gone.
+ * Semantic colour is deliberately left alone: --destructive, the teal --bp-accent family
+ * and the teal chart series are what the eye is supposed to pick out, and they only read
+ * as accents against a neutral ground.
+ */
 .dark {
-  --background: oklch(0.185 0.038 254);
-  --foreground: oklch(0.935 0.028 210);
-  --card: oklch(0.225 0.04 254);
-  --card-foreground: oklch(0.935 0.028 210);
-  --popover: oklch(0.215 0.04 254);
-  --popover-foreground: oklch(0.935 0.028 210);
-  --primary: oklch(0.905 0.01 210);
-  --primary-foreground: oklch(0.205 0.038 254);
-  --secondary: oklch(0.285 0.04 254);
-  --secondary-foreground: oklch(0.935 0.028 210);
-  --muted: oklch(0.285 0.04 254);
-  --muted-foreground: oklch(0.715 0.03 215);
-  --accent: oklch(0.285 0.04 254);
-  --accent-foreground: oklch(0.935 0.028 210);
+  --background: oklch(0.185 0 0);
+  --foreground: oklch(0.935 0 0);
+  --card: oklch(0.225 0 0);
+  --card-foreground: oklch(0.935 0 0);
+  --popover: oklch(0.215 0 0);
+  --popover-foreground: oklch(0.935 0 0);
+  --primary: oklch(0.905 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.285 0 0);
+  --secondary-foreground: oklch(0.935 0 0);
+  --muted: oklch(0.285 0 0);
+  --muted-foreground: oklch(0.715 0 0);
+  --accent: oklch(0.285 0 0);
+  --accent-foreground: oklch(0.935 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.7 0.055 215 / 30%);
-  --input: oklch(0.7 0.055 215 / 24%);
-  --ring: oklch(0.72 0.085 210);
+  --border: oklch(0.7 0 0 / 30%);
+  --input: oklch(0.7 0 0 / 24%);
+  --ring: oklch(0.72 0 0);
 
-  --chart-1: oklch(0.905 0.01 210);
+  --chart-1: oklch(0.905 0 0);
   --chart-2: oklch(0.685 0.115 178);
-  --chart-3: oklch(0.715 0.03 215);
+  --chart-3: oklch(0.715 0 0);
   --chart-4: oklch(0.55 0.09 180);
-  --chart-5: oklch(0.5 0.04 215);
+  --chart-5: oklch(0.5 0 0);
 
-  --sidebar: oklch(0.205 0.04 254);
-  --sidebar-foreground: oklch(0.935 0.028 210);
-  --sidebar-primary: oklch(0.905 0.01 210);
-  --sidebar-primary-foreground: oklch(0.205 0.038 254);
-  --sidebar-accent: oklch(0.285 0.04 254);
-  --sidebar-accent-foreground: oklch(0.935 0.028 210);
-  --sidebar-border: oklch(0.7 0.055 215 / 30%);
-  --sidebar-ring: oklch(0.72 0.085 210);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.935 0 0);
+  --sidebar-primary: oklch(0.905 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.285 0 0);
+  --sidebar-accent-foreground: oklch(0.935 0 0);
+  --sidebar-border: oklch(0.7 0 0 / 30%);
+  --sidebar-ring: oklch(0.72 0 0);
 
-  --bp-grid-minor: oklch(0.8 0.07 212 / 7%);
-  --bp-grid-major: oklch(0.8 0.07 212 / 15%);
-  --bp-hatch-line: oklch(0.8 0.07 212 / 18%);
-  --bp-rule: oklch(0.82 0.06 212 / 45%);
-  --bp-tick: oklch(0.86 0.06 212 / 75%);
-  --bp-annotation: oklch(0.715 0.03 215);
+  --bp-grid-minor: oklch(0.8 0 0 / 7%);
+  --bp-grid-major: oklch(0.8 0 0 / 15%);
+  --bp-hatch-line: oklch(0.8 0 0 / 18%);
+  --bp-rule: oklch(0.82 0 0 / 45%);
+  --bp-tick: oklch(0.86 0 0 / 75%);
+  --bp-annotation: oklch(0.715 0 0);
   --bp-accent: oklch(0.685 0.115 178);
   --bp-accent-bright: oklch(0.82 0.13 178);
-  --bp-accent-foreground: oklch(0.16 0.035 254);
+  --bp-accent-foreground: oklch(0.16 0 0);
   --bp-accent-muted: oklch(0.685 0.115 178 / 18%);
 }
 

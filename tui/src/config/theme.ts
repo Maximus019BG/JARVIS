@@ -31,17 +31,26 @@ export type Theme = {
 }
 
 export const THEMES: Record<string, Theme> = {
+  /**
+   * Neutral graphite. Every surface, text and border token is a true grey — equal parts red,
+   * green and blue — so the only colour on screen is the colour that means something: the green
+   * accent, the diff pair, and the orange of inline code.
+   *
+   * Brightness is carried over from the previous blue-grey palette rather than re-picked, so the
+   * contrast ratios and the ordering of the surfaces (bg darker than panel darker than codeBg)
+   * are unchanged; only the hue is gone.
+   */
   jarvis: {
-    bg: "#0e1116",
-    panel: "#161b22",
-    fg: "#c9d1d9",
-    muted: "#6e7681",
-    hint: "#8b949e",
-    dim: "#57606a",
-    border: "#30363d",
+    bg: "#0d0d0d",
+    panel: "#1a1a1a",
+    fg: "#d4d4d4",
+    muted: "#757575",
+    hint: "#949494",
+    dim: "#5f5f5f",
+    border: "#333333",
     accent: "#46d892",
     user: "#7ee787",
-    assistant: "#c9d1d9",
+    assistant: "#d4d4d4",
     tool: "#8bd8b0",
     success: "#3fb950",
     error: "#f85149",
@@ -49,7 +58,7 @@ export const THEMES: Record<string, Theme> = {
     diffAdd: "#3fb950",
     diffRemove: "#f85149",
     code: "#ffa657",
-    codeBg: "#1c2128",
+    codeBg: "#1f1f1f",
     selection: "#145c3b",
   },
   light: {
