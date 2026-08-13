@@ -36,6 +36,15 @@ export function writeCredentials(credentials: Credentials, path = credentialsPat
   chmodSync(path, 0o600)
 }
 
+/** Whether this device is linked to a cloud. Never throws — a corrupt file is "not paired". */
+export function isPaired(path = credentialsPath): boolean {
+  try {
+    return readCredentials(path) !== undefined
+  } catch {
+    return false
+  }
+}
+
 export function requireCredentials(path = credentialsPath): Credentials {
   const found = readCredentials(path)
   if (!found) throw new BlueprintError("this device is not paired — run `jarvis pair` first")

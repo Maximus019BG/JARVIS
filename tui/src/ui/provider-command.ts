@@ -1,16 +1,27 @@
 import { bar, readRecords, rollup, type ProviderRoll } from "../agent/metrics.ts"
+import type { TestOutcome } from "../agent/provider-test.ts"
 import { defaultModelID, forgetProvider, parseModelID } from "../agent/provider.ts"
 import type { Config } from "../config/config.ts"
 import type { Theme } from "../config/theme.ts"
 import { globalConfigFile, persistConfig } from "../config/persist.ts"
-import { envName, reachability, SECRET_KEY, type Reach } from "../config/provider-status.ts"
+import { describeGap, envName, reachability, SECRET_KEY, type Reach } from "../config/provider-status.ts"
+import { deleteSecret } from "../config/secrets.ts"
 import { clip } from "./components/dialog.tsx"
 import type { Line, PanelContent } from "./components/panel.tsx"
+import { DEFAULT_NPM } from "./provider-presets.ts"
 
-/** Enough of an SDK to talk to most OpenAI-shaped endpoints, which most custom ones are. */
-const DEFAULT_NPM = "@ai-sdk/openai-compatible"
-
-type Deps = { config: Config; cwd: string; width: number }
+type Deps = {
+  config: Config
+  cwd: string
+  width: number
+  /** Opens the interactive flow. Provided by the app; absent in tests, which use the text form. */
+  openSetup?: (presetID?: string) => void
+  /** Opens the provider list picker. */
+  openPicker?: () => void
+  /** Re-reads the config after a write, so a change applies to the running session. */
+  reload?: (changed?: string) => boolean
+  testProvider?: (id: string) => void
+}
 
 const blank: Line = { text: "" }
 const head = (text: string): Line => ({ text, tone: "accent" })
@@ -31,8 +42,9 @@ const short = (at: number) => `${new Date(at).toLocaleDateString("en-CA").slice(
 /** Whether the credential is usable right now, and the tone that says so at a glance. */
 function keyLine(reach: Reach | undefined): { text: string; tone: keyof Theme } {
   if (!reach || reach.state === "absent") return { text: "no key configured", tone: "dim" }
-  if (reach.state === "ok") return { text: `key ✓${reach.env ? ` ${reach.env}` : ""}`, tone: "success" }
-  return { text: `key ✗ ${reach.env ? `${reach.env} unset` : "configured but empty"}`, tone: "warning" }
+  const where = reach.env ?? (reach.secret ? "stored" : undefined)
+  if (reach.state === "ok") return { text: `key ✓${where ? ` ${where}` : ""}`, tone: "success" }
+  return { text: `key ✗ ${describeGap(reach)}`, tone: "warning" }
 }
 
 /** `name    key ✓ …   3 models   default` as two runs, so the key state keeps its color. */
@@ -49,7 +61,12 @@ function view({ config, cwd }: Deps, id?: string): PanelContent {
   const reach = reachability(config, cwd)
   const ids = id ? [id] : Object.keys(config.provider)
   if (ids.length === 0) {
-    return panel("providers", [body("none configured yet"), blank, head("/provider add <id>"), body("to start one")])
+    return panel("providers", [
+      body("none configured yet"),
+      blank,
+      head("/provider setup"),
+      body("  picks a provider, takes your key and checks it answers"),
+    ])
   }
 
   let defaultProvider: string | undefined
@@ -80,7 +97,7 @@ function view({ config, cwd }: Deps, id?: string): PanelContent {
       lines.push(
         body(`  npm     ${provider.npm}`),
         ...(provider.export ? [body(`  export  ${provider.export}`)] : []),
-        body(`  file    ${reach[each]?.file ?? "not found"}`),
+        body(`  file    ${reach[each]?.builtin ? "built in (paired device)" : (reach[each]?.file ?? "not found")}`),
         ...Object.entries(provider.options).map(([key, value]) =>
           SECRET_KEY.test(key)
             ? { text: `  ${key.padEnd(7)} ${keyLine(reach[each]).text}`, tone: keyLine(reach[each]).tone }
@@ -92,12 +109,17 @@ function view({ config, cwd }: Deps, id?: string): PanelContent {
     lines.push(blank)
   }
 
-  lines.push(head("add · change · delete · stats"), body("  /provider <action> — esc to close"))
+  lines.push(head("setup · test · change · delete · stats"), body("  /provider <action> — esc to close"))
   return panel(id ? `provider ${id}` : "providers", lines)
 }
 
-function add({ config }: Deps, id?: string, npm?: string): PanelContent {
-  if (!id) return fail("provider add", ["usage: /provider add <id> [npm-package]"])
+/**
+ * The scripted form of `add`, kept for `/provider add <id> <npm>` in a headless or muscle-memory
+ * context. The interactive flow is what `/provider` and `/provider setup` reach, and it is what
+ * this points at, because it can also take the key and verify the result.
+ */
+function add({ config, reload }: Deps, id?: string, npm?: string): PanelContent {
+  if (!id) return fail("provider add", ["usage: /provider add <id> [npm-package]", "", "or /provider setup"])
   if (config.provider[id]) {
     return fail(`provider ${id}`, [`"${id}" already exists`, "", `/provider change ${id} <path> <value>`])
   }
@@ -110,37 +132,27 @@ function add({ config }: Deps, id?: string, npm?: string): PanelContent {
     options: { apiKey: `{env:${env}}` },
     models: {},
   })
-
-  // The session's own config has to learn about it too, or `change` and `delete` cannot see
-  // what was just added and a second `add` would silently write over it.
-  config.provider[id] = {
-    npm: npm ?? DEFAULT_NPM,
-    // The expanded value, not the template: whatever is in the environment right now, which
-    // for a variable exported after launch is nothing. Storing the template would send the
-    // literal string `{env:…}` as a credential.
-    options: { apiKey: process.env[env] ?? "" },
-    models: {},
-    enabled: true,
-  }
+  // Re-read rather than patch the object in place. The old code wrote the *expanded* value into
+  // the live config, which for a variable exported after launch is the empty string — so a
+  // provider added mid-session was guaranteed to read as configured-but-empty.
+  reload?.(id)
 
   return panel(`provider ${id}`, [
     { text: `added "${id}"`, tone: "success" },
     body(`  ${file}`),
     blank,
-    head("1. put your key in the environment, not the config"),
-    body(`     export ${env}=...`),
+    head("1. give it a key"),
+    body(`     export ${env}=...   (or /provider setup, which stores one for you)`),
     blank,
     head("2. declare a model"),
     body(`     /provider change ${id} models.<model-id>.name <name>`),
     blank,
-    head("3. restart jarvis"),
-    // A process cannot see a variable exported after it started, so there is no version of
-    // this that works without a restart. Say so rather than let it look broken.
-    body("     a running process cannot see a newly exported variable"),
+    head("3. check it answers"),
+    body(`     /provider test ${id}`),
   ])
 }
 
-function change({ config }: Deps, id?: string, path?: string, rest: string[] = []): PanelContent {
+function change({ config, reload }: Deps, id?: string, path?: string, rest: string[] = []): PanelContent {
   if (!id || !path || rest.length === 0) {
     return fail("provider change", [
       "usage: /provider change <id> <path> <value>",
@@ -157,14 +169,16 @@ function change({ config }: Deps, id?: string, path?: string, rest: string[] = [
   const leaf = segments[segments.length - 1]!
   // The one hard rule: a secret may only ever be a reference. Enforced rather than
   // documented, so no future caller can quietly put a live key on disk.
-  if (SECRET_KEY.test(leaf) && !/^\{(env|file):[^}]+\}$/.test(raw)) {
+  if (SECRET_KEY.test(leaf) && !/^\{(env|file|secret):[^}]+\}$/.test(raw)) {
     return fail(`provider ${id}`, [
       `refusing to write a literal "${leaf}"`,
       "",
       "it would sit in plaintext in your config, and in this session's transcript.",
-      "point it at the environment instead:",
+      "point it at a reference instead:",
       "",
       `  /provider change ${id} ${path} {env:${envName(id)}}`,
+      "",
+      `or let ${"/provider setup"} store it for you, 0600, outside the config.`,
     ])
   }
 
@@ -177,32 +191,22 @@ function change({ config }: Deps, id?: string, path?: string, rest: string[] = [
 
   const file = persistConfig(globalConfigFile(), ["provider", id, ...segments], value)
 
-  // Apply to the running session too. ponytail: mutates the shared Config in place, which the
-  // model picker's useMemo will not notice until a restart — noted in the output rather than
-  // fixed by lifting Config into state, which is a large refactor for a stale list.
-  let target: Record<string, unknown> = config.provider[id] as unknown as Record<string, unknown>
-  for (const segment of segments.slice(0, -1)) {
-    const next = target[segment]
-    if (typeof next !== "object" || next === null) {
-      target = {}
-      break
-    }
-    target = next as Record<string, unknown>
-  }
-  target[leaf] = value
-  forgetProvider(id)
+  // Re-read the file rather than reach into the live Config and set the key. The old in-place
+  // walk could not reach the model picker's memo, and it also wrote unexpanded templates as
+  // literal values. `reload` drops the cached provider factory for us.
+  const applied = reload?.(id) ?? false
+  if (!applied) forgetProvider(id)
 
   return panel(`provider ${id}`, [
     { text: `set provider.${id}.${path}`, tone: "success" },
     body(`  ${file}`),
     blank,
-    body("applies from the next turn."),
-    body("the model picker's list refreshes on restart."),
+    body(applied ? "applied — no restart needed." : "written; it applies on the next start."),
     ...(leaf === "npm" ? [blank, body("the next turn may pause while the new package installs.")] : []),
   ])
 }
 
-function remove({ config, cwd }: Deps, id?: string, confirm?: string): PanelContent {
+function remove({ config, cwd, reload }: Deps, id?: string, confirm?: string): PanelContent {
   if (!id) return fail("provider delete", ["usage: /provider delete <id>"])
   const provider = config.provider[id]
   if (!provider) return fail("provider delete", [`no provider "${id}"`])
@@ -230,9 +234,19 @@ function remove({ config, cwd }: Deps, id?: string, confirm?: string): PanelCont
 
   // jsonc-parser treats undefined as removal, so this needs no special case.
   persistConfig(global, ["provider", id], undefined)
-  delete config.provider[id]
-  forgetProvider(id)
-  return panel(`provider ${id}`, [{ text: `deleted "${id}"`, tone: "success" }, body(`  ${global}`)])
+  // The key it referenced goes with it. Leaving an orphan behind is harmless but means a
+  // re-added provider silently inherits a credential the reader thought they had deleted.
+  const stored = reachability(config, cwd)[id]?.secret
+  if (stored) deleteSecret(stored)
+  if (!reload?.(id)) {
+    delete config.provider[id]
+    forgetProvider(id)
+  }
+  return panel(`provider ${id}`, [
+    { text: `deleted "${id}"`, tone: "success" },
+    body(`  ${global}`),
+    ...(stored ? [body(`  and its stored key`)] : []),
+  ])
 }
 
 function statsLines(roll: ProviderRoll, reach: Reach | undefined, width: number): Line[] {
@@ -302,13 +316,51 @@ function stats({ config, cwd, width }: Deps, args: string[]): PanelContent {
   return panel("provider stats", lines)
 }
 
+/** The result of a connection test, as panel content. Shared by `/provider test` and the flow. */
+export function testPanel(id: string, outcome: TestOutcome): PanelContent {
+  if (outcome.ok) {
+    return panel(`provider ${id}`, [
+      { text: `${id} answered`, tone: "success" },
+      body(`  ${outcome.modelID} in ${outcome.ms}ms`),
+    ])
+  }
+  return panel(`provider ${id}`, [
+    { text: `${id} did not answer — ${outcome.stage}`, tone: "error" },
+    ...(outcome.hint ? [body(`  ${outcome.hint}`)] : []),
+    blank,
+    ...outcome.message.split("\n").map((line) => body(`  ${line}`)),
+  ])
+}
+
+/** What to show while the round-trip is in flight, since an install can take a while. */
+export const testPendingPanel = (id: string, installing: boolean): PanelContent =>
+  panel(`provider ${id}`, [
+    { text: `testing ${id}…`, tone: "accent" },
+    body(installing ? "  installing the provider package first — this can take a while on a cold cache" : "  sending one token"),
+  ])
+
 /**
  * `/provider` — inspect, add, change, delete and account for providers without hand-editing
  * JSONC. Returns panel content rather than transcript text: the tables and charts are far
  * taller than a note reads comfortably, and a panel can color the key state.
  */
-export function providerCommand(args: string, deps: Deps): PanelContent {
+export function providerCommand(args: string, deps: Deps): PanelContent | null {
   const [sub = "view", ...rest] = args.split(/\s+/).filter(Boolean)
+
+  // Bare `/provider` is a question, not a request for a report. With nothing configured the
+  // answer is the flow; with providers already there it is a list you can act on. Either way it
+  // is not a wall of text that tells you to type another command.
+  if (sub === "setup" || (sub === "add" && !rest[0])) {
+    if (deps.openSetup) {
+      deps.openSetup(rest[0])
+      return null
+    }
+  }
+  if (sub === "view" && rest.length === 0 && deps.openSetup && deps.openPicker) {
+    if (Object.keys(deps.config.provider).length === 0) deps.openSetup()
+    else deps.openPicker()
+    return null
+  }
 
   switch (sub) {
     case "view":
@@ -316,6 +368,12 @@ export function providerCommand(args: string, deps: Deps): PanelContent {
       return view(deps, rest[0])
     case "add":
       return add(deps, rest[0], rest[1])
+    case "test":
+      if (!rest[0]) return fail("provider test", ["usage: /provider test <id>", "", "/provider to list them"])
+      if (!deps.config.provider[rest[0]]) return fail("provider test", [`no provider "${rest[0]}"`])
+      if (!deps.testProvider) return fail("provider test", ["not available here"])
+      deps.testProvider(rest[0])
+      return null
     case "change":
     case "set":
       return change(deps, rest[0], rest[1], rest.slice(2))
@@ -326,6 +384,6 @@ export function providerCommand(args: string, deps: Deps): PanelContent {
     case "viewstats":
       return stats(deps, rest)
     default:
-      return fail("provider", [`unknown action "${sub}"`, "", "view · add · change · delete · stats"])
+      return fail("provider", [`unknown action "${sub}"`, "", "setup · view · test · change · delete · stats"])
   }
 }

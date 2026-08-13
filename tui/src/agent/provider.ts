@@ -10,6 +10,21 @@ export class ProviderError extends Error {}
 /** Where provider npm packages named in the config get installed on demand. */
 const packageDir = join(dataDir, "packages")
 
+/**
+ * Whether talking to this provider will need an install first. Exported so a caller can say
+ * "installing @ai-sdk/… (first run, this can take a while)" *before* awaiting, rather than
+ * leaving the reader watching a silent spinner.
+ */
+export function needsInstall(npm: string): boolean {
+  try {
+    // Resolvable from jarvis itself: nothing to install.
+    Bun.resolveSync(npm, import.meta.dir)
+    return false
+  } catch {
+    return !existsSync(join(packageDir, "node_modules", ...npm.split("/")))
+  }
+}
+
 async function importPackage(npm: string): Promise<Record<string, unknown>> {
   try {
     return (await import(npm)) as Record<string, unknown>
@@ -24,10 +39,13 @@ async function importPackage(npm: string): Promise<Record<string, unknown>> {
   // wired up, so check for a real node_modules install instead of relying on it.
   if (!existsSync(join(packageDir, "node_modules", ...npm.split("/")))) {
     // AI SDK providers peer-depend on zod, so it has to be installed alongside them.
-    const install = Bun.spawnSync(["bun", "add", npm, "zod"], { cwd: packageDir, stdout: "pipe", stderr: "pipe" })
-    if (install.exitCode !== 0) {
-      throw new ProviderError(`failed to install ${npm}: ${install.stderr.toString().trim()}`)
-    }
+    //
+    // Spawned, not spawnSync: this takes tens of seconds on a cold cache, and spawnSync blocks
+    // the thread the TUI renders on — the whole app freezes, spinner included, with no way to
+    // tell whether it is working or hung.
+    const install = Bun.spawn(["bun", "add", npm, "zod"], { cwd: packageDir, stdout: "pipe", stderr: "pipe" })
+    const [exitCode, stderr] = await Promise.all([install.exited, new Response(install.stderr).text()])
+    if (exitCode !== 0) throw new ProviderError(`failed to install ${npm}: ${stderr.trim()}`)
   }
   return (await import(Bun.resolveSync(npm, packageDir))) as Record<string, unknown>
 }

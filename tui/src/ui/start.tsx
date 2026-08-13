@@ -4,7 +4,7 @@ import type { Config } from "../config/config.ts"
 import { loadExtensions } from "../extend/extensions.ts"
 import { loadKeymap } from "../config/keybinds.ts"
 import { startMcp } from "../extend/mcp.ts"
-import { configDir } from "../config/paths.ts"
+import { hostedGuidance } from "../agent/hosted.ts"
 import { listModels } from "../agent/provider.ts"
 import { openSession } from "../agent/session.ts"
 import { pushSessions } from "../agent/session-sync.ts"
@@ -36,17 +36,11 @@ export async function startTui(options: StartOptions) {
   })
 
   const notes = [...extensions.errors, ...mcp.status.filter((s) => s.error).map((s) => `mcp ${s.server}: ${s.error}`)]
-  // A fresh install has no providers yet. Say so in the transcript rather than
-  // refusing to start — the user needs the UI to read the instructions.
-  if (listModels(options.config).length === 0) {
-    notes.unshift(
-      [
-        "No models configured yet.",
-        `Create ${configDir}/jarvis.jsonc with a \`provider\` entry, then restart.`,
-        "See the README for an example, or run `jarvis config` to check what is loaded.",
-      ].join("\n"),
-    )
-  }
+  // A fresh install has no providers yet. Say so in the transcript rather than refusing to
+  // start — and the flow opens over the top of it, so this is the explanation behind the form
+  // rather than a set of instructions to go and carry out somewhere else.
+  const needsProvider = listModels(options.config).length === 0
+  if (needsProvider) notes.unshift(hostedGuidance(options.config) ?? "")
 
   // Ctrl-C is handled in the app so it can interrupt a running turn first.
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
@@ -69,6 +63,7 @@ export async function startTui(options: StartOptions) {
       keymap={loadKeymap(options.config.keybinds)}
       model={options.model}
       agent={options.agent}
+      autoSetup={needsProvider}
     />,
   )
 }

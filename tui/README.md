@@ -84,7 +84,11 @@ then its `.jarvis/jarvis.json`. The nearest file wins.
 Any string value can pull in a secret without hardcoding it:
 
 - `{env:ANTHROPIC_API_KEY}` — an environment variable, empty if unset
-- `{file:secrets/key.txt}` — file contents, trimmed, relative to the config file
+- `{secret:anthropic-api-key}` — a key you typed into the app, kept 0600 in
+  `~/.config/jarvis/secrets.json`; empty if unset
+- `{file:secrets/key.txt}` — file contents, trimmed, relative to the config file.
+  Unlike the other two this one is a hard error when the file is missing, so
+  prefer `{secret:…}` for keys you may move around.
 
 Run `bun run schema` to regenerate `jarvis.schema.json` for editor completion, and
 point `$schema` at it.
@@ -466,7 +470,7 @@ tools:
 ```
 src/
   index.tsx      CLI entry and argument parsing
-  config.ts      schema, merge, {env:}/{file:} expansion
+  config.ts      schema, merge, {env:}/{secret:}/{file:} expansion
   discover.ts    project root, .jarvis directories, plural/singular resolution
   provider.ts    dynamic @ai-sdk/* loading and model resolution
   agent.ts       the streaming tool loop

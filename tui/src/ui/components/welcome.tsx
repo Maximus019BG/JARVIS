@@ -20,6 +20,7 @@ export function Welcome({
   model,
   agent,
   empty,
+  needsProvider,
 }: {
   theme: Theme
   keymap: Keymap
@@ -29,6 +30,8 @@ export function Welcome({
   agent: string
   /** No messages yet, so there is room for the wordmark instead of a version string. */
   empty: boolean
+  /** No provider yet, so the one key that fixes that earns a place in a four-key list. */
+  needsProvider?: boolean
 }) {
   const { width: columns } = useTerminalDimensions()
   // `block` is 66 columns of JARVIS; `tiny` says the same thing in 20 when there is no room.
@@ -40,6 +43,9 @@ export function Welcome({
     // anyone reading this block is in. `shift+tab` still opens the searchable list.
     ["←→", "agent"],
     [describe(keymap.sessionPicker), "sessions"],
+    // Only while it is the thing standing between the reader and a working app. Once a provider
+    // exists this row is noise, and a five-key list reads as a menu rather than a hint.
+    ...(needsProvider ? [[describe(keymap.providerSetup), "add a provider"]] : []),
   ]
 
   return (

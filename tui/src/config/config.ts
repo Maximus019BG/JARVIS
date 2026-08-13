@@ -4,6 +4,7 @@ import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 import { z } from "zod"
 import { ancestors } from "./discover.ts"
 import { configDir, configNames } from "./paths.ts"
+import { readSecrets } from "./secrets.ts"
 
 export const PermissionSchema = z.enum(["ask", "allow", "deny"])
 
@@ -252,13 +253,21 @@ export function merge(base: unknown, override: unknown): unknown {
   return out
 }
 
-const SUBSTITUTION = /\{(env|file):([^}]+)\}/g
+const SUBSTITUTION = /\{(env|file|secret):([^}]+)\}/g
 
-/** Expands `{env:NAME}` and `{file:path}` inside every string in the tree. */
+/**
+ * Expands `{env:NAME}`, `{secret:name}` and `{file:path}` inside every string in the tree.
+ *
+ * `env` and `secret` resolve soft — an unset one becomes `""`, and `provider-status.ts` is what
+ * turns that back into a diagnosis. `file` throws, because a path someone typed and then moved
+ * is more likely a mistake than an intentional blank. Do not "fix" that asymmetry: making
+ * `secret` throw would mean a deleted secrets.json cannot be recovered from inside the app.
+ */
 export function substitute(value: unknown, dir: string): unknown {
   if (typeof value === "string") {
     return value.replace(SUBSTITUTION, (_, kind: string, arg: string) => {
       if (kind === "env") return process.env[arg] ?? ""
+      if (kind === "secret") return readSecrets()[arg] ?? ""
       const path = isAbsolute(arg) ? arg : join(dir, arg)
       if (!existsSync(path)) throw new ConfigError(`{file:${arg}} not found (resolved to ${path})`)
       return readFileSync(path, "utf8").trim()

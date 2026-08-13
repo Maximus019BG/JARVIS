@@ -43,6 +43,22 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string().min(1),
     RESEND_API_KEY: z.string().min(1),
     AUTOMATION_WEBHOOK_SECRET: z.string().min(8),
+
+    /**
+     * Master switch for /api/gateway/*. Off by default so a clone that has not configured any
+     * upstream answers 503 rather than misrouting a request. Every gateway var is optional:
+     * making one required would break every existing clone's boot.
+     *
+     * enum+transform rather than z.coerce.boolean(), because coerce("false") is `true`.
+     */
+    GATEWAY_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((val) => val === "true"),
+    /** Upstream credentials. Which upstream uses which is set in src/server/gateway/upstreams.ts. */
+    GATEWAY_KEY_A: z.string().min(8).optional(),
+    GATEWAY_KEY_B: z.string().min(8).optional(),
+    GATEWAY_KEY_C: z.string().min(8).optional(),
   },
 
   /**
@@ -75,6 +91,10 @@ export const env = createEnv({
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
     AUTOMATION_WEBHOOK_SECRET: process.env.AUTOMATION_WEBHOOK_SECRET,
+    GATEWAY_ENABLED: process.env.GATEWAY_ENABLED,
+    GATEWAY_KEY_A: process.env.GATEWAY_KEY_A,
+    GATEWAY_KEY_B: process.env.GATEWAY_KEY_B,
+    GATEWAY_KEY_C: process.env.GATEWAY_KEY_C,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

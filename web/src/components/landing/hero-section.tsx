@@ -48,26 +48,30 @@ export default function HeroSection() {
   }, [])
 
   return (
-    <section className="relative min-h-screen bg-[#0a0a0a] text-white flex items-center overflow-hidden">
+    <section className="dark relative flex min-h-screen items-center overflow-hidden bg-background text-foreground">
       <div className="absolute inset-0">
         <div
           className="absolute left-[20%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/5 to-transparent transition-opacity duration-500 delay-50"
           style={{ opacity: mounted ? 1 : 0 }}
         />
         <div
-          className="absolute left-[40%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/3 to-transparent transition-opacity duration-500 delay-100"
+          className="absolute left-[40%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent transition-opacity duration-500 delay-100"
           style={{ opacity: mounted ? 1 : 0 }}
         />
         <div
-          className="absolute right-[30%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/5 to-transparent transition-opacity duration-500 delay-150"
+          className="absolute right-[20%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/25 to-transparent transition-opacity duration-500 delay-150"
           style={{ opacity: mounted ? 1 : 0 }}
         />
         <div
-          className="absolute left-0 right-0 top-[30%] h-px bg-gradient-to-r from-transparent via-white/5 to-transparent transition-opacity duration-500 delay-75"
+          className="absolute right-[40%] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/15 to-transparent transition-opacity duration-500 delay-150"
           style={{ opacity: mounted ? 1 : 0 }}
         />
         <div
-          className="absolute left-0 right-0 top-[60%] h-px bg-gradient-to-r from-transparent via-white/3 to-transparent transition-opacity duration-500 delay-125"
+          className="absolute left-0 right-0 top-[30%] h-px bg-gradient-to-r from-transparent via-white/15 to-transparent transition-opacity duration-500 delay-75"
+          style={{ opacity: mounted ? 1 : 0 }}
+        />
+        <div
+          className="absolute left-0 right-0 top-[60%] h-px bg-gradient-to-r from-transparent via-white/10 to-transparent transition-opacity duration-500 delay-125"
           style={{ opacity: mounted ? 1 : 0 }}
         />
       </div>
@@ -75,7 +79,7 @@ export default function HeroSection() {
       <div
         className="absolute top-1/2 left-[20%] -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[120px] opacity-15 transition-all duration-800"
         style={{
-          background: "oklch(0.5506 0.1038 174.82)",
+          background: "var(--bp-accent)",
           transform: mounted ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.8)",
           opacity: mounted ? 0.15 : 0,
         }}
@@ -109,7 +113,7 @@ export default function HeroSection() {
             <span
               className="bg-clip-text text-transparent inline-block"
               style={{
-                backgroundImage: "linear-gradient(to right, oklch(0.5506 0.1038 174.82), oklch(0.7 0.14 174.82))",
+                backgroundImage: "linear-gradient(to right, var(--bp-accent-bright), var(--bp-accent)",
               }}
             >
               {displayedText}
@@ -142,12 +146,7 @@ export default function HeroSection() {
           <div className="flex flex-wrap gap-4 pt-4">
             <Button
               size="lg"
-              className="text-black font-semibold px-8 hover:opacity-90 transition-all duration-600 delay-450 hover:scale-105"
-              style={{
-                background: "oklch(0.5506 0.1038 174.82)",
-                opacity: displayedSubtext.length === fullSubtext.length && mounted ? 1 : 0,
-                transform: mounted ? "translateY(0)" : "translateY(20px)",
-              }}
+    
               onClick={()=>{window.location.href="/app"}}
             >
               Get Started
@@ -170,7 +169,7 @@ export default function HeroSection() {
 
       <div className="absolute right-[10%] top-1/2 -translate-y-1/2 w-[400px] h-[400px] opacity-30">
         <div
-          className="absolute top-0 right-0 w-32 h-32 rounded-full border border-white/10 transition-all duration-600 delay-250"
+          className="absolute top-0 right-0 w-32 h-32 rounded-full border border-white/45 transition-all duration-600 delay-250"
           style={{
             animation: mounted ? "float 8s ease-in-out infinite" : "none",
             opacity: mounted ? 1 : 0,
@@ -178,7 +177,7 @@ export default function HeroSection() {
           }}
         />
         <div
-          className="absolute bottom-0 right-20 w-24 h-24 rounded-full border border-white/5 transition-all duration-600 delay-350"
+          className="absolute bottom-0 right-20 w-24 h-24 rounded-full border border-white/25 transition-all duration-600 delay-350"
           style={{
             animation: mounted ? "float 6s ease-in-out infinite 1s" : "none",
             opacity: mounted ? 1 : 0,
@@ -188,7 +187,7 @@ export default function HeroSection() {
         <div
           className="absolute top-1/2 right-10 w-16 h-16 rounded-full border transition-all duration-600 delay-450"
           style={{
-            borderColor: "oklch(0.5506 0.1038 174.82 / 0.2)",
+            borderColor: "var(--bp-accent)",
             animation: mounted ? "float 10s ease-in-out infinite 2s" : "none",
             opacity: mounted ? 1 : 0,
             transform: mounted ? "scale(1)" : "scale(0.5)",

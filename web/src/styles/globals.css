@@ -4,15 +4,26 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular,
+    "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Drafted lines, not soft cards. Declared literally rather than derived from
+     --radius, because calc() on a zero radius can produce a negative value,
+     which is an invalid declaration. */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  /* --radius-full is deliberately left alone: avatars, status dots and the dev
+     breakpoint pill still opt into it explicitly. */
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -44,75 +55,435 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Blueprint layer, exposed so bg-bp-accent / border-bp-rule / text-bp-annotation compile. */
+  --color-bp-grid-minor: var(--bp-grid-minor);
+  --color-bp-grid-major: var(--bp-grid-major);
+  --color-bp-hatch: var(--bp-hatch-line);
+  --color-bp-rule: var(--bp-rule);
+  --color-bp-tick: var(--bp-tick);
+  --color-bp-annotation: var(--bp-annotation);
+  --color-bp-accent: var(--bp-accent);
+  --color-bp-accent-bright: var(--bp-accent-bright);
+  --color-bp-accent-foreground: var(--bp-accent-foreground);
+  --color-bp-accent-muted: var(--bp-accent-muted);
 }
 
+/* Light theme: white drafting paper, graphite ink. */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0rem;
+  --background: oklch(0.988 0.002 250);
+  --foreground: oklch(0.175 0.006 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.175 0.006 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.5506 0.1038 174.82);
+  --popover-foreground: oklch(0.175 0.006 250);
+  --primary: oklch(0.26 0 0);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
+  --secondary: oklch(0.965 0.002 250);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
+  --muted: oklch(0.965 0.002 250);
+  --muted-foreground: oklch(0.505 0.006 250);
+  --accent: oklch(0.965 0.002 250);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  /* Darkened from the stock 0.577: destructive doubles as body text in Alert,
+     and the stock value only just cleared AA on white before the hatch. */
+  --destructive: oklch(0.514 0.222 27.325);
+  /* Darkened from the stock 0.922: in a line-drawing language every hairline
+     has to actually read. This one value redraws every edge in the app. */
+  --border: oklch(0.78 0.008 250);
+  --input: oklch(0.78 0.008 250);
+  --ring: oklch(0.55 0.09 220);
+
+  --chart-1: oklch(0.26 0 0);
+  --chart-2: oklch(0.5506 0.1038 174.82);
+  --chart-3: oklch(0.55 0.006 250);
+  --chart-4: oklch(0.7 0.075 178);
+  --chart-5: oklch(0.75 0.004 250);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.175 0.006 250);
+  --sidebar-primary: oklch(0.26 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.965 0.002 250);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-border: oklch(0.78 0.008 250);
+  --sidebar-ring: oklch(0.55 0.09 220);
+
+  /* ---------------- blueprint layer ---------------- */
+  --bp-grid-minor: oklch(0.175 0.006 250 / 6%);
+  --bp-grid-major: oklch(0.175 0.006 250 / 12%);
+  --bp-grid-size: 8px;
+  --bp-grid-major-size: 64px;
+
+  --bp-hatch-line: oklch(0.175 0.006 250 / 14%);
+  --bp-hatch-gap: 6px;
+  --bp-hatch-angle: 135deg;
+
+  --bp-rule: oklch(0.175 0.006 250 / 38%);
+  --bp-tick: oklch(0.175 0.006 250 / 62%);
+  --bp-tick-len: 8px;
+  --bp-line: 1px;
+  --bp-notch: 0.625rem;
+
+  /* Dark enough that 10px uppercase labels still clear AA over a grid line. */
+  --bp-annotation: oklch(0.45 0.006 250);
+  --bp-accent: oklch(0.5506 0.1038 174.82);
+  --bp-accent-bright: oklch(0.7 0.14 174.82);
+  --bp-accent-foreground: oklch(0.985 0 0);
+  --bp-accent-muted: oklch(0.5506 0.1038 174.82 / 14%);
 }
 
+/* Dark theme: cyanotype — pale cyan lines on deep navy. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.5506 0.1038 174.82);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.185 0.038 254);
+  --foreground: oklch(0.935 0.028 210);
+  --card: oklch(0.225 0.04 254);
+  --card-foreground: oklch(0.935 0.028 210);
+  --popover: oklch(0.215 0.04 254);
+  --popover-foreground: oklch(0.935 0.028 210);
+  --primary: oklch(0.905 0.01 210);
+  --primary-foreground: oklch(0.205 0.038 254);
+  --secondary: oklch(0.285 0.04 254);
+  --secondary-foreground: oklch(0.935 0.028 210);
+  --muted: oklch(0.285 0.04 254);
+  --muted-foreground: oklch(0.715 0.03 215);
+  --accent: oklch(0.285 0.04 254);
+  --accent-foreground: oklch(0.935 0.028 210);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: oklch(0.7 0.055 215 / 30%);
+  --input: oklch(0.7 0.055 215 / 24%);
+  --ring: oklch(0.72 0.085 210);
+
+  --chart-1: oklch(0.905 0.01 210);
+  --chart-2: oklch(0.685 0.115 178);
+  --chart-3: oklch(0.715 0.03 215);
+  --chart-4: oklch(0.55 0.09 180);
+  --chart-5: oklch(0.5 0.04 215);
+
+  --sidebar: oklch(0.205 0.04 254);
+  --sidebar-foreground: oklch(0.935 0.028 210);
+  --sidebar-primary: oklch(0.905 0.01 210);
+  --sidebar-primary-foreground: oklch(0.205 0.038 254);
+  --sidebar-accent: oklch(0.285 0.04 254);
+  --sidebar-accent-foreground: oklch(0.935 0.028 210);
+  --sidebar-border: oklch(0.7 0.055 215 / 30%);
+  --sidebar-ring: oklch(0.72 0.085 210);
+
+  --bp-grid-minor: oklch(0.8 0.07 212 / 7%);
+  --bp-grid-major: oklch(0.8 0.07 212 / 15%);
+  --bp-hatch-line: oklch(0.8 0.07 212 / 18%);
+  --bp-rule: oklch(0.82 0.06 212 / 45%);
+  --bp-tick: oklch(0.86 0.06 212 / 75%);
+  --bp-annotation: oklch(0.715 0.03 215);
+  --bp-accent: oklch(0.685 0.115 178);
+  --bp-accent-bright: oklch(0.82 0.13 178);
+  --bp-accent-foreground: oklch(0.16 0.035 254);
+  --bp-accent-muted: oklch(0.685 0.115 178 / 18%);
+}
+
+/* =====================================================================
+   Blueprint utilities.
+
+   Declared with @utility (not @layer utilities) so variants like hover:,
+   focus:, dark: and data-[state=…]: actually compile against them.
+
+   Definition order matters where two of these set the same property:
+   bp-surface is defined before bp-notch so the notch's border reset wins.
+   ===================================================================== */
+
+/* ---------------- grid paper ---------------- */
+@utility bp-grid {
+  background-image:
+    linear-gradient(
+      to right,
+      var(--bp-grid-major) 0 var(--bp-line),
+      transparent var(--bp-line)
+    ),
+    linear-gradient(
+      to bottom,
+      var(--bp-grid-major) 0 var(--bp-line),
+      transparent var(--bp-line)
+    ),
+    linear-gradient(
+      to right,
+      var(--bp-grid-minor) 0 var(--bp-line),
+      transparent var(--bp-line)
+    ),
+    linear-gradient(
+      to bottom,
+      var(--bp-grid-minor) 0 var(--bp-line),
+      transparent var(--bp-line)
+    );
+  background-size:
+    var(--bp-grid-major-size) var(--bp-grid-major-size),
+    var(--bp-grid-major-size) var(--bp-grid-major-size),
+    var(--bp-grid-size) var(--bp-grid-size),
+    var(--bp-grid-size) var(--bp-grid-size);
+  background-position: var(--bp-grid-origin, 0 0);
+}
+
+/* Minor rules only — for surfaces that sit behind body copy. */
+@utility bp-grid-fine {
+  --bp-grid-major: transparent;
+}
+
+@utility bp-grid-fade {
+  mask-image: radial-gradient(
+    ellipse 90% 70% at 50% 0%,
+    #000 40%,
+    transparent 100%
+  );
+}
+
+/* ---------------- hatch ---------------- */
+@property --bp-hatch-line-color {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@keyframes bp-hatch-scroll {
+  to {
+    background-position: var(--bp-hatch-gap) 0;
+  }
+}
+
+/* The lines ink themselves in rather than popping. */
+@keyframes bp-hatch-ink-in {
+  from {
+    --bp-hatch-line-color: transparent;
+  }
+  to {
+    --bp-hatch-line-color: var(--bp-hatch-line);
+  }
+}
+
+@utility bp-hatch {
+  --bp-hatch-line-color: var(--bp-hatch-line);
+  background-image: repeating-linear-gradient(
+    var(--bp-hatch-angle),
+    var(--bp-hatch-line-color) 0 var(--bp-line),
+    transparent var(--bp-line) var(--bp-hatch-gap)
+  );
+  background-size: calc(var(--bp-hatch-gap) * 2) calc(var(--bp-hatch-gap) * 2);
+}
+
+@utility bp-hatch-animated {
+  --bp-hatch-line-color: var(--bp-hatch-line);
+  background-image: repeating-linear-gradient(
+    var(--bp-hatch-angle),
+    var(--bp-hatch-line-color) 0 var(--bp-line),
+    transparent var(--bp-line) var(--bp-hatch-gap)
+  );
+  background-size: calc(var(--bp-hatch-gap) * 2) calc(var(--bp-hatch-gap) * 2);
+  animation:
+    bp-hatch-scroll 0.9s linear infinite,
+    bp-hatch-ink-in 0.6s ease-out forwards;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: bp-hatch-ink-in 0.6s ease-out forwards;
+  }
+}
+
+/* ---------------- surface ---------------- */
+@utility bp-surface {
+  background-color: var(--card);
+  border: var(--bp-line) solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ---------------- corner ticks (uses ::after) ----------------
+   Do not apply to elements that already own ::after — resizable handles and
+   the sidebar rail/action hit-targets in particular. */
+@utility bp-ticks {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: calc(var(--bp-tick-inset, 0px) * -1);
+    pointer-events: none;
+    z-index: 2;
+    background-repeat: no-repeat;
+    background-image: linear-gradient(var(--bp-tick) 0 0),
+      linear-gradient(var(--bp-tick) 0 0), linear-gradient(var(--bp-tick) 0 0),
+      linear-gradient(var(--bp-tick) 0 0), linear-gradient(var(--bp-tick) 0 0),
+      linear-gradient(var(--bp-tick) 0 0), linear-gradient(var(--bp-tick) 0 0),
+      linear-gradient(var(--bp-tick) 0 0);
+    background-size:
+      var(--bp-tick-len) var(--bp-line),
+      var(--bp-line) var(--bp-tick-len),
+      var(--bp-tick-len) var(--bp-line),
+      var(--bp-line) var(--bp-tick-len),
+      var(--bp-tick-len) var(--bp-line),
+      var(--bp-line) var(--bp-tick-len),
+      var(--bp-tick-len) var(--bp-line),
+      var(--bp-line) var(--bp-tick-len);
+    background-position:
+      left top,
+      left top,
+      right top,
+      right top,
+      left bottom,
+      left bottom,
+      right bottom,
+      right bottom;
+  }
+}
+
+/* ---------------- notched corner (uses ::before) ----------------
+   clip-path clips outlines, focus rings and box-shadows, so this must never go
+   on a focusable control or on anything with overflowing children (Radix
+   arrows). Surfaces only. */
+@utility bp-notch {
+  --bp-notch-path: polygon(
+    var(--bp-notch) 0,
+    100% 0,
+    100% calc(100% - var(--bp-notch)),
+    calc(100% - var(--bp-notch)) 100%,
+    0 100%,
+    0 var(--bp-notch)
+  );
+  position: relative;
+  border-radius: 0;
+  clip-path: var(--bp-notch-path);
+
+  /* Redraws the outline along the clipped path, so the diagonals stay lined.
+     A notched element must therefore NOT also set a `border` utility — the real
+     border gets clipped at the corners and doubles up against this one. */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background: var(--border);
+    clip-path: var(--bp-notch-path);
+    padding: var(--bp-line);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+}
+
+/* ---------------- measurement rules ---------------- */
+@utility bp-dashed {
+  border: var(--bp-line) dashed var(--bp-rule);
+}
+@utility bp-dashed-t {
+  border-top: var(--bp-line) dashed var(--bp-rule);
+}
+@utility bp-dashed-b {
+  border-bottom: var(--bp-line) dashed var(--bp-rule);
+}
+@utility bp-dashed-l {
+  border-left: var(--bp-line) dashed var(--bp-rule);
+}
+@utility bp-dashed-r {
+  border-right: var(--bp-line) dashed var(--bp-rule);
+}
+
+/* Dimension line: hairline with perpendicular end caps. */
+@utility bp-dim-x {
+  height: var(--bp-tick-len);
+  background-repeat: no-repeat;
+  background-image: linear-gradient(var(--bp-rule) 0 0),
+    linear-gradient(var(--bp-tick) 0 0), linear-gradient(var(--bp-tick) 0 0);
+  background-size:
+    100% var(--bp-line),
+    var(--bp-line) 100%,
+    var(--bp-line) 100%;
+  background-position:
+    left center,
+    left center,
+    right center;
+}
+
+/* ---------------- registration marks ---------------- */
+@utility bp-crosshair {
+  --bp-cross: 12px;
+  display: block;
+  width: var(--bp-cross);
+  height: var(--bp-cross);
+  background-repeat: no-repeat;
+  background-image: linear-gradient(var(--bp-tick) 0 0),
+    linear-gradient(var(--bp-tick) 0 0);
+  background-size:
+    100% var(--bp-line),
+    var(--bp-line) 100%;
+  background-position: center, center;
+}
+
+@utility bp-registration {
+  --bp-cross: 14px;
+  display: block;
+  width: var(--bp-cross);
+  height: var(--bp-cross);
+  border: var(--bp-line) solid var(--bp-tick);
+  border-radius: 9999px;
+  background-repeat: no-repeat;
+  background-image: linear-gradient(var(--bp-tick) 0 0),
+    linear-gradient(var(--bp-tick) 0 0);
+  background-size:
+    160% var(--bp-line),
+    var(--bp-line) 160%;
+  background-position: center, center;
+}
+
+/* ---------------- annotation typography ---------------- */
+@utility bp-label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--bp-annotation);
+}
+
+@utility bp-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* reactflow ships its own stylesheet; pull the automation canvas onto the same
+   drafting vocabulary as everything else. */
+@layer components {
+  .react-flow__edge-path {
+    stroke: var(--bp-rule);
+    stroke-dasharray: 4 3;
+  }
+
+  .react-flow__node {
+    background-color: var(--card);
+    border: var(--bp-line) solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+    font-family: var(--font-mono);
+  }
+
+  .react-flow__handle {
+    border-radius: 0;
+    border: var(--bp-line) solid var(--border);
+    background: var(--foreground);
+  }
+
+  .react-flow__controls,
+  .react-flow__controls-button {
+    border-radius: 0;
+    border-color: var(--border);
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: none;
+  }
 }
 
 @layer base {
@@ -120,6 +491,8 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    @apply bp-grid;
+    background-attachment: fixed;
   }
 }

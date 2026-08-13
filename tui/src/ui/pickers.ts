@@ -2,12 +2,13 @@ import type { Agent } from "../agent/agent-def.ts"
 import { listModels } from "../agent/provider.ts"
 import { listSessions } from "../agent/session.ts"
 import type { Config } from "../config/config.ts"
+import { describeGap, reachability, type Reach } from "../config/provider-status.ts"
 import { listThemes } from "../config/theme.ts"
 import type { Command } from "../extend/command.ts"
 import type { Choice } from "./components/dialog.tsx"
 
 /** Everything the one list-picker component can be pointed at. */
-export type PickerKind = "model" | "agent" | "session" | "command" | "theme" | "file"
+export type PickerKind = "model" | "agent" | "session" | "command" | "theme" | "file" | "provider"
 
 export const PICKER_TITLES: Record<PickerKind, string> = {
   model: "Select model",
@@ -16,7 +17,11 @@ export const PICKER_TITLES: Record<PickerKind, string> = {
   command: "Run command",
   theme: "Select theme",
   file: "Insert file path",
+  provider: "Providers",
 }
+
+/** The row that opens the setup flow. A value no provider id can collide with. */
+export const ADD_PROVIDER = " add"
 
 export type PickerContext = {
   config: Config
@@ -62,5 +67,30 @@ export function pickerChoices(kind: PickerKind, { config, cwd, agents, commands,
       return listThemes(cwd).map((name) => ({ value: name, label: name }))
     case "file":
       return files.map((path) => ({ value: path, label: path }))
+    case "provider":
+      return providerChoices(config, cwd)
   }
+}
+
+/**
+ * Providers with their credential state, plus a row that starts a new one. Reuses the one list
+ * picker rather than growing a second list widget, and `shift+D` on it is the existing delete.
+ */
+function providerChoices(config: Config, cwd: string): Choice[] {
+  let reach: Record<string, Reach> = {}
+  try {
+    reach = reachability(config, cwd)
+  } catch {
+    // Only costs the hints; the list itself comes from the loaded config.
+  }
+  const rows: Choice[] = Object.keys(config.provider)
+    .sort()
+    .map((id) => {
+      const state = reach[id]
+      const models = Object.keys(config.provider[id]!.models).length
+      const key =
+        !state || state.state === "absent" ? "no key" : state.state === "ok" ? "key ✓" : `key ✗ ${describeGap(state)}`
+      return { value: id, label: id, hint: `${key} · ${models} model${models === 1 ? "" : "s"}` }
+    })
+  return [{ value: ADD_PROVIDER, label: "＋ add a provider…", hint: "pick one, paste a key, check it answers" }, ...rows]
 }

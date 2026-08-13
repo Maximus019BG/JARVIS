@@ -10,6 +10,8 @@ export type Action =
   | "sessionPicker"
   | "filePicker"
   | "newSession"
+  /** Opens the provider setup flow — the only way in that needs no prior knowledge. */
+  | "providerSetup"
   | "scrollUp"
   | "scrollDown"
   | "scrollHalfUp"
@@ -34,6 +36,9 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   sessionPicker: "ctrl+r",
   filePicker: "ctrl+t",
   newSession: "ctrl+n",
+  // alt, not ctrl: ctrl+p and ctrl+o are already the palette and the model picker, and
+  // ctrl+a/ctrl+e belong to the textarea's line motion.
+  providerSetup: "alt+p",
   scrollUp: "pageup",
   scrollDown: "pagedown",
   scrollHalfUp: "ctrl+u",

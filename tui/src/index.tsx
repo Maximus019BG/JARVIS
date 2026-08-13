@@ -2,6 +2,7 @@
 import { loadCommands } from "./extend/command.ts"
 import { ConfigError, loadConfig, configFiles } from "./config/config.ts"
 import { ProviderError, defaultModelID, listModels } from "./agent/provider.ts"
+import { withHostedFallback } from "./agent/hosted.ts"
 import { listThemes } from "./config/theme.ts"
 
 /** Hardcoded because a compiled binary has no package.json to read. */
@@ -86,7 +87,9 @@ async function main() {
     return
   }
   const [command, ...args] = flags.rest
-  const config = loadConfig()
+  // One line covers every subcommand, and it happens before anything can call the throwing
+  // `defaultModelID` — which is why the fallback cannot live in the UI.
+  const config = withHostedFallback(loadConfig())
 
   switch (command) {
     case "init": {

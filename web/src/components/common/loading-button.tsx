@@ -1,9 +1,9 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import React from "react";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 
 interface Props extends React.ComponentProps<typeof Button> {
   isLoading?: boolean;
@@ -35,7 +35,14 @@ export function LoadingButton({
   return (
     <Button
       ref={ref}
-      className={className}
+      aria-busy={isLoading}
+      className={cn(
+        // Drafting-in-progress: the hatch inks itself in and scrolls. Derived
+        // from currentColor so it reads on every button variant.
+        isLoading &&
+          "bp-hatch-animated [--bp-hatch-line:color-mix(in_oklch,currentColor_45%,transparent)]",
+        className
+      )}
       style={{ minWidth: isLoading ? (currentWidth ?? "auto") : "auto" }}
       {...props}
     >
@@ -58,8 +65,9 @@ export function LoadingButton({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ duration: 0.05, ease: "easeOut" }}
+            className="sr-only"
           >
-            <LoaderCircle className="size-6 animate-spin" />
+            Loading
           </motion.span>
         )}
       </AnimatePresence>

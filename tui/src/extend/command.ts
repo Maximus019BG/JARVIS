@@ -25,7 +25,7 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: "mcp", description: "Show MCP server status", kind: "builtin" },
   {
     name: "provider",
-    description: "View, add, change or delete providers — /provider stats for usage",
+    description: "Add, check and manage AI providers — /provider test <id>, /provider stats",
     kind: "builtin",
   },
   { name: "stats", description: "Spend and tokens by model, agent and session — /stats <days>", kind: "builtin" },

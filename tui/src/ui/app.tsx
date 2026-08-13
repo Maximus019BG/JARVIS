@@ -2,19 +2,43 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DEFAULT_AGENT, loadAgents, resolveAgent } from "../agent/agent-def.ts"
-import { listModels } from "../agent/provider.ts"
+import { withHostedFallback } from "../agent/hosted.ts"
+import { forgetProvider, listModels } from "../agent/provider.ts"
 import { claimPrompt } from "../agent/remote-prompt.ts"
 import { deleteSession, type Session } from "../agent/session.ts"
-import type { Config } from "../config/config.ts"
+import { loadConfig, type Config } from "../config/config.ts"
 import { describe, matches, type Action, type Keymap } from "../config/keybinds.ts"
 import { loadTheme, type Theme } from "../config/theme.ts"
 import { loadCommands, parseCommandLine } from "../extend/command.ts"
 import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
+import { discoverModels, impliedBaseURL } from "../agent/model-discovery.ts"
+import { testProvider, testWillInstall } from "../agent/provider-test.ts"
+import { hostedBaseURL, hostedToken } from "../agent/hosted.ts"
+import { isPaired } from "../blueprint/credentials.ts"
+import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
+import { providerHealth } from "../config/provider-status.ts"
+import { globalConfigFile } from "../config/persist.ts"
 import { KEY_HELP, runCommand } from "./builtin-commands.ts"
+import { testPanel, testPendingPanel } from "./provider-command.ts"
+import { findPreset } from "./provider-presets.ts"
+import {
+  beginSetup,
+  backStep,
+  draftEntry,
+  planWrites,
+  stepSpec,
+  submitStep,
+  switchKeyMode,
+  toggleModel,
+  type Draft,
+  type Setup,
+  type SetupCtx,
+} from "./provider-setup.ts"
 import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
-import { PermissionPrompt, Picker } from "./components/dialog.tsx"
+import { PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
+import { Wizard, type TestState } from "./components/wizard.tsx"
 import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
@@ -25,7 +49,7 @@ import { tutorialContent } from "./tutorial.ts"
 import { Welcome } from "./components/welcome.tsx"
 import { readGit } from "./git.ts"
 import type { MotionLevel } from "./motion.ts"
-import { listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
+import { ADD_PROVIDER, listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
 import { completion, suggest, type Suggestion } from "./suggest.ts"
 import type { Item, Note } from "./transcript.ts"
 import { useTurn } from "./use-turn.ts"
@@ -43,6 +67,8 @@ export type AppProps = {
   keymap: Keymap
   model?: string
   agent?: string
+  /** Nothing is configured, so open the provider flow on the first paint. */
+  autoSetup?: boolean
 }
 
 const SCROLL_LINES = 10
@@ -52,8 +78,14 @@ const STEER_POLL_MS = 5000
 /** How long the status line acknowledges an auto-copied selection. */
 const COPIED_MS = 1500
 
-export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...initial }: AppProps) {
+export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }: AppProps) {
   const { width, height } = useTerminalDimensions()
+  /**
+   * State, not a prop: adding a provider from inside the app writes the config file, and
+   * everything downstream of it — the model picker's list, the turn's provider options — has to
+   * see that without a restart. `reloadConfig` is the only writer.
+   */
+  const [config, setConfig] = useState(initial.config)
   const agents = useMemo(() => loadAgents(config, cwd), [config, cwd])
   const commands = useMemo(() => loadCommands(cwd), [cwd])
   // One filesystem walk per session; the picker and the `@` strip both read this list.
@@ -69,6 +101,18 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
   const [picker, setPicker] = useState<PickerKind | null>(null)
   /** Read-only overlay content: the tutorial, or /provider output. */
   const [panel, setPanel] = useState<PanelContent | null>(null)
+  /**
+   * The provider setup flow. A third overlay, mutually exclusive with the other two by
+   * construction: `Modal` has no backdrop and a fixed zIndex, so two open at once interleave.
+   */
+  const [setup, setSetup] = useState<Setup | null>(null)
+  /** Models offered at the setup flow's model step, filled in asynchronously. */
+  const [discovered, setDiscovered] = useState<{ loading: boolean; models: Choice[]; note?: string }>({
+    loading: false,
+    models: [],
+  })
+  /** The setup flow's connection test. Null means "not started for this draft". */
+  const [tested, setTested] = useState<TestState | null>(null)
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [selected, setSelected] = useState(0)
   const [quitting, setQuitting] = useState(false)
@@ -96,6 +140,9 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
   // from the models.dev catalog, so it wins once a turn has actually resolved the model.
   const empty = turn.items.length === 0
   const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
+  // Re-reads the config files to recover the `{env:…}` names behind the keys, so it is memoized
+  // rather than computed per render.
+  const health = useMemo(() => providerHealth(config, cwd), [config, cwd])
   const contextLimit = turn.contextLimit ?? configured
   const vim = useVim(editor, config.vim)
 
@@ -188,6 +235,175 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     return () => void renderer.off("selection", onSelection)
   }, [renderer])
 
+  /** The one place a model is switched, so no caller can leave the ref behind the state. */
+  const selectModel = useCallback((value: string) => {
+    activeModel.current = value
+    setModel(value)
+  }, [])
+
+  /**
+   * Re-reads the config from disk after something in the app has written to it.
+   *
+   * This is what makes "add a provider" work without a restart. Every consumer of `config`
+   * already lists it as a dependency, so a new object identity is enough: the model picker's
+   * list, the context-limit lookup, `useTurn`'s send, and the agent definitions all re-derive.
+   *
+   * `mcp` and `extensions` are deliberately *not* refreshed — they are loaded once at startup
+   * and a provider write cannot affect them. Reloading them would tear down live MCP sessions
+   * for nothing.
+   */
+  const reloadConfig = useCallback(
+    (changed?: string) => {
+      try {
+        const next = withHostedFallback(loadConfig(cwd))
+        // The cached factory was built from the old options; without this the next turn would
+        // keep using the key that was just replaced.
+        forgetProvider(changed)
+        setConfig(next)
+        // The model state initializer runs once, so a model that no longer exists — or a first
+        // model where there were none — has to be picked up explicitly.
+        const ids = listModels(next).map((entry) => entry.id)
+        if (ids.length > 0 && !ids.includes(activeModel.current)) selectModel(ids[0]!)
+        return true
+      } catch (error) {
+        // Keep the config that was working. A bad write should cost the reader a message, not
+        // the session they were in the middle of.
+        toast(error instanceof Error ? error.message : String(error), "error")
+        return false
+      }
+    },
+    [cwd, selectModel, toast],
+  )
+
+  const setupCtx = useMemo<SetupCtx>(
+    () => ({ existing: Object.keys(config.provider), paired: isPaired(), discovered: discovered.models }),
+    [config.provider, discovered.models],
+  )
+
+  const openSetup = useCallback(
+    (presetID?: string) => {
+      setPicker(null)
+      setPanel(null)
+      setDiscovered({ loading: false, models: [] })
+      setTested(null)
+      const context: SetupCtx = { existing: Object.keys(config.provider), paired: isPaired() }
+      const started = beginSetup(context)
+      // A preset named up front skips the first question, which is what makes the "＋ add a
+      // provider" row in the picker land on something useful rather than back at the top.
+      setSetup(presetID ? submitStep(started, presetID, context) : started)
+    },
+    [config.provider],
+  )
+
+  /**
+   * Looks up what the chosen provider offers, as soon as there is enough to ask with. Runs on
+   * arriving at the models step rather than eagerly, so a key typed and then corrected is not
+   * spent on a list request that will fail.
+   */
+  useEffect(() => {
+    if (!setup || setup.step !== "models") return
+    const { draft } = setup
+    const preset = findPreset(draft.presetID)
+    if (!preset) return
+    const controller = new AbortController()
+    setDiscovered({ loading: true, models: [] })
+    void discoverModels(
+      {
+        discovery: preset.discovery,
+        baseURL: draft.baseURL ?? impliedBaseURL(draft.npm) ?? hostedBaseURL(),
+        apiKey: draft.keyMode === "store" ? draft.key : draft.keyMode === "device-token" ? hostedToken() : undefined,
+        npm: draft.npm,
+        providerID: draft.presetID === "custom" ? undefined : draft.presetID,
+      },
+      controller.signal,
+    ).then(({ models, note }) => {
+      if (controller.signal.aborted) return
+      setDiscovered({
+        loading: false,
+        models: models.map((entry) => ({ value: entry.id, label: entry.label, hint: entry.hint })),
+        note,
+      })
+    })
+    return () => controller.abort()
+  }, [setup?.step, setup?.draft.presetID, setup?.draft.npm, setup?.draft.baseURL, setup?.draft.key, setup])
+
+  // A first run has nothing to type a prompt into usefully, so the flow is the screen. Opened
+  // in an effect rather than as the initial state so the transcript note behind it is already
+  // rendered when the reader cancels out.
+  const autoOpened = useRef(false)
+  useEffect(() => {
+    if (!initial.autoSetup || autoOpened.current) return
+    autoOpened.current = true
+    openSetup()
+  }, [initial.autoSetup, openSetup])
+
+  /** Runs the round-trip when the flow reaches its check step. */
+  useEffect(() => {
+    if (!setup || setup.step !== "test" || tested) return
+    const { entry } = draftEntry(setup.draft)
+    const controller = new AbortController()
+    setTested({ running: true, installing: testWillInstall(entry) })
+    void testProvider({ config, cwd, id: setup.draft.id, entry, signal: controller.signal }).then((outcome) => {
+      if (controller.signal.aborted) return
+      setTested({ running: false, outcome })
+    })
+    return () => controller.abort()
+  }, [config, cwd, setup, tested])
+
+  /** Writes the draft, then reloads so the new provider is usable in this session. */
+  const saveSetup = useCallback(
+    (draft: Draft) => {
+      const { id, entry } = draftEntry(draft)
+      const checked = checkEntry(entry)
+      // Checked before anything is written, so a bad draft costs a message rather than a config
+      // that fails to parse on the next launch.
+      if (!checked.ok) return toast(`cannot save: ${checked.problems.join("; ")}`, "error")
+      const model = listModels(config).length === 0 && draft.models[0] ? `${id}/${draft.models[0]}` : undefined
+      const merged = checkMerged(config, id, checked.entry, model)
+      if (!merged.ok) return toast(`cannot save: ${merged.problems.join("; ")}`, "error")
+
+      applyWrites(planWrites(draft, { setDefaultModel: model !== undefined }), globalConfigFile())
+      setSetup(null)
+      setTested(null)
+      if (reloadConfig(id) && draft.models[0]) selectModel(`${id}/${draft.models[0]}`)
+      toast(`${id} is ready`, "info")
+    },
+    [config, reloadConfig, selectModel, toast],
+  )
+
+  /** One answer from the flow. Every rule about what it means lives in the reducer. */
+  const advanceSetup = useCallback(
+    (value: string) => {
+      if (!setup) return
+      if (setup.step === "test") {
+        if (value === "cancel") return setSetup(null)
+        if (value === "retry") return setTested(null)
+        if (value === "key") {
+          setTested(null)
+          return setSetup(switchKeyMode({ ...setup, step: "key" }, "store"))
+        }
+        return saveSetup(setup.draft)
+      }
+      setSetup(submitStep(setup, setup.step === "models" ? setup.draft.models : value, setupCtx))
+    },
+    [saveSetup, setup, setupCtx],
+  )
+
+  /**
+   * Runs a real round-trip against a configured provider and shows the outcome. Async, which is
+   * why it lives here rather than in the synchronous command table: the panel opens immediately
+   * with a pending message so an install does not look like a hang.
+   */
+  const runTest = useCallback(
+    (id: string) => {
+      const entry = config.provider[id]
+      if (!entry) return
+      setPanel(testPendingPanel(id, testWillInstall(entry)))
+      void testProvider({ config, cwd, id, entry }).then((outcome) => setPanel(testPanel(id, outcome)))
+    },
+    [config, cwd],
+  )
+
   const dispatch = useCallback(
     (name: string, args: string) => {
       const command = commands.find((entry) => entry.name === name)
@@ -202,10 +418,13 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
         width,
         openPicker: setPicker,
         openPanel: setPanel,
+        openSetup,
+        reload: reloadConfig,
+        testProvider: runTest,
         quit: () => process.exit(0),
       })
     },
-    [commands, config, cwd, extensions, keymap, mcp, turn, width],
+    [commands, config, cwd, extensions, keymap, mcp, openSetup, reloadConfig, runTest, turn, width],
   )
 
   const shell = useCallback(
@@ -272,12 +491,6 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
       state.index = next
     }
     editor.current?.set(entries[state.index]!)
-  }, [])
-
-  /** The one place a model is switched, so no caller can leave the ref behind the state. */
-  const selectModel = useCallback((value: string) => {
-    activeModel.current = value
-    setModel(value)
   }, [])
 
   /** The one place an agent is switched, so the picker and the arrow keys cannot diverge. */
@@ -356,11 +569,14 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
         case "file":
           editor.current?.insert(value)
           return
+        case "provider":
+          if (value === ADD_PROVIDER) return openSetup()
+          return dispatch("provider", `view ${value}`)
         default:
           return
       }
     },
-    [cwd, dispatch, picker, selectAgent, selectModel, turn],
+    [cwd, dispatch, openSetup, picker, selectAgent, selectModel, turn],
   )
 
   // The permission prompt and the picker own the keyboard while they are open. Everything
@@ -380,8 +596,8 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
       return key.stopPropagation()
     }
 
-    // Otherwise the prompt, the picker and the panel own the keyboard; each closes itself.
-    if (turn.permission || picker || panel) return
+    // Otherwise the prompt and the overlays own the keyboard; each closes itself.
+    if (turn.permission || picker || panel || setup) return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -441,6 +657,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     else if (is("clear")) turn.clear()
     else if (is("palette")) setPicker("command")
     else if (is("tutorial")) setPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
+    else if (is("providerSetup")) dispatch("provider", "")
     else if (is("modelPicker")) setPicker("model")
     else if (is("agentPicker")) setPicker("agent")
     else if (is("sessionPicker")) setPicker("session")
@@ -453,7 +670,18 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
   })
 
-  const welcome = <Welcome theme={theme} keymap={keymap} cwd={cwd} git={git} model={model} agent={agent} empty={empty} />
+  const welcome = (
+    <Welcome
+      theme={theme}
+      keymap={keymap}
+      cwd={cwd}
+      git={git}
+      model={model}
+      agent={agent}
+      empty={empty}
+      needsProvider={listModels(config).length === 0}
+    />
+  )
 
   return (
     <box style={{ flexDirection: "column", width: "100%", height: "100%", backgroundColor: theme.bg }}>
@@ -484,7 +712,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
         <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
       )}
 
-      {suggestion && !turn.permission && !picker && (
+      {suggestion && !turn.permission && !picker && !setup && (
         <Suggestions suggestion={suggestion} selected={selected} theme={theme} />
       )}
 
@@ -503,7 +731,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
           keymap={keymap}
           motion={motion}
           busy={turn.busy}
-          focused={!picker && !panel}
+          focused={!picker && !panel && !setup}
           handle={editor}
           onSubmit={submit}
           onChange={change}
@@ -512,7 +740,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
 
       {/* Under the input rather than under the list: the keys describe what enter and tab
           will do to the buffer, so they read best next to the buffer. */}
-      {suggestion && !turn.permission && !picker && (
+      {suggestion && !turn.permission && !picker && !setup && (
         // A box, not `paddingLeft` on the text: padding on a `<text>` is ignored, and the
         // line has to start where the editor's own text does or it reads as unrelated.
         <box style={{ paddingLeft: 2 }}>
@@ -522,14 +750,42 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
         </box>
       )}
 
-      {picker && !turn.permission && (
+      {setup && !turn.permission && (
+        <Wizard
+          setup={setup}
+          spec={stepSpec(setup, setupCtx)}
+          theme={theme}
+          motion={motion}
+          models={{ loading: discovered.loading, note: discovered.note }}
+          result={tested ?? undefined}
+          onSubmit={advanceSetup}
+          onToggle={(value) => setSetup(toggleModel(setup, value))}
+          onSwitchKeyMode={() => setSetup(switchKeyMode(setup, setup.draft.keyMode === "env" ? "store" : "env"))}
+          onBack={() => {
+            setTested(null)
+            setSetup(backStep(setup))
+          }}
+          onCancel={() => {
+            setSetup(null)
+            setTested(null)
+          }}
+        />
+      )}
+
+      {picker && !turn.permission && !setup && (
         <Picker
           title={PICKER_TITLES[picker]}
           choices={pickerChoices(picker, { config, cwd, agents, commands, files })}
           theme={theme}
           motion={motion}
           onPick={pick}
-          onDelete={picker === "session" ? removeSession : undefined}
+          onDelete={
+            picker === "session"
+              ? removeSession
+              : picker === "provider"
+                ? (id) => id !== ADD_PROVIDER && dispatch("provider", `delete ${id} yes`)
+                : undefined
+          }
           onCancel={() => setPicker(null)}
         />
       )}
@@ -551,6 +807,7 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
         vim={vim.mode}
         busy={turn.busy || turn.compacting}
         width={width}
+        warn={health.warning}
         hint={
           copied
             ? "copied to clipboard"

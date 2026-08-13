@@ -35,9 +35,11 @@ export function segments(options: {
   contextLimit?: number
   /** Prompt tokens on the last turn — the honest measure of how full the window is. */
   contextTokens?: number
+  /** A provider whose key does not resolve. Survives every width, like `left`. */
+  warn?: string
   width: number
-}): { left: string; right: Part[] } {
-  const { model, cwd, git, usage, contextLimit, contextTokens = 0, width } = options
+}): { left: string; right: Part[]; warn?: string } {
+  const { model, cwd, git, usage, contextLimit, contextTokens = 0, warn, width } = options
   const tokens = usage.input + usage.output
 
   const plain = (text: string | undefined): Part[] | undefined => (text ? [{ text, tone: "muted" }] : undefined)
@@ -64,8 +66,10 @@ export function segments(options: {
     ),
   ].filter((group): group is Part[] => Boolean(group))
 
-  // Whatever the agent name, the model and the key hint leave behind.
-  const budget = Math.max(0, width - model.length - 28)
+  // Whatever the agent name, the model, the key hint and any warning leave behind. The warning
+  // is charged for here rather than dropped by the loop below: a broken provider is the one
+  // thing on this line the reader has to act on.
+  const budget = Math.max(0, width - model.length - 28 - (warn ? warn.length + gap.text.length : 0))
   const kept: Part[][] = []
   let used = 0
   for (const group of optional.reverse()) {
@@ -75,7 +79,7 @@ export function segments(options: {
     kept.unshift(group)
     used = length
   }
-  return { left: model, right: kept.flatMap((group, index) => (index === 0 ? group : [gap, ...group])) }
+  return { left: model, warn, right: kept.flatMap((group, index) => (index === 0 ? group : [gap, ...group])) }
 }
 
 export function Status({
@@ -92,6 +96,7 @@ export function Status({
   busy,
   width,
   hint,
+  warn: warning,
 }: {
   theme: Theme
   motion: MotionLevel
@@ -107,13 +112,23 @@ export function Status({
   busy: boolean
   width: number
   hint: string
+  warn?: string
 }) {
   const dot = useRef<TextRenderable>(null)
   useOscillator(busy, PULSE_MS, motion, (t) => {
     if (dot.current) dot.current.opacity = 0.45 + 0.55 * t
   })
 
-  const { left, right } = segments({ model, cwd, git, usage, contextLimit, contextTokens, width })
+  const { left, right, warn } = segments({
+    model,
+    cwd,
+    git,
+    usage,
+    contextLimit,
+    contextTokens,
+    warn: warning,
+    width,
+  })
 
   return (
     <box style={{ flexDirection: "row", width: "100%", backgroundColor: theme.panel, paddingLeft: 1, paddingRight: 1 }}>
@@ -124,6 +139,7 @@ export function Status({
       <text fg={theme.accent}>{agent}</text>
       <text fg={theme.muted}>{`  ${left}`}</text>
       <box style={{ flexGrow: 1 }} />
+      {warn && <text fg={theme.warning}>{`${warn}  `}</text>}
       <text fg={theme.hint}>{hint ? `${hint}  ` : ""}</text>
       {right.map((part, index) => (
         <text key={index} fg={theme[part.tone]}>

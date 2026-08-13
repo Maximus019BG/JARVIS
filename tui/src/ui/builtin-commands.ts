@@ -14,6 +14,7 @@ import type { Turn } from "./use-turn.ts"
 /** Every binding, described from the live keymap so it cannot drift from the config. */
 export const KEY_HELP: [keyof Keymap, string][] = [
   ["tutorial", "what everything does"],
+  ["providerSetup", "set up an AI provider"],
   ["submit", "send"],
   ["newline", "newline"],
   ["acceptSuggestion", "take the / or @ completion"],
@@ -41,7 +42,8 @@ export function help(keymap: Keymap): string {
     "keys",
     ...KEY_HELP.map(([action, label]) => `  ${describe(keymap[action]).padEnd(width)}  ${label}`),
     "",
-    "jarvis.jsonc configures providers, agents, permissions, keybinds and mcp servers.",
+    "/provider adds and checks AI providers from here — no file editing, no restart.",
+    "jarvis.jsonc is still there for agents, permissions, keybinds and mcp servers.",
     "`jarvis init` scaffolds a .jarvis directory for project agents, commands, skills,",
     "custom tools, plugins and themes. /extensions shows what is loaded.",
   ].join("\n")
@@ -75,6 +77,15 @@ export type CommandDeps = {
   openPicker: (kind: PickerKind) => void
   /** Shows read-only content in the scrollable overlay. */
   openPanel: (content: PanelContent) => void
+  /** Opens the interactive provider setup flow, optionally starting from a known preset. */
+  openSetup: (presetID?: string) => void
+  /**
+   * Re-reads the config after a command wrote to it. Returns false if the result did not parse,
+   * in which case the running session keeps the config it had.
+   */
+  reload: (changed?: string) => boolean
+  /** Runs a connection test and shows the result. Async, so the caller owns the await. */
+  testProvider: (id: string) => void
   quit: () => void
 }
 
@@ -84,7 +95,7 @@ export type CommandDeps = {
  * command table is readable in one place.
  */
 export function runCommand(command: Command, args: string, deps: CommandDeps): void {
-  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, quit } = deps
+  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, openSetup, reload, quit } = deps
 
   if (command.kind === "prompt") {
     turn.send(expand(command, args), { agent: command.agent, model: command.model })
@@ -118,8 +129,21 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return openPicker("theme")
     case "mcp":
       return turn.note(mcpReport(mcp))
-    case "provider":
-      return openPanel(providerCommand(args, { config, cwd, width: panelBody(width) }))
+    case "provider": {
+      // `/provider` and `/provider setup` open the flow rather than print at it; everything
+      // else still answers with a panel. Returning null is how the command says it already
+      // took over the screen.
+      const content = providerCommand(args, {
+        config,
+        cwd,
+        width: panelBody(width),
+        openSetup,
+        openPicker: () => openPicker("provider"),
+        reload,
+        testProvider: deps.testProvider,
+      })
+      return content ? openPanel(content) : undefined
+    }
     case "blueprint":
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
     case "stats":

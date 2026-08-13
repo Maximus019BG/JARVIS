@@ -41,12 +41,13 @@ const CONTEXTUAL: [string, string][] = [
 ]
 
 const WORTH_KNOWING: [string, string][] = [
-  ["/provider", "add a provider, or see what each one costs you"],
+  ["/provider", "add a provider, step by step — a key is all it takes"],
+  ["/provider test <id>", "a real request, so a bad key fails here and not mid-turn"],
   ["/provider stats", "per-day usage, failures and observed outages"],
   ["/undo", "revert the file changes from the last turn"],
   ["/compact", "summarize the history when the context % climbs"],
   ["/export", "write the whole session to markdown"],
-  ["jarvis.jsonc", "providers, agents, permissions, keybinds, mcp servers"],
+  ["jarvis.jsonc", "agents, permissions, keybinds, mcp servers"],
 ]
 
 /**

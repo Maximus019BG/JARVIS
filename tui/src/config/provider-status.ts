@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { parse as parseJsonc } from "jsonc-parser"
 import { configFiles, merge, type Config } from "./config.ts"
+import { secretRefName } from "./secrets.ts"
 
 /** Keys whose value must never be printed, whatever a provider chooses to call them. */
 export const SECRET_KEY = /key|token|secret|password/i
@@ -19,8 +20,12 @@ export type Reach = {
   state: "ok" | "empty" | "absent"
   /** The env var named by an `{env:NAME}` template, when that is how the key is configured. */
   env?: string
+  /** The name inside a `{secret:name}` template, when the key lives in secrets.json instead. */
+  secret?: string
   /** The config file that last declared this provider. */
   file?: string
+  /** Synthesized rather than declared — the hosted provider, which has no config file at all. */
+  builtin?: boolean
 }
 
 /**
@@ -63,8 +68,19 @@ export function reachability(config: Config, cwd: string): Record<string, Reach>
     }
     const template = rawProviders[id]?.options?.[field]
     const env = typeof template === "string" ? /^\{env:([^}]+)\}$/.exec(template)?.[1] : undefined
+    const secret = typeof template === "string" ? secretRefName(template) : undefined
     const value = options[field]
-    out[id] = { state: typeof value === "string" && value.length > 0 ? "ok" : "empty", env, file }
+    // No template at all *and* no declaring file means nobody wrote this down: it is the hosted
+    // provider synthesized at startup. Saying "not found" about its config file would be true
+    // and useless.
+    const builtin = template === undefined && file === undefined ? true : undefined
+    out[id] = {
+      state: typeof value === "string" && value.length > 0 ? "ok" : "empty",
+      env,
+      secret,
+      file,
+      builtin,
+    }
   }
   return out
 }
@@ -86,13 +102,41 @@ export function explainAuth(message: string, config: Config, cwd: string, provid
     // Re-reading the config is a nicety; never let it turn one failure into two.
   }
   if (!reach || reach.state === "ok") return message
-  const fix =
-    reach.state === "empty" && reach.env
-      ? `${reach.env} is not set in this shell`
-      : reach.state === "empty"
-        ? "its configured key expands to nothing"
-        : "no key is configured for it"
-  return `no usable API key for "${providerID}" — ${fix}\n  ${message}\n  /provider view ${providerID}`
+  return `no usable API key for "${providerID}" — ${describeGap(reach)}\n  ${message}\n  /provider view ${providerID}`
+}
+
+/** Why a credential is not usable, phrased as the thing to go fix. */
+export function describeGap(reach: Reach): string {
+  if (reach.state === "ok") return "it resolves"
+  if (reach.state === "absent") return "no key is configured for it"
+  if (reach.env) return `${reach.env} is not set in this shell`
+  if (reach.secret) return `no key stored for it — /provider setup ${reach.secret.replace(/-api-key$/, "")}`
+  return "its configured key expands to nothing"
+}
+
+/**
+ * The one-glance answer to "is anything wrong with my providers", for the status line. Pure over
+ * `reachability`, so it can be memoized on [config, cwd] and tested without a renderer.
+ *
+ * Only `empty` counts. `absent` is legitimate — ollama and friends need no key — and reporting
+ * it would train the reader to ignore the indicator.
+ */
+export function providerHealth(config: Config, cwd: string): { broken: string[]; warning?: string } {
+  let reach: Record<string, Reach>
+  try {
+    reach = reachability(config, cwd)
+  } catch {
+    return { broken: [] }
+  }
+  const broken = Object.keys(reach)
+    .filter((id) => reach[id]!.state === "empty")
+    .sort()
+  if (broken.length === 0) return { broken }
+  const warning =
+    broken.length === 1
+      ? `⚠ ${broken[0]} has no key`
+      : `⚠ ${broken.length} providers have no key`
+  return { broken, warning }
 }
 
 /**

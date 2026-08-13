@@ -477,6 +477,18 @@
     "persistGrants": {
       "default": false,
       "type": "boolean"
+    },
+    "remoteApproval": {
+      "default": false,
+      "type": "boolean"
+    },
+    "syncSessions": {
+      "default": false,
+      "type": "boolean"
+    },
+    "remoteSteering": {
+      "default": false,
+      "type": "boolean"
     }
   },
   "additionalProperties": false

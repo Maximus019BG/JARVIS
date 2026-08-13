@@ -77,6 +77,24 @@ export async function modelInfo(keys: string[], modelID: string): Promise<ModelC
   return {}
 }
 
+/**
+ * Every model the catalog knows for these provider keys — the other half of models.dev, which
+ * until now was only ever asked about a model the reader had already named. Used by setup to
+ * offer a list instead of demanding an exact id from memory.
+ */
+export async function catalogModels(keys: string[]): Promise<{ id: string; name: string }[]> {
+  if (process.env.JARVIS_NO_CATALOG || process.env.NODE_ENV === "test") return []
+  const catalog = await load()
+  const out = new Map<string, string>()
+  for (const key of keys) {
+    for (const [id, model] of Object.entries(catalog[key]?.models ?? {})) {
+      // First key wins: `keys` is ordered by how much we trust it, same as `modelInfo`.
+      if (!out.has(id)) out.set(id, model.name ?? id)
+    }
+  }
+  return [...out].map(([id, name]) => ({ id, name }))
+}
+
 /** `@ai-sdk/anthropic` -> `anthropic`, so a renamed provider entry still resolves. */
 export function catalogKey(npm: string): string {
   return npm.replace(/^@[^/]+\//, "").replace(/-provider$/, "")
