@@ -148,6 +148,8 @@ export function listModels(config: Config): { id: string; name: string; provider
 export function defaultModelID(config: Config): string {
   if (config.model) return config.model
   const first = listModels(config)[0]
-  if (!first) throw new ProviderError("no models configured — add a `provider` entry to jarvis.jsonc")
+  // Points at the flow rather than at the file: setting a provider up by hand still works, but
+  // it is no longer the way anyone should be told to do it first.
+  if (!first) throw new ProviderError("no models configured — run `jarvis` and press alt+p, or `jarvis pair`")
   return first.id
 }

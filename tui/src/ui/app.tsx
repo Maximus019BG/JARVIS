@@ -12,16 +12,14 @@ import { loadTheme, type Theme } from "../config/theme.ts"
 import { loadCommands, parseCommandLine } from "../extend/command.ts"
 import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
-import { discoverModels, impliedBaseURL } from "../agent/model-discovery.ts"
+import { discoverModels, discoveryArgs } from "../agent/model-discovery.ts"
 import { testProvider, testWillInstall } from "../agent/provider-test.ts"
-import { hostedBaseURL, hostedToken } from "../agent/hosted.ts"
 import { isPaired } from "../blueprint/credentials.ts"
 import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
 import { providerHealth } from "../config/provider-status.ts"
 import { globalConfigFile } from "../config/persist.ts"
 import { KEY_HELP, runCommand } from "./builtin-commands.ts"
 import { testPanel, testPendingPanel } from "./provider-command.ts"
-import { findPreset } from "./provider-presets.ts"
 import {
   beginSetup,
   backStep,
@@ -299,24 +297,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
    * Looks up what the chosen provider offers, as soon as there is enough to ask with. Runs on
    * arriving at the models step rather than eagerly, so a key typed and then corrected is not
    * spent on a list request that will fail.
+   *
+   * The dependencies are the individual draft fields the request is built from, deliberately
+   * *not* `setup` itself. Toggling a model changes `setup`, and re-running on that would abort
+   * the lookup and blank the list out from under the reader mid-selection.
    */
+  const onModelsStep = setup?.step === "models"
+  const askWith = setup ? discoveryArgs(setup.draft) : undefined
+  const askKey = JSON.stringify(askWith ?? null)
   useEffect(() => {
-    if (!setup || setup.step !== "models") return
-    const { draft } = setup
-    const preset = findPreset(draft.presetID)
-    if (!preset) return
+    if (!onModelsStep || !askWith) return
     const controller = new AbortController()
     setDiscovered({ loading: true, models: [] })
-    void discoverModels(
-      {
-        discovery: preset.discovery,
-        baseURL: draft.baseURL ?? impliedBaseURL(draft.npm) ?? hostedBaseURL(),
-        apiKey: draft.keyMode === "store" ? draft.key : draft.keyMode === "device-token" ? hostedToken() : undefined,
-        npm: draft.npm,
-        providerID: draft.presetID === "custom" ? undefined : draft.presetID,
-      },
-      controller.signal,
-    ).then(({ models, note }) => {
+    void discoverModels(askWith, controller.signal).then(({ models, note }) => {
       if (controller.signal.aborted) return
       setDiscovered({
         loading: false,
@@ -325,7 +318,9 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       })
     })
     return () => controller.abort()
-  }, [setup?.step, setup?.draft.presetID, setup?.draft.npm, setup?.draft.baseURL, setup?.draft.key, setup])
+    // askKey stands in for askWith, which is a fresh object on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onModelsStep, askKey])
 
   // A first run has nothing to type a prompt into usefully, so the flow is the screen. Opened
   // in an effect rather than as the initial state so the transcript note behind it is already

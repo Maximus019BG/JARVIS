@@ -168,7 +168,11 @@ export function Wizard({
     <Modal>
       <box
         ref={box}
-        title={`add a provider — ${spec.title} (${spec.position.index}/${spec.position.total})`}
+        title={
+          spec.position.total > 0
+            ? `add a provider — ${spec.title} (${spec.position.index}/${spec.position.total})`
+            : `add a provider — ${spec.title}`
+        }
         titleColor={theme.accent}
         // A bottom title wider than the box is dropped silently rather than clipped, so it has
         // to be trimmed here or the key legend vanishes entirely on a narrow terminal.

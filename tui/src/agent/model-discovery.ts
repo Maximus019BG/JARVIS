@@ -1,5 +1,6 @@
-import type { Discovery } from "../ui/provider-presets.ts"
+import { PRESETS, type Discovery } from "../ui/provider-presets.ts"
 import { catalogKey, catalogModels } from "./catalog.ts"
+import { hostedBaseURL, hostedToken } from "./hosted.ts"
 
 export type Discovered = {
   id: string
@@ -133,4 +134,28 @@ export function impliedBaseURL(npm: string): string | undefined {
   if (key === "anthropic") return "https://api.anthropic.com/v1"
   if (key === "openai") return "https://api.openai.com/v1"
   return undefined
+}
+
+/**
+ * What to ask, derived from a setup draft. Pure and serializable, which is what lets the caller
+ * key an effect on it: a fresh object each render would re-run the lookup forever, and depending
+ * on the whole draft would re-run it every time a model is toggled.
+ */
+export function discoveryArgs(draft: {
+  presetID: string
+  npm: string
+  baseURL?: string
+  keyMode: string
+  key: string
+}): { discovery: Discovery; baseURL?: string; apiKey?: string; npm: string; providerID?: string } | undefined {
+  const preset = PRESETS.find((entry) => entry.id === draft.presetID)
+  if (!preset) return undefined
+  return {
+    discovery: preset.discovery,
+    baseURL: draft.baseURL ?? impliedBaseURL(draft.npm) ?? hostedBaseURL(),
+    apiKey: draft.keyMode === "store" ? draft.key : draft.keyMode === "device-token" ? hostedToken() : undefined,
+    npm: draft.npm,
+    // A custom provider's id says nothing about which catalog vendor it is, so don't guess.
+    providerID: draft.presetID === "custom" ? undefined : draft.presetID,
+  }
 }

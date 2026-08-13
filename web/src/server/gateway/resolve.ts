@@ -91,7 +91,7 @@ export function catalog(
     if (!upstream.enabled) continue;
     for (const model of upstream.models) if (!out.has(model)) out.set(model, upstream.name);
   }
-  for (const [alias, target] of Object.entries(aliases)) {
+  for (const alias of Object.keys(aliases)) {
     const resolved = resolveAlias(alias, aliases);
     // An alias to a model no enabled upstream serves would be a listing that 404s on first use.
     if (resolved === null || !out.has(resolved)) continue;

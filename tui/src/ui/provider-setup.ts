@@ -181,11 +181,15 @@ export function stepSpec(setup: Setup, ctx: SetupCtx): StepSpec {
   const text = PROMPTS[step]
   // Counted over the *plan*, not over ORDER: a preset that skips three questions must not
   // claim the reader is on step 2 of 8.
+  //
+  // A total of 0 means "not known yet", which is the honest answer at the preset step: how many
+  // questions follow depends entirely on which preset is about to be chosen. Announcing 8 and
+  // then dropping to 5 reads like the form changed its mind.
   const plan = remainingSteps({ ...draft }, "preset")
   const base = {
     kind: step,
     ...text,
-    position: { index: Math.max(1, plan.indexOf(step) + 1), total: plan.length },
+    position: { index: Math.max(1, plan.indexOf(step) + 1), total: step === "preset" ? 0 : plan.length },
     error: setup.error,
   }
 

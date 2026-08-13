@@ -122,10 +122,17 @@ describe("step sequence", () => {
 
   test("the step counter counts the plan, not the full step list", () => {
     let setup = beginSetup(ctx)
+    // Before a preset is chosen the plan is unknown, so no total is claimed — announcing 8 and
+    // then dropping to 5 reads as though the form changed its mind.
+    expect(stepSpec(setup, ctx).position).toEqual({ index: 1, total: 0 })
+
     setup = submitStep(setup, "anthropic", ctx)
-    const spec = stepSpec(setup, ctx)
     // preset, id, key, models, test — five, not the nine in ORDER.
-    expect(spec.position).toEqual({ index: 2, total: 5 })
+    expect(stepSpec(setup, ctx).position).toEqual({ index: 2, total: 5 })
+
+    // A preset that asks everything says so honestly.
+    let custom = submitStep(beginSetup(ctx), "custom", ctx)
+    expect(stepSpec(custom, ctx).position).toEqual({ index: 2, total: 8 })
   })
 
   test("back returns to the previous question and clears the error", () => {

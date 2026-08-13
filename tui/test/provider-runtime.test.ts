@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { hostedEntry, hostedGuidance, HOSTED_ID, withHostedFallback } from "../src/agent/hosted.ts"
-import { mergeDiscovered, parseAnthropicModels, parseOpenAIModels } from "../src/agent/model-discovery.ts"
+import {
+  discoveryArgs,
+  mergeDiscovered,
+  parseAnthropicModels,
+  parseOpenAIModels,
+} from "../src/agent/model-discovery.ts"
 import { classifyFailure, scrub } from "../src/agent/provider-test.ts"
 import { defaultModelID, listModels } from "../src/agent/provider.ts"
 import { ConfigSchema, type Config, type ProviderConfig } from "../src/config/config.ts"
@@ -138,6 +143,45 @@ describe("model discovery parsing", () => {
       ],
     )
     expect(merged.map((m) => m.label)).toEqual(["from endpoint", "extra"])
+  })
+})
+
+describe("discoveryArgs", () => {
+  const draft = { presetID: "openai", npm: "@ai-sdk/openai", keyMode: "store", key: "sk-1" }
+
+  test("it is stable across renders, so an effect keyed on it does not loop", () => {
+    // The bug this guards: keying the lookup on the whole draft re-ran it — aborting the request
+    // and blanking the list — every time the reader toggled a model.
+    expect(JSON.stringify(discoveryArgs(draft))).toBe(JSON.stringify(discoveryArgs({ ...draft })))
+  })
+
+  test("toggling models does not change what would be asked", () => {
+    const a = discoveryArgs({ ...draft })
+    const b = discoveryArgs({ ...draft })
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+  })
+
+  test("a package with an implied endpoint still gets a base URL to ask", () => {
+    expect(discoveryArgs(draft)?.baseURL).toBe("https://api.openai.com/v1")
+    expect(discoveryArgs({ ...draft, npm: "@ai-sdk/anthropic" })?.baseURL).toBe("https://api.anthropic.com/v1")
+  })
+
+  test("an explicit base URL wins over the implied one", () => {
+    expect(discoveryArgs({ ...draft, baseURL: "https://mine/v1" })?.baseURL).toBe("https://mine/v1")
+  })
+
+  test("a typed key is used to ask, and an env-var key is not guessed at", () => {
+    expect(discoveryArgs(draft)?.apiKey).toBe("sk-1")
+    expect(discoveryArgs({ ...draft, keyMode: "env" })?.apiKey).toBeUndefined()
+  })
+
+  test("a custom provider's id is not passed off as a catalog vendor", () => {
+    expect(discoveryArgs({ ...draft, presetID: "custom" })?.providerID).toBeUndefined()
+    expect(discoveryArgs(draft)?.providerID).toBe("openai")
+  })
+
+  test("an unknown preset asks for nothing rather than guessing", () => {
+    expect(discoveryArgs({ ...draft, presetID: "nope" })).toBeUndefined()
   })
 })
 
