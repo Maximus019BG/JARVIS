@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { env } from "~/env";
 import { db } from "~/server/db";
 import { automation } from "~/server/db/schemas/automation";
-import { automationVersion } from "~/server/db/schemas/automation-version";
 import { automationTrigger } from "~/server/db/schemas/automation-trigger";
-import { startRun } from "~/server/automations/runner";
+import { publishedVersionOf, startRun } from "~/server/automations/runner";
 
 function getProvidedSecret(request: Request, url: URL) {
   return (
@@ -66,18 +65,22 @@ export async function POST(
     );
   }
 
-  const versionRecord = (
-    await db
-      .select()
-      .from(automationVersion)
-      .where(eq(automationVersion.automationId, automationRecord.id))
-      .orderBy(desc(automationVersion.version))
-      .limit(1)
-  )[0];
+  const versionRecord = await publishedVersionOf(
+    automationRecord.id,
+    automationRecord.publishedVersion,
+  );
 
-  if (versionRecord?.version !== automationRecord.publishedVersion) {
+  if (!versionRecord) {
     return NextResponse.json(
       { error: "Published version missing" },
+      { status: 409 },
+    );
+  }
+  // `advance` treats a version with no compiled definition as an empty graph, so without
+  // this the webhook would answer 200 for a run that executed nothing.
+  if (!versionRecord.definition) {
+    return NextResponse.json(
+      { error: "Published version was never compiled" },
       { status: 409 },
     );
   }

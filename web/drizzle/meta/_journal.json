@@ -71,6 +71,20 @@
       "when": 1786351011607,
       "tag": "0009_fat_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786607080347,
+      "tag": "0010_amazing_serpent_society",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786608996802,
+      "tag": "0011_blue_gamora",
+      "breakpoints": true
     }
   ]
 }

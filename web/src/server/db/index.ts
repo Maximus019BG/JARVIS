@@ -24,6 +24,7 @@ import * as scriptFile from "~/server/db/schemas/script_file";
 import * as blueprintVersion from "~/server/db/schemas/blueprint_version";
 import * as approval from "~/server/db/schemas/approval";
 import * as agentSession from "~/server/db/schemas/agent_session";
+import * as sessionPrompt from "~/server/db/schemas/session_prompt";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -56,6 +57,7 @@ export const schema = {
   ...blueprintVersion,
   ...approval,
   ...agentSession,
+  ...sessionPrompt,
 };
 
 export const db = drizzle(conn, {

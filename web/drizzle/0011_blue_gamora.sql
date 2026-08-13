@@ -1,0 +1,2 @@
+ALTER TABLE "automation_trigger" ADD COLUMN "last_fired_at" timestamp;--> statement-breakpoint
+CREATE INDEX "automation_trigger_workstation_type_idx" ON "automation_trigger" USING btree ("workstation_id","type");

@@ -215,6 +215,18 @@ export const ConfigSchema = z
      * from whatever you pointed the agent at, and pairing was consent to sync blueprints.
      */
     syncSessions: z.boolean().default(false),
+    /**
+     * Accept prompts typed into the paired web app and run them in this session, so a session
+     * can be steered from a phone.
+     *
+     * Off by default, and the most consequential flag here: it lets anyone who can sign in as
+     * you put words in front of an agent holding `bash` and `edit` on this machine. What
+     * arrives is treated exactly like something typed at this keyboard — it goes through the
+     * same permission gate, and is never auto-approved — but it does start a real turn.
+     *
+     * Only polls between turns, and only for the session in the foreground.
+     */
+    remoteSteering: z.boolean().default(false),
   })
   .strict()
 

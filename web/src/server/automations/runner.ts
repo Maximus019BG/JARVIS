@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "~/server/db";
 import { automationJob } from "~/server/db/schemas/automation-job";
@@ -243,6 +243,31 @@ export async function advance(runId: string): Promise<AdvanceResult> {
 
   await finishRun(runId, "succeeded", nodes.length);
   return { status: "succeeded", suspended: false };
+}
+
+/**
+ * The version a trigger should actually run, looked up by `automation.publishedVersion`
+ * rather than by "newest row".
+ *
+ * The distinction matters because `save` inserts a version on every keystroke-batch, so
+ * "newest" starts disagreeing with "published" the moment somebody edits a draft — and a
+ * webhook that stops firing because you opened the editor is not a publish model.
+ *
+ * `undefined` for both "no such version" and "never published": either way there is nothing
+ * to run, and the caller phrases it.
+ */
+export async function publishedVersionOf(
+  automationId: string,
+  version: number | null,
+): Promise<{ id: string; definition: unknown } | undefined> {
+  if (version == null) return undefined;
+  return (
+    await db
+      .select({ id: automationVersion.id, definition: automationVersion.definition })
+      .from(automationVersion)
+      .where(and(eq(automationVersion.automationId, automationId), eq(automationVersion.version, version)))
+      .limit(1)
+  )[0];
 }
 
 export type StartRunInput = {

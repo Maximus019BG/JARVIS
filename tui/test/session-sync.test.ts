@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { lineCount, metricsFor, pushSessions } from "../src/agent/session-sync.ts"
+import { lineCount, metricsFor, pushSession, pushSessions } from "../src/agent/session-sync.ts"
 import { writeCredentials } from "../src/blueprint/credentials.ts"
 import type { Config } from "../src/config/config.ts"
 import { sessionDir } from "../src/config/paths.ts"
@@ -131,6 +131,62 @@ describe("pushSessions", () => {
     const result = await pushSessions(config(true), { credentialsPath: join(home, "absent.json") })
     expect(result.pushed).toEqual([])
     expect(cloud.pushes).toEqual([])
+  })
+})
+
+/**
+ * The single-session push the turn loop calls after every turn. Its whole reason to exist is
+ * the live session, which the startup sweep deliberately skips — so a session being steered
+ * from the web would otherwise never show its answers there.
+ */
+describe("pushSession", () => {
+  const header = (id: string) => ({ id, cwd: "/tmp/project", created: 1_700_000_000_000, title: id })
+
+  test("uploads the one session it was given", async () => {
+    expect(await pushSession(config(true), header(FIRST), { credentialsPath })).toBe("pushed")
+    expect(ours(cloud.pushes).map((push) => push.id)).toEqual([FIRST])
+    expect(ours(cloud.pushes)[0]!.lines).toBe(lineCount(ours(cloud.pushes)[0]!.transcript))
+  })
+
+  test("is a no-op with syncSessions off, so the turn loop can call it unguarded", async () => {
+    expect(await pushSession(config(false), header(FIRST), { credentialsPath })).toBe("off")
+    expect(cloud.pushes).toEqual([])
+  })
+
+  test("is a no-op when the device is not paired", async () => {
+    expect(await pushSession(config(true), header(FIRST), { credentialsPath: join(home, "absent.json") })).toBe("off")
+    expect(cloud.pushes).toEqual([])
+  })
+
+  test("skips the upload when the caller already knows the server is current", async () => {
+    // Derived rather than hardcoded: earlier tests in this file rewrite the fixture, so the
+    // line count on disk depends on what has run before.
+    await pushSession(config(true), header(FIRST), { credentialsPath })
+    const lines = ours(cloud.pushes)[0]!.lines
+    cloud.pushes = []
+    // The cursor the sweep passes in when the server said it already has this many.
+    expect(await pushSession(config(true), header(FIRST), { credentialsPath, knownLines: lines })).toBe("up-to-date")
+    expect(cloud.pushes).toEqual([])
+  })
+
+  test("uploads anyway when the cursor is behind the file", async () => {
+    expect(await pushSession(config(true), header(FIRST), { credentialsPath, knownLines: 1 })).toBe("pushed")
+    expect(ours(cloud.pushes)).toHaveLength(1)
+  })
+
+  test("reports a session whose file is gone rather than throwing at the end of a turn", async () => {
+    expect(await pushSession(config(true), header("ses_synctest_absent"), { credentialsPath })).toBe("missing")
+    expect(cloud.pushes).toEqual([])
+  })
+
+  test("is idempotent — the server upserts on the session's own id", async () => {
+    await pushSession(config(true), header(FIRST), { credentialsPath })
+    await pushSession(config(true), header(FIRST), { credentialsPath })
+    // Two uploads, one row: the second carries the same id and line count as the first.
+    const pushes = ours(cloud.pushes)
+    expect(pushes).toHaveLength(2)
+    expect(pushes[1]!.id).toBe(pushes[0]!.id)
+    expect(pushes[1]!.lines).toBe(pushes[0]!.lines)
   })
 })
 

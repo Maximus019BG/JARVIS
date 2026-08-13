@@ -4,8 +4,8 @@ import { join } from "node:path"
 import { readCredentials, type Credentials } from "../blueprint/credentials.ts"
 import type { Config } from "../config/config.ts"
 import { sessionDir } from "../config/paths.ts"
-import { readRecords } from "./metrics.ts"
-import { listSessions } from "./session.ts"
+import { readRecords, type MetricRecord } from "./metrics.ts"
+import { listSessions, type SessionHeader } from "./session.ts"
 
 /** Matches the route's cap; a transcript past this needs an incremental endpoint. */
 const MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024
@@ -50,6 +50,46 @@ export function metricsFor(id: string, records = readRecords()): SessionTotals {
 
 export type SyncResult = { pushed: string[]; skipped: number }
 
+/** Why a push did nothing, for a caller that wants to say so. */
+export type PushOutcome = "pushed" | "up-to-date" | "too-large" | "missing" | "off"
+
+/**
+ * Mirrors one session. The server upserts on the session's own id, so this is idempotent and
+ * safe to call after every turn — the row grows rather than forking.
+ *
+ * `knownLines` is the sweep's cursor optimisation: pass what the server said it already has
+ * to skip the upload entirely. Without it the transcript goes up and the server decides,
+ * which costs one request and is the right trade for a single session.
+ */
+export async function pushSession(
+  config: Config,
+  header: SessionHeader,
+  options: { credentialsPath?: string; knownLines?: number; records?: MetricRecord[] } = {},
+): Promise<PushOutcome> {
+  if (!config.syncSessions) return "off"
+  const credentials = readCredentials(options.credentialsPath)
+  if (!credentials) return "off"
+
+  const file = path(header.id)
+  if (!existsSync(file)) return "missing"
+  const transcript = readFileSync(file, "utf8")
+  if (transcript.length > MAX_TRANSCRIPT_BYTES) return "too-large"
+
+  const lines = lineCount(transcript)
+  if (options.knownLines !== undefined && options.knownLines >= lines) return "up-to-date"
+
+  await call(credentials, "POST", "/api/session/push", {
+    id: header.id,
+    title: header.title,
+    cwd: header.cwd,
+    startedAt: new Date(header.created).toISOString(),
+    lines,
+    transcript,
+    ...metricsFor(header.id, options.records ?? readRecords()),
+  })
+  return "pushed"
+}
+
 /**
  * Mirrors every local session the server does not already have in full.
  *
@@ -77,28 +117,15 @@ export async function pushSessions(
   const records = readRecords()
 
   for (const header of listSessions()) {
-    // The live session is still being appended to; it goes up on the next launch, whole.
+    // The live session is still being appended to; the turn loop pushes that one itself.
     if (header.id === options.skip) continue
-    const file = path(header.id)
-    if (!existsSync(file)) continue
-    const transcript = readFileSync(file, "utf8")
-    if (transcript.length > MAX_TRANSCRIPT_BYTES) {
-      result.skipped += 1
-      continue
-    }
-    const lines = lineCount(transcript)
-    if ((remote.get(header.id) ?? 0) >= lines) continue
-
-    await call(credentials, "POST", "/api/session/push", {
-      id: header.id,
-      title: header.title,
-      cwd: header.cwd,
-      startedAt: new Date(header.created).toISOString(),
-      lines,
-      transcript,
-      ...metricsFor(header.id, records),
+    const outcome = await pushSession(config, header, {
+      credentialsPath: options.credentialsPath,
+      knownLines: remote.get(header.id) ?? 0,
+      records,
     })
-    result.pushed.push(header.id)
+    if (outcome === "pushed") result.pushed.push(header.id)
+    else if (outcome === "too-large") result.skipped += 1
   }
 
   return result

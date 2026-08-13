@@ -3,6 +3,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DEFAULT_AGENT, loadAgents, resolveAgent } from "../agent/agent-def.ts"
 import { listModels } from "../agent/provider.ts"
+import { claimPrompt } from "../agent/remote-prompt.ts"
 import { deleteSession, type Session } from "../agent/session.ts"
 import type { Config } from "../config/config.ts"
 import { describe, matches, type Action, type Keymap } from "../config/keybinds.ts"
@@ -46,6 +47,8 @@ export type AppProps = {
 
 const SCROLL_LINES = 10
 const QUIT_WINDOW_MS = 2000
+/** How often an idle session asks the cloud whether anybody typed something for it. */
+const STEER_POLL_MS = 5000
 /** How long the status line acknowledges an auto-copied selection. */
 const COPIED_MS = 1500
 
@@ -85,6 +88,9 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
   const activeAgent = useRef(agent)
   const activeModel = useRef(model)
   const browse = useRef({ index: -1, draft: "" })
+  // A prompt claimed from the web app but not yet handed to `send`. A claim is spent
+  // server-side, so this is the only copy that exists once the request has returned.
+  const parked = useRef<{ session: string; prompt: string } | null>(null)
 
   // The config value is available before the first turn; the turn's value can also come
   // from the models.dev catalog, so it wins once a turn has actually resolved the model.
@@ -97,6 +103,57 @@ export function App({ config, cwd, mcp, extensions, keymap, notes, motion, ...in
     if (turn.busy) return
     setGit(readGit(cwd))
   }, [turn.busy, cwd])
+
+  /**
+   * Prompts typed into the paired web app, run here.
+   *
+   * Only between turns — polling during one would interleave a second prompt into a running
+   * agent loop — and only with `remoteSteering` on, because this is somebody else's keyboard
+   * reaching this machine. What arrives goes through `send` like anything typed locally, so
+   * the permission gate still stands in front of every tool call it provokes.
+   *
+   * A claimed prompt is spent server-side: the server has already marked it delivered and
+   * will never hand it out again. So a request still in flight when this effect is torn down —
+   * which happens every time a turn starts locally — parks its prompt rather than dropping it,
+   * and the next idle run picks it up. Keyed by session, because the one outcome worse than
+   * losing a prompt is running it in a conversation it was not written for.
+   */
+  useEffect(() => {
+    if (!config.remoteSteering || turn.busy) return
+    const id = turn.session.id
+    let live = true
+
+    const deliver = (prompt: string) => {
+      if (!live) {
+        parked.current = { session: id, prompt }
+        return
+      }
+      parked.current = null
+      turn.note("prompt from the web app")
+      turn.send(prompt)
+    }
+
+    // Whatever a previous run parked goes before anything new is claimed. A prompt written
+    // for a session that is no longer open cannot be delivered anywhere, so it is dropped
+    // out loud rather than silently or into the wrong transcript.
+    const held = parked.current
+    if (held) {
+      parked.current = null
+      if (held.session === id) deliver(held.prompt)
+      else turn.note(`a prompt from the web app was lost when session ${held.session} closed`, "error")
+    }
+
+    const timer = setInterval(() => {
+      void claimPrompt(id).then((prompt) => {
+        if (prompt) deliver(prompt)
+      })
+    }, STEER_POLL_MS)
+
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [config.remoteSteering, turn.busy, turn.session.id, turn.send, turn.note])
 
   // An error note lands at the bottom of a transcript the user may have scrolled away from,
   // so it can go unseen for the rest of the turn. Toast the newest one as well.

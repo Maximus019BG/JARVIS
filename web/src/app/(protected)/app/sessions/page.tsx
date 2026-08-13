@@ -8,12 +8,7 @@ import { workstation } from "~/server/db/schemas/workstation";
 import { Badge } from "~/components/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
-
-/** `1.2k` / `3.4M` — a token count is scale, not an exact figure anybody reads digit by digit. */
-const thousands = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-
-const money = (micros: number) => `$${(micros / 1_000_000).toFixed(micros < 1_000_000 ? 3 : 2)}`;
+import { money, thousands } from "~/lib/format";
 
 export default async function SessionsPage() {
   // `(protected)/layout.tsx` has already redirected anyone unauthenticated; this is for the

@@ -2,12 +2,17 @@ import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { asText, failRun } from "~/server/automations/runner";
+import { sweepCron } from "~/server/automations/schedule";
 import { authenticateDevice } from "~/server/device-auth";
 
 /**
- * A workstation asking for work. Also, incidentally, the whole scheduler: the poll doubles
- * as the device heartbeat (`authenticateDevice` bumps `lastSeenAt`) and as the sweeper for
- * jobs whose timeout has passed, so there is no cron and no worker process to run.
+ * A workstation asking for work. Also, literally, the whole scheduler: the poll doubles as
+ * the device heartbeat (`authenticateDevice` bumps `lastSeenAt`), as the sweeper for jobs
+ * whose timeout has passed, and as the cron tick — so there is no scheduler and no worker
+ * process to run.
+ *
+ * The cost of that, spelled out because it is a real limitation and not an oversight: a cron
+ * schedule only fires while some workstation is polling. See `schedule.ts`.
  */
 export async function POST(request: Request) {
   const authed = await authenticateDevice(request);
@@ -30,6 +35,10 @@ export async function POST(request: Request) {
   for (const row of stale) {
     await failRun(row.run_id, null, "the workstation did not answer in time");
   }
+
+  // Before the claim, not after: a schedule that comes due this tick should hand its job to
+  // the poll that started it rather than make the workstation wait for the next one.
+  await sweepCron(device.workstationId);
 
   // `FOR UPDATE SKIP LOCKED` is what makes this safe without a queue server: two devices
   // polling at once take different rows instead of the same one.

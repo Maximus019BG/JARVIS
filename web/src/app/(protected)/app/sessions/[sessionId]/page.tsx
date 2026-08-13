@@ -4,7 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { SessionPromptForm } from "~/components/sessions/session-prompt-form";
 import { auth } from "~/lib/auth";
+import { money } from "~/lib/format";
 import { transcriptLines } from "~/lib/transcript-lines";
 import { db } from "~/server/db";
 import { agentSession } from "~/server/db/schemas/agent_session";
@@ -47,8 +49,12 @@ export default async function SessionPage({ params }: { params: Promise<{ sessio
       <h1 className="mt-2 text-2xl font-semibold">{row.title}</h1>
       <p className="text-muted-foreground mb-6 text-xs">
         {row.cwd} · {row.startedAt.toLocaleString()} · {entries.length} messages
-        {row.turns > 0 ? ` · ${row.turns} turns · $${(row.costMicros / 1_000_000).toFixed(3)}` : ""}
+        {row.turns > 0 ? ` · ${row.turns} turns · ${money(row.costMicros)}` : ""}
       </p>
+
+      <div className="mb-6">
+        <SessionPromptForm sessionId={row.id} />
+      </div>
 
       <div className="flex flex-col gap-3">
         {entries.map((entry, index) =>

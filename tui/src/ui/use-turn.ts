@@ -5,6 +5,7 @@ import { attach } from "../agent/attach.ts"
 import { compactSession, generateTitle, isOverflow, NothingToCompact } from "../agent/compact.ts"
 import { providerOf, record } from "../agent/metrics.ts"
 import { remoteAnswer } from "../agent/remote-approval.ts"
+import { pushSession } from "../agent/session-sync.ts"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -338,6 +339,13 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           setBusy(false)
           setInFlight({ input: 0, output: 0, cost: 0 })
           setPermission(null)
+          // Mirror the session now rather than on the next launch. Without this a session
+          // being steered from the web never shows its answers there — the startup sweep
+          // deliberately skips whichever session is live. No-op unless `syncSessions` is on,
+          // and never awaited into the turn: a slow upload must not delay the next prompt.
+          void pushSession(config, active).catch(() => {
+            // A failed mirror is not the user's problem; the startup sweep will catch up.
+          })
         }
       })()
     },
