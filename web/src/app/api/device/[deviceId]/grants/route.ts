@@ -23,6 +23,7 @@ const bodySchema = z.object({
 export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId: string }> }) {
   const { deviceId } = await ctx.params;
 
+  //Get session and check if user is logged in
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -33,13 +34,13 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
+  //Check if device exists and if user owns the workstation the device is in
   const target = (await db.select().from(device).where(eq(device.id, deviceId)).limit(1))[0];
   if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const owned = (
-    await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1)
-  )[0];
-  if (!owned || owned.userId !== session.user.id) {
+  //Check if user owns the workstation the device is in
+  const owned = (await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1))[0];
+  if (owned?.userId !== session.user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -91,7 +92,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ deviceId: s
   const owned = (
     await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1)
   )[0];
-  if (!owned || owned.userId !== session.user.id) {
+  if (owned?.userId !== session.user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

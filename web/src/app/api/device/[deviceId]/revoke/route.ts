@@ -19,10 +19,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ deviceId: 
   const target = (await db.select().from(device).where(eq(device.id, deviceId)).limit(1))[0];
   if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const owned = (
-    await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1)
-  )[0];
-  if (!owned || owned.userId !== session.user.id) {
+  //Check if user owns workstation
+  const owned = (await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1))[0];
+  if (owned?.userId !== session.user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
