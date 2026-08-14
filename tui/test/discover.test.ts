@@ -101,7 +101,7 @@ describe("themes from .jarvis", () => {
     expect(listThemes(root)).toContain("midnight")
     const theme = loadTheme("midnight", root)
     expect(theme.accent).toBe("#abcdef")
-    expect(theme.fg).toBe("#c9d1d9")
+    expect(theme.fg).toBe(THEMES.jarvis!.fg)
   })
 
   test("a malformed theme file falls back instead of throwing", () => {

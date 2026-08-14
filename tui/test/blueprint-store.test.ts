@@ -33,6 +33,16 @@ describe("safeName", () => {
     expect(safeName("  plate  ")).toBe("plate")
   })
 
+  test("suggests the corrected name, since the usual mistake is mechanical", () => {
+    // What the model actually sent in the wild: an underscore. Restating the rule left it
+    // guessing; handing it the fixed name does not.
+    expect(() => safeName("simple_electrical")).toThrow(/try "simple-electrical"/)
+    expect(() => safeName("My Plate")).toThrow(/try "my-plate"/)
+    // Nothing salvageable, so no misleading suggestion.
+    expect(() => safeName("../..")).toThrow(/use lowercase letters/)
+    expect(() => safeName("../..")).not.toThrow(/try "/)
+  })
+
   test("rejects anything that could escape the store", () => {
     // This is the whole path-traversal defence — these tools never see resolvePath.
     for (const bad of [
@@ -120,6 +130,10 @@ describe("store", () => {
   test("reading something that is not there says so", () => {
     const root = store()
     expect(() => readDoc(root, "ghost")).toThrow(/no blueprint named/)
+    // The message has to say how to recover, or an agent that guessed a name guesses again.
+    expect(() => readDoc(root, "ghost")).toThrow(/create it first with blueprint action:"create"/)
+    seed(root, "plate")
+    expect(() => readDoc(root, "ghost")).toThrow(/use an existing one: plate/)
     expect(exists(root, "ghost")).toBe(false)
   })
 

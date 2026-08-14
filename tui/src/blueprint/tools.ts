@@ -1,7 +1,9 @@
 import { tool } from "ai"
 import { z } from "zod"
 import type { ToolContext } from "../tools/context.ts"
+import { checkDoc, formatReport } from "./check.ts"
 import { applyOps, OpSchema } from "./ops.ts"
+import { blueprintSymbolTool } from "./symbol-tool.ts"
 import { autoView, renderBraille } from "./render-braille.ts"
 import { toSvg } from "./render-svg.ts"
 import { DEFAULT_VIEW_BOX, emptyDoc, serialize, UNITS, type BlueprintDoc } from "./schema.ts"
@@ -125,6 +127,7 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
   tool({
     description: [
       "Draw on a blueprint by applying a list of operations, then commit them to git.",
+      'The blueprint must exist first — call `blueprint` action:"create" before the first edit.',
       "Coordinates are in the drawing's units with Y pointing DOWN, like SVG.",
       "Entity ids are assigned automatically on `add` — read them back from the preview or `blueprint` action:\"info\".",
       "Returns a braille rendering of the result, so check it and fix what looks wrong.",
@@ -241,11 +244,36 @@ export const blueprintSyncTool = (ctx: ToolContext, root: string) =>
   })
 
 /** All four, keyed by tool name, ready to spread into the tool set. */
+export const blueprintCheckTool = (_ctx: ToolContext, root: string) =>
+  tool({
+    description: [
+      "Review a blueprint against domain rules and report what is wrong: geometry problems in any drawing,",
+      "and — where entities carry `REF | key=value` annotations on conventionally named layers —",
+      "cable sizing and voltage drop against IEC 60364, door widths and stair geometry against EN,",
+      "and power budgets, bus voltages and pin clashes for IoT wiring.",
+      "Anything it cannot read is listed as NOT CHECKED rather than passed. Run it before calling a drawing finished.",
+    ].join(" "),
+    inputSchema: z.object({
+      name: z.string().describe("Blueprint to check"),
+      domain: z
+        .enum(["general", "building", "electrical", "iot"])
+        .default("general")
+        .describe("Which rule set to apply on top of the geometry checks"),
+    }),
+    execute: async ({ name, domain }) => {
+      const safe = safeName(name)
+      const doc = readDoc(root, safe)
+      return formatReport(safe, domain, checkDoc(doc, domain))
+    },
+  })
+
 export function blueprintTools(ctx: ToolContext, root: string) {
   return {
     blueprint: blueprintTool(ctx, root),
     blueprint_edit: blueprintEditTool(ctx, root),
     blueprint_view: blueprintViewTool(ctx, root),
+    blueprint_symbol: blueprintSymbolTool(ctx, root),
+    blueprint_check: blueprintCheckTool(ctx, root),
     blueprint_sync: blueprintSyncTool(ctx, root),
   }
 }

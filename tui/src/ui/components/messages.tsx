@@ -10,6 +10,19 @@ const OUTPUT_LINES = 8
 /** Reasoning is skimmable context, not the answer; only its tail stays on screen. */
 const REASONING_LINES = 3
 const FLASH_MS = 200
+/** Tools whose output is a picture or a report — the answer itself, not a status line. */
+const DRAWS = new Set(["blueprint_edit", "blueprint_view", "blueprint_symbol", "blueprint_check"])
+/** Lines a drawing keeps: the 22-row braille render plus its caption, with room to spare. */
+const DRAWN_LINES = 30
+
+/**
+ * How many lines of a tool's output the transcript keeps. A call that worked is normally
+ * one line, but collapsing a braille drawing to `✓ blueprint_edit · 25 lines` throws away
+ * the thing the user asked for. A long svg or json dump truncates with the same
+ * `…N more lines` footer a failure gets.
+ */
+export const outputBudget = (name: string, done: boolean, failed?: boolean): number =>
+  DRAWS.has(name) ? DRAWN_LINES : done && !failed ? 0 : OUTPUT_LINES
 
 /** One transcript entry, fading itself in the first time it appears. */
 function Entry({ motion, children }: { motion: MotionLevel; children: ReactNode }) {
@@ -42,8 +55,7 @@ function ToolCard({
 
   const lines = item.output?.split("\n") ?? []
   const seconds = item.endedAt ? (item.endedAt - item.startedAt) / 1000 : undefined
-  // A call that worked is one line; only failures and work in flight earn the space.
-  const preview = done && !item.failed ? [] : lines.slice(0, OUTPUT_LINES)
+  const preview = lines.slice(0, outputBudget(item.name, done, item.failed))
   const hidden = lines.length - preview.length
 
   const tail = [

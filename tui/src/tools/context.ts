@@ -35,6 +35,13 @@ export type ToolContext = {
   sessionID: string
   /** Runs a subagent and resolves with its final text. Absent for leaf agents. */
   spawn?: (agent: string, prompt: string) => Promise<string>
+  /**
+   * Puts a multiple-choice question to the person at the keyboard and resolves with what
+   * they picked, or `""` if they dismissed it. Absent when nobody is watching — headless
+   * runs, cron jobs — which is what removes the `ask` tool from the set entirely, so the
+   * model never offers to consult a user who is not there.
+   */
+  ask?: (question: string, options: string[]) => Promise<string>
 }
 
 /** Resolves a tool-supplied path against the workspace and refuses to escape it. */

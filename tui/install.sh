@@ -1,10 +1,14 @@
 #!/bin/sh
 # Builds jarvis and installs it on PATH. Works the same on macOS and Linux.
 #
-#   ./install.sh                     -> ~/.local/bin/jarvis
+#   ./install.sh                       -> ~/.local/bin/jarvis
 #   ./install.sh --prefix /usr/local/bin
-#   ./install.sh --pi                also install the Raspberry Pi systemd units
-#   ./install.sh --uninstall
+#   ./install.sh --pi                  also install the Raspberry Pi systemd units
+#   ./install.sh --uninstall           remove the binary, keep config and data
+#   ./install.sh --uninstall --purge   also remove config, sessions and blueprints
+#   ./uninstall.sh                     shorthand for --uninstall
+#
+#   -y, --yes                          answer every prompt with yes
 #
 # The binary is compiled here rather than downloaded, because bun embeds the host
 # platform's libopentui into it — a Linux binary has to be built on Linux.
@@ -16,6 +20,8 @@ PI=0
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$CONFIG_HOME/jarvis"
+
+
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -55,6 +61,16 @@ EOF
   exit 1
 fi
 
+echo "Are you sure you want to install jarvis? (Y/n)"
+read -r REPLY
+if [ "$REPLY" != "Y" ] && [ "$REPLY" != "y" ]; then
+
+  echo -e "\033[31mInstallation cancelled.\033[0m"
+  exit 1
+fi
+
+echo -e "\033[36mProceeding with installation...\033[0m"
+
 echo "==> installing dependencies"
 cd "$REPO"
 bun install --frozen-lockfile
@@ -92,14 +108,17 @@ for SRC in "$REPO"/assets/global/agents/*.md; do
   fi
 done
 
+# Per file rather than per directory: a skill that already exists still needs to receive
+# reference files added since it was installed, and a directory-level guard would never
+# deliver them. `cp -n` keeps an edited copy safe either way.
 for SRC in "$REPO"/assets/global/skills/*/; do
   [ -d "$SRC" ] || continue
   NAME=$(basename "$SRC")
-  if [ ! -e "$CONFIG_DIR/skills/$NAME" ]; then
-    mkdir -p "$CONFIG_DIR/skills"
-    cp -R "$SRC" "$CONFIG_DIR/skills/$NAME"
-    echo "==> installed skill $NAME"
-  fi
+  NEW=""
+  [ -e "$CONFIG_DIR/skills/$NAME" ] || NEW=" (new)"
+  mkdir -p "$CONFIG_DIR/skills/$NAME"
+  cp -Rn "$SRC". "$CONFIG_DIR/skills/$NAME/" 2>/dev/null || true
+  echo "==> installed skill $NAME$NEW"
 done
 
 case ":$PATH:" in

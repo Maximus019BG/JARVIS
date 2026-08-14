@@ -6,12 +6,29 @@ import { expand, loadCommands, parseCommandLine, type Command } from "../src/ext
 import { describe as describeChord, loadKeymap, matches, parseChord } from "../src/config/keybinds.ts"
 import { loadTheme, THEMES } from "../src/config/theme.ts"
 import type { Session } from "../src/agent/session.ts"
+import { outputBudget } from "../src/ui/components/messages.tsx"
 import { segments, type Part } from "../src/ui/components/status.tsx"
 import { parseGit } from "../src/ui/git.ts"
 import { lerpHex, resolveMotion } from "../src/ui/motion.ts"
 import { completion, suggest } from "../src/ui/suggest.ts"
 import { applyEvent, summarize, type Item } from "../src/ui/transcript.ts"
 import { restore } from "../src/ui/use-turn.ts"
+
+describe("outputBudget", () => {
+  test("a call that worked collapses to its summary line", () => {
+    expect(outputBudget("read", true, false)).toBe(0)
+  })
+
+  test("failures and work in flight still preview", () => {
+    expect(outputBudget("read", true, true)).toBe(8)
+    expect(outputBudget("read", false)).toBe(8)
+  })
+
+  test("a drawing survives, because the picture is the answer", () => {
+    expect(outputBudget("blueprint_edit", true, false)).toBe(30)
+    expect(outputBudget("blueprint_view", true, false)).toBe(30)
+  })
+})
 
 describe("applyEvent", () => {
   test("text deltas coalesce into one assistant block", () => {

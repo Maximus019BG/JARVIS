@@ -1,6 +1,6 @@
 import type { ModelMessage } from "ai"
 import { useCallback, useMemo, useRef, useState } from "react"
-import { run, type Usage } from "../agent/agent.ts"
+import { errorMessage, run, type Usage } from "../agent/agent.ts"
 import { attach } from "../agent/attach.ts"
 import { compactSession, generateTitle, isOverflow, NothingToCompact } from "../agent/compact.ts"
 import { providerOf, record } from "../agent/metrics.ts"
@@ -27,6 +27,9 @@ import { applyEvent, type Item } from "./transcript.ts"
 
 export type PendingPermission = { request: PermissionRequest; answer: (answer: PermissionAnswer) => void }
 
+/** A question the `ask` tool is waiting on. `""` from `answer` means the user dismissed it. */
+export type PendingQuestion = { question: string; options: string[]; answer: (choice: string) => void }
+
 /** Fraction of the context window that triggers an automatic compaction after a turn. */
 const COMPACT_AT = 0.85
 
@@ -43,6 +46,8 @@ export type Turn = {
   /** Prompt tokens on the last turn: how full the window is right now. */
   contextTokens: number
   permission: PendingPermission | null
+  /** The `ask` tool's open question, or null. Mutually exclusive with `permission` on screen. */
+  question: PendingQuestion | null
   send: (prompt: string, options?: { agent?: string; model?: string }) => void
   note: (text: string, level?: "info" | "error") => void
   newSession: () => void
@@ -106,6 +111,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
   const [total, setTotal] = useState<Usage>({ input: 0, output: 0, cost: 0 })
   const [inFlight, setInFlight] = useState<Usage>({ input: 0, output: 0, cost: 0 })
   const [permission, setPermission] = useState<PendingPermission | null>(null)
+  const [question, setQuestion] = useState<PendingQuestion | null>(null)
 
   const abort = useRef<AbortController | null>(null)
   // Read files live as long as the session does, so the model doesn't re-read a file
@@ -161,6 +167,27 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
     [config.remoteApproval, note],
   )
 
+  /**
+   * The `ask` tool's half of the same trick: a promise the picker resolves. Deliberately
+   * not routed through the permission gate — `PermissionAnswer` is the type every security
+   * decision in the app pivots on, and widening it to carry a free string so a tool could
+   * ask about millimetres would be a poor trade.
+   */
+  const askUser = useCallback(
+    (text: string, options: string[]) =>
+      new Promise<string>((resolve) =>
+        setQuestion({
+          question: text,
+          options,
+          answer: (choice) => {
+            setQuestion(null)
+            resolve(choice)
+          },
+        }),
+      ),
+    [],
+  )
+
   const gate = useMemo(
     () =>
       new PermissionGate(config.permission, ask, undefined, undefined, (request) => {
@@ -171,7 +198,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         try {
           note(`saved permission "${key}": allow to ${persistPermission(cwd, key, "allow")}`)
         } catch (error) {
-          note(`could not save the permission: ${error instanceof Error ? error.message : String(error)}`, "error")
+          note(`could not save the permission: ${errorMessage(error)}`, "error")
         }
       }),
     [ask, config.permission, config.persistGrants, cwd, note],
@@ -194,7 +221,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         setContextTokens(0)
         return true
       } catch (error) {
-        note(error instanceof Error ? error.message : String(error), error instanceof NothingToCompact ? "info" : "error")
+        note(errorMessage(error), error instanceof NothingToCompact ? "info" : "error")
         return false
       } finally {
         setCompacting(false)
@@ -235,6 +262,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           sessionID: active.id,
           read: read.current,
           abort: controller.signal,
+          ask: askUser,
           onEvent: (event) => {
             setItems((current) => applyEvent(current, event))
             if (event.type === "usage") setInFlight(event.usage)
@@ -315,7 +343,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         } catch (error) {
           if (controller.signal.aborted) note("interrupted")
           else {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             note(message, "error")
             // A hard failure never reached a response, so the SDK reports no usage. The
             // model is the one asked for rather than the one `run` resolved, which is only
@@ -339,6 +367,8 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           setBusy(false)
           setInFlight({ input: 0, output: 0, cost: 0 })
           setPermission(null)
+          // An interrupt must not leave a modal up with nothing behind it to answer.
+          setQuestion(null)
           // Mirror the session now rather than on the next launch. Without this a session
           // being steered from the web never shows its answers there — the startup sweep
           // deliberately skips whichever session is live. No-op unless `syncSessions` is on,
@@ -349,7 +379,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         }
       })()
     },
-    [agent, ask, config, cwd, extensions, gate, mcpTools, model, note, runCompact],
+    [agent, ask, askUser, config, cwd, extensions, gate, mcpTools, model, note, runCompact],
   )
 
   /**
@@ -382,6 +412,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
     contextLimit,
     contextTokens,
     permission,
+    question,
     usage: {
       input: total.input + inFlight.input,
       output: total.output + inFlight.output,
@@ -409,7 +440,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         writeFileSync(file, exportMarkdown(active.id))
         note(`exported to ${file}`)
       } catch (error) {
-        note(error instanceof Error ? error.message : String(error), "error")
+        note(errorMessage(error), "error")
       }
     }, [cwd, note]),
     newSession: useCallback(() => {

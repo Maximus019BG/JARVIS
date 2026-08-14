@@ -35,7 +35,7 @@ import {
 } from "./provider-setup.ts"
 import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
-import { PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
+import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
@@ -50,6 +50,7 @@ import type { MotionLevel } from "./motion.ts"
 import { ADD_PROVIDER, listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
 import { completion, suggest, type Suggestion } from "./suggest.ts"
 import type { Item, Note } from "./transcript.ts"
+import { errorMessage } from "../agent/agent.ts"
 import { useTurn } from "./use-turn.ts"
 
 export type AppProps = {
@@ -268,7 +269,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       } catch (error) {
         // Keep the config that was working. A bad write should cost the reader a message, not
         // the session they were in the middle of.
-        toast(error instanceof Error ? error.message : String(error), "error")
+        toast(errorMessage(error), "error")
         return false
       }
     },
@@ -606,7 +607,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     }
 
     // Otherwise the prompt and the overlays own the keyboard; each closes itself.
-    if (turn.permission || picker || panel || setup) return
+    if (turn.permission || turn.question || picker || panel || setup) return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -721,7 +722,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
       )}
 
-      {suggestion && !turn.permission && !picker && !setup && (
+      {suggestion && !turn.permission && !turn.question && !picker && !setup && (
         <Suggestions suggestion={suggestion} selected={selected} theme={theme} />
       )}
 
@@ -740,7 +741,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           keymap={keymap}
           motion={motion}
           busy={turn.busy}
-          focused={!picker && !panel && !setup}
+          focused={!picker && !panel && !setup && !turn.question}
           handle={editor}
           onSubmit={submit}
           onChange={change}
@@ -749,7 +750,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
 
       {/* Under the input rather than under the list: the keys describe what enter and tab
           will do to the buffer, so they read best next to the buffer. */}
-      {suggestion && !turn.permission && !picker && !setup && (
+      {suggestion && !turn.permission && !turn.question && !picker && !setup && (
         // A box, not `paddingLeft` on the text: padding on a `<text>` is ignored, and the
         // line has to start where the editor's own text does or it reads as unrelated.
         <box style={{ paddingLeft: 2 }}>
@@ -759,7 +760,22 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         </box>
       )}
 
-      {setup && !turn.permission && (
+      {/* The `ask` tool's question. Same picker as everything else — a question with a
+          known set of answers is a list to choose from, and escape means "stop asking",
+          which the tool turns into an error telling the model to assume and say so. The
+          title is clipped because an over-wide box title is dropped silently. */}
+      {turn.question && !turn.permission && (
+        <Picker
+          title={clip(turn.question.question, 60)}
+          choices={turn.question.options.map((option) => ({ value: option, label: option }))}
+          theme={theme}
+          motion={motion}
+          onPick={turn.question.answer}
+          onCancel={() => turn.question?.answer("")}
+        />
+      )}
+
+      {setup && !turn.permission && !turn.question && (
         <Wizard
           setup={setup}
           spec={stepSpec(setup, setupCtx)}
@@ -781,7 +797,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         />
       )}
 
-      {picker && !turn.permission && !setup && (
+      {picker && !turn.permission && !turn.question && !setup && (
         <Picker
           title={PICKER_TITLES[picker]}
           choices={pickerChoices(picker, { config, cwd, agents, commands, files })}

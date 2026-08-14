@@ -1,21 +1,37 @@
 ---
 name: blueprint-drafting
-description: How to build precise 2D technical drawings with the blueprint tools — coordinate conventions, choosing entities, batching edits, dimensioning, and the maths for bolt circles, slots, fillets and chamfers. Use whenever creating or editing a blueprint, drawing a part, laying out holes, or adding dimensions.
+description: How to build precise 2D technical drawings with the blueprint tools — coordinate conventions, choosing entities, batching edits, dimensioning, placing standard symbols, and the maths for bolt circles, slots, fillets and chamfers. Use whenever creating or editing a blueprint, drawing a part, laying out holes, or adding dimensions. For a specific domain load building-blueprints, electrical-schematics or iot-blueprints as well.
 ---
 
 # Blueprint drafting
 
 A blueprint is an ordered list of entities on a sheet, stored as JSON and committed to git
-on every edit. Three tools:
+on every edit. Five tools:
 
 | Tool | For |
 |---|---|
 | `blueprint` | list · create · info · history · delete |
 | `blueprint_edit` | draw — takes a list of ops, commits, returns a picture |
 | `blueprint_view` | look — `braille` to see, `svg` to export, `json` for exact data |
+| `blueprint_symbol` | find and place standard symbols; returns their connection points |
+| `blueprint_check` | review a finished drawing against geometry and domain rules |
+
+Plus `engineering_calc` for any number the drawing depends on. **Use it rather than
+working a value out in your head** — it returns the standard it came from, which is what
+makes the drawing checkable.
 
 `references/entities.md` has the full entity and op reference. Read it when you need a
 field name; the rest of this file is how to use them well.
+
+## Domain skills
+
+This file is the fundamentals and applies to every drawing. For a specific kind of
+drawing, load the domain skill too — it carries the symbol index, the standards and the
+annotation grammar `blueprint_check` reads:
+
+- **`building-blueprints`** — floor plans, sections, elevations, site plans
+- **`electrical-schematics`** — schematics, single-line diagrams, panels, installation plans
+- **`iot-blueprints`** — wiring diagrams, block diagrams, pinouts, enclosure layouts
 
 ## Coordinates
 
@@ -95,6 +111,42 @@ Rules that make a drawing readable:
 - Keep dimension lines outside the part. Offsets of 8–15 mm clear most outlines.
 - Stagger parallel dimensions by 8 mm or so, largest furthest out, so they do not collide.
 - Dimension every size someone needs to make the part, and no size twice.
+
+## Repeated parts and symbols
+
+Ids are normally assigned for you, but `add` accepts an explicit one — and that is what
+lets a group of entities be placed and then moved as a unit **in the same batch**, because
+`move`, `rotate` and `scale` resolve against the entities added earlier in the call:
+
+```json
+[
+  {"op": "add", "entity": {"id": "r1-a", "type": "polyline", "pts": [[0, 0], [12, 0]]}},
+  {"op": "add", "entity": {"id": "r1-b", "type": "rect", "at": [3, -2], "w": 6, "h": 4}},
+  {"op": "move",   "ids": ["r1-a", "r1-b"], "by": [40, 60]},
+  {"op": "rotate", "ids": ["r1-a", "r1-b"], "deg": 90, "about": [46, 60]}
+]
+```
+
+Two rules:
+
+- **An explicit id must not start with `e` followed by a digit.** `e1`, `e42`, `e9x` are
+  the automatic id space; `seqOf` parses them to find the next free number, so reusing one
+  poisons the counter. Prefix by reference instead: `r1-a`, `d3-b`, `u2-label`.
+- **A repeated id is now an error.** `add` refuses it, because `diff` and `merge3` key on
+  id and a duplicate would silently lose one of the two in a three-way merge.
+
+For anything standard, do not draw it by hand — `blueprint_symbol` has over 400 IEC and
+architectural symbols:
+
+```json
+{"action": "list", "domain": "electrical", "query": "three phase motor"}
+{"action": "place", "name": "panel", "placements": [
+  {"symbol": "electrical/motor-ac-3ph", "at": [120, 80], "rotate": 90, "label": "M1"}
+]}
+```
+
+It returns each symbol's **connection points already transformed**, so wiring a rotated
+part needs no trigonometry — draw to the coordinates it gives you.
 
 ## Constructions
 

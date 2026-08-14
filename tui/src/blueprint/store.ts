@@ -17,8 +17,18 @@ const SUFFIX = ".blueprint.json"
 export function safeName(name: string): string {
   const trimmed = name.trim().replace(new RegExp(`${SUFFIX.replace(".", "\\.")}$`), "")
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(trimmed)) {
+    // Suggest the corrected name rather than only restating the rule. The usual failure is
+    // an underscore or a capital, and a caller told exactly what to send instead fixes it
+    // in one step instead of guessing at the rule.
+    const suggestion = trimmed
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64)
+      .replace(/-+$/, "")
+    const hint = /^[a-z0-9][a-z0-9-]{0,63}$/.test(suggestion) ? ` — try "${suggestion}"` : ""
     throw new BlueprintError(
-      `invalid blueprint name "${name}" — use lowercase letters, digits and hyphens, starting with a letter or digit, up to 64 characters`,
+      `invalid blueprint name "${name}": use lowercase letters, digits and hyphens, starting with a letter or digit, up to 64 characters${hint}`,
     )
   }
   return trimmed
@@ -91,9 +101,25 @@ export function exists(root: string, name: string): boolean {
   return existsSync(filePath(root, name))
 }
 
+/**
+ * "It is not there" on its own leaves a caller with nowhere to go, and an agent that has
+ * just guessed a name will guess again. Say how to create one and what already exists.
+ * A bare readdir rather than `listBlueprints`, which spawns git per entry — this is an
+ * error path and does not need the history.
+ */
+function noSuchBlueprint(root: string, name: string): BlueprintError {
+  const found = existsSync(root)
+    ? [...new Bun.Glob(`*${SUFFIX}`).scanSync({ cwd: root, onlyFiles: true })].map((file) => file.slice(0, -SUFFIX.length)).sort()
+    : []
+  const existing = found.length > 0 ? `, or use an existing one: ${found.slice(0, 20).join(", ")}` : ""
+  return new BlueprintError(
+    `no blueprint named "${safeName(name)}" — create it first with blueprint action:"create"${existing}`,
+  )
+}
+
 export function readDoc(root: string, name: string): BlueprintDoc {
   const path = filePath(root, name)
-  if (!existsSync(path)) throw new BlueprintError(`no blueprint named "${safeName(name)}"`)
+  if (!existsSync(path)) throw noSuchBlueprint(root, name)
   try {
     return parseDoc(readFileSync(path, "utf8"))
   } catch (error) {
@@ -119,7 +145,7 @@ export function writeDoc(root: string, name: string, doc: BlueprintDoc, message:
 
 export function deleteDoc(root: string, name: string): void {
   const file = `${safeName(name)}${SUFFIX}`
-  if (!existsSync(join(root, file))) throw new BlueprintError(`no blueprint named "${safeName(name)}"`)
+  if (!existsSync(join(root, file))) throw noSuchBlueprint(root, name)
   gitOrThrow(root, ["rm", "--quiet", "--", file])
   gitOrThrow(root, ["commit", "--quiet", "-m", `${safeName(name)}: delete`, "--", file])
 }

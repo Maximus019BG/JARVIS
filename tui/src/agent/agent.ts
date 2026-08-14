@@ -48,6 +48,12 @@ export type RunOptions = {
   abort?: AbortSignal
   depth?: number
   onEvent?: (event: AgentEvent) => void
+  /**
+   * Puts a multiple-choice question to the user. Only the interactive UI supplies one;
+   * without it the `ask` tool is not built, so a headless run cannot stall on a question
+   * nobody will see.
+   */
+  ask?: (question: string, options: string[]) => Promise<string>
 }
 
 export type RunResult = {
@@ -85,11 +91,43 @@ function stringify(output: unknown): string {
   return JSON.stringify(output, null, 2) ?? String(output)
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof ToolError || error instanceof PermissionDenied) return error.message
+/**
+ * The one place a thrown value becomes something a person can read. `ToolError` and
+ * `PermissionDenied` both extend `Error`, so the first line covers them.
+ *
+ * The rest exists because `String(error)` on a plain object is `"[object Object]"`, which
+ * is the least useful thing a transcript can say. Providers and the AI SDK routinely throw
+ * shapes that carry a perfectly good message without being `instanceof Error` — a bundled
+ * copy of the SDK is a different realm, and API failures arrive as plain payloads. Dig the
+ * message out, and fall back to JSON rather than to nothing.
+ */
+export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
+  if (typeof error === "string") return error
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>
+    if (typeof record.message === "string" && record.message) return record.message
+    const nested = record.error
+    if (typeof nested === "string" && nested) return nested
+    if (nested && typeof nested === "object") {
+      const inner = (nested as Record<string, unknown>).message
+      if (typeof inner === "string" && inner) return inner
+    }
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return "an error that could not be described"
+    }
+  }
   return String(error)
 }
+
+/**
+ * Groq returns this as assistant text when the model failed to emit a usable tool call.
+ * It can arrive under finish reason `failed_generation` or plain `stop`, so it is matched
+ * by text, not by finish reason.
+ */
+const GROQ_REFUSAL_SIGNATURE = "Failed to call a function"
 
 export async function run(options: RunOptions): Promise<RunResult> {
   const {
@@ -167,6 +205,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     agent: agent.name,
     sessionID,
     spawn,
+    ask: options.ask,
   }
   const builtins = builtinTools(ctx, spawn ? spawnableAgents(agents) : [])
   const custom = customTools(extensions.tools, ctx)
@@ -187,106 +226,159 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const outgoing = { messages }
   await fire(plugins, "chat.message", { agent: agent.name, model: modelID, sessionID }, outgoing)
 
-  // Fallback history for an abort that throws instead of ending the stream. A finished
-  // step always holds each tool call paired with its result, which is what providers
-  // require; a half-finished step is dropped rather than sent back orphaned.
-  const completed: ModelMessage[] = []
-
-  const result = streamText({
-    model: model.model,
-    system: systemPrompt({ config, cwd, agentPrompt: agentPrompt(agent, cwd) }),
-    messages: outgoing.messages,
-    tools,
-    temperature: agent.temperature,
-    stopWhen: stepCountIs(config.maxSteps),
-    abortSignal: abort,
-    providerOptions: model.info.options as Record<string, Record<string, never>> | undefined,
-    onStepFinish: ({ response }) => {
-      completed.push(...response.messages)
-    },
-    // No `onError` here: `fullStream` already yields the same failure as an `error` part, and
-    // reporting it from both is how one missing API key became three identical messages.
-  })
-
   let text = ""
   let contextTokens = 0
   /** The last failure already emitted, so the rethrow below can avoid repeating it. */
   let reported: string | undefined
   const usage: Usage = { input: 0, output: 0, cost: 0 }
 
-  try {
-    for await (const part of result.fullStream) {
-      switch (part.type) {
-        case "text-delta":
-          text += part.text
-          emit({ type: "text", text: part.text })
-          break
-        case "reasoning-delta":
-          emit({ type: "reasoning", text: part.text })
-          break
-        case "tool-call":
-          emit({ type: "tool-start", id: part.toolCallId, name: part.toolName, input: part.input })
-          break
-        case "tool-result":
-          emit({
-            type: "tool-end",
-            id: part.toolCallId,
-            name: part.toolName,
-            output: stringify(part.output),
-            failed: false,
-          })
-          break
-        case "tool-error":
-          emit({
-            type: "tool-end",
-            id: part.toolCallId,
-            name: part.toolName,
-            output: errorMessage(part.error),
-            failed: true,
-          })
-          break
-        case "finish-step":
-          contextTokens = part.usage.inputTokens ?? contextTokens
-          usage.input += part.usage.inputTokens ?? 0
-          usage.output += part.usage.outputTokens ?? 0
-          usage.cost = cost(model, usage.input, usage.output)
-          emit({ type: "usage", usage: { ...usage } })
-          break
-        case "error":
-          // Explained here rather than at the transcript, so the throw path below compares
-          // against the same string and still recognises it as already reported.
-          reported = explainAuth(errorMessage(part.error), config, cwd, model.providerID)
-          emit({ type: "error", message: reported })
-          break
-        default:
-          break
+  // Some gateways — Groq in particular — reject a malformed tool call with finish reason
+  // `failed_generation` instead of returning a tool call, and it is stochastic: the same
+  // request often succeeds on a retry. Loop a bounded number of times, telling the model
+  // the previous attempt produced nothing, rather than leaving the user staring at the
+  // gateway's raw "Failed to call a function" message.
+  const MAX_RETRIES = 2
+  let retries = 0
+
+  for (;;) {
+    // Fallback history for an abort that throws instead of ending the stream. A finished
+    // step always holds each tool call paired with its result, which is what providers
+    // require; a half-finished step is dropped rather than sent back orphaned.
+    const completed: ModelMessage[] = []
+
+    const result = streamText({
+      model: model.model,
+      system: systemPrompt({ config, cwd, agentPrompt: agentPrompt(agent, cwd) }),
+      messages: outgoing.messages,
+      tools,
+      temperature: agent.temperature,
+      stopWhen: stepCountIs(config.maxSteps),
+      abortSignal: abort,
+      providerOptions: model.info.options as Record<string, Record<string, never>> | undefined,
+      onStepFinish: ({ response }) => {
+        completed.push(...response.messages)
+      },
+      // No `onError` here: `fullStream` already yields the same failure as an `error` part, and
+      // reporting it from both is how one missing API key became three identical messages.
+    })
+
+    let failedGeneration = false
+    // Groq returns the refusal as assistant text; the finish reason can be `failed_generation`
+    // or plain `stop`, so the text signature is what makes detection reliable across both.
+    let sawToolCall = false
+    try {
+      for await (const part of result.fullStream) {
+        switch (part.type) {
+          case "text-delta":
+            text += part.text
+            emit({ type: "text", text: part.text })
+            break
+          case "reasoning-delta":
+            emit({ type: "reasoning", text: part.text })
+            break
+          case "tool-call":
+            sawToolCall = true
+            emit({ type: "tool-start", id: part.toolCallId, name: part.toolName, input: part.input })
+            break
+          case "tool-result":
+            emit({
+              type: "tool-end",
+              id: part.toolCallId,
+              name: part.toolName,
+              output: stringify(part.output),
+              failed: false,
+            })
+            break
+          case "tool-error":
+            emit({
+              type: "tool-end",
+              id: part.toolCallId,
+              name: part.toolName,
+              output: errorMessage(part.error),
+              failed: true,
+            })
+            break
+          case "finish-step":
+            contextTokens = part.usage.inputTokens ?? contextTokens
+            usage.input += part.usage.inputTokens ?? 0
+            usage.output += part.usage.outputTokens ?? 0
+            usage.cost = cost(model, usage.input, usage.output)
+            emit({ type: "usage", usage: { ...usage } })
+            if (part.rawFinishReason === "failed_generation" && retries < MAX_RETRIES) failedGeneration = true
+            break
+          case "error":
+            // Explained here rather than at the transcript, so the throw path below compares
+            // against the same string and still recognises it as already reported.
+            reported = explainAuth(errorMessage(part.error), config, cwd, model.providerID)
+            emit({ type: "error", message: reported })
+            break
+          default:
+            break
+        }
+      }
+    } catch (error) {
+      // An abort usually ends the stream cleanly and is handled below. It only lands here if
+      // it interrupted something mid-flight, and then the finished steps are still worth
+      // keeping so the next turn knows what already touched disk.
+      if (!abort?.aborted) throw error
+      return { messages: completed, text, usage, interrupted: true, contextLimit, contextTokens, model: model.id }
+    }
+
+    // Groq's refusal can arrive as plain assistant text with finish reason `stop` rather than
+    // `failed_generation`, so match the refusal signature too. Only safe to retry when nothing
+    // was executed this attempt — a real tool call followed by a late failure would be lost.
+    if (
+      !failedGeneration &&
+      retries < MAX_RETRIES &&
+      !sawToolCall &&
+      text.startsWith(GROQ_REFUSAL_SIGNATURE)
+    ) {
+      failedGeneration = true
+    }
+
+    if (!failedGeneration) {
+      if (text.startsWith(GROQ_REFUSAL_SIGNATURE)) {
+        emit({
+          type: "error",
+          message:
+            "The model kept failing to produce a valid tool call and the provider rejected it. This usually means the model is weak at tool calling for the tools available — try a stronger model, or rephrase the request to name the tool explicitly (e.g. \"render the blueprint with blueprint_view\").",
+        })
+      }
+      try {
+        return {
+          messages: await result.responseMessages,
+          text,
+          usage,
+          interrupted: abort?.aborted,
+          contextLimit,
+          contextTokens,
+          model: model.id,
+        }
+      } catch (error) {
+        // The same failure the stream already emitted arrives here again when the promise
+        // rejects. Throwing would have the caller note it a second time, so hand it back as
+        // data instead. A failure that was never emitted still throws and is reported once.
+        const message = explainAuth(errorMessage(error), config, cwd, model.providerID)
+        if (message !== reported) throw error
+        return { messages: completed, text, usage, contextLimit, contextTokens, model: model.id, error: message }
       }
     }
-  } catch (error) {
-    // An abort usually ends the stream cleanly and is handled below. It only lands here if
-    // it interrupted something mid-flight, and then the finished steps are still worth
-    // keeping so the next turn knows what already touched disk.
-    if (!abort?.aborted) throw error
-    return { messages: completed, text, usage, interrupted: true, contextLimit, contextTokens, model: model.id }
-  }
 
-  try {
-    return {
-      messages: await result.responseMessages,
-      text,
-      usage,
-      interrupted: abort?.aborted,
-      contextLimit,
-      contextTokens,
-      model: model.id,
-    }
-  } catch (error) {
-    // The same failure the stream already emitted arrives here again when the promise
-    // rejects. Throwing would have the caller note it a second time, so hand it back as
-    // data instead. A failure that was never emitted still throws and is reported once.
-    const message = explainAuth(errorMessage(error), config, cwd, model.providerID)
-    if (message !== reported) throw error
-    return { messages: completed, text, usage, contextLimit, contextTokens, model: model.id, error: message }
+    // Retry. Discard the failed attempt's output — its assistant message is just the gateway's
+    // error text, which is noise the model should not see — and steer the next attempt with a
+    // user-role hint so the history stays provider-agnostic.
+    retries++
+    text = ""
+    contextTokens = 0
+    outgoing.messages = [
+      ...outgoing.messages,
+      {
+        role: "user",
+        content:
+          "Your previous attempt failed to produce a valid tool call (the provider reported `failed_generation`), so nothing was executed. Try again: pick exactly one tool from the ones offered, and emit a small, valid JSON object for its arguments that matches that tool's schema — do not invent tool names or arguments. Prefer flat fields over nested arrays when the schema allows.",
+      },
+    ]
+    emit({ type: "error", message: `the model failed to generate a valid tool call — retrying (${retries}/${MAX_RETRIES})` })
   }
 }
 

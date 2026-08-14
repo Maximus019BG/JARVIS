@@ -34,6 +34,25 @@ describe("resolvePath", () => {
   })
 })
 
+describe("ask", () => {
+  test("is absent when there is nobody to answer", () => {
+    const { tools } = setup()
+    expect(tools.ask).toBeUndefined()
+  })
+
+  test("returns what the user picked", async () => {
+    const { ctx } = setup()
+    const tools = builtinTools({ ...ctx, ask: async (_question, options) => options[1]! })
+    expect(await call(tools.ask, { question: "which units?", options: ["mm", "in"] })).toBe("in")
+  })
+
+  test("a dismissed question tells the model to assume rather than re-ask", async () => {
+    const { ctx } = setup()
+    const tools = builtinTools({ ...ctx, ask: async () => "" })
+    expect(call(tools.ask, { question: "which units?", options: ["mm", "in"] })).rejects.toThrow(ToolError)
+  })
+})
+
 describe("edit", () => {
   test("requires the file to have been read first", async () => {
     const { cwd, tools } = setup()

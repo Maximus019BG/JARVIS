@@ -62,6 +62,45 @@ written — the file and its history stay as they were.
 - Rotating a `rect` converts it to a closed `polyline`, because a rect is axis-aligned by
   definition.
 - Unknown entity and layer ids are errors, never silent no-ops.
+- `add` accepts an explicit `id`, which is how a group of entities can be placed and then
+  moved or rotated as a unit **within one batch** — `move`, `rotate` and `scale` resolve
+  against what the same call has already added.
+- **A repeated id is an error.** `diff` and `merge3` key on id, so a duplicate would not
+  collide loudly, it would quietly lose one of the two in a three-way merge.
+- **An explicit id must not start with `e` followed by a digit.** That is the automatic id
+  space; `seqOf` parses `^e(\d+)` to find the next free number, so `e9x` poisons the
+  counter and the next `add` collides. Prefix by reference: `r1-a`, `d3-b`.
+
+## Symbols
+
+`blueprint_symbol` places entries from a library of over 400 IEC 60617 electrical,
+architectural and IoT symbols instead of drawing them by hand.
+
+| Action | Input | Does |
+|---|---|---|
+| `list` | `domain?`, `query?` | Names, descriptions, standard references, port counts. Every word of the query must match. |
+| `place` | `name`, `placements: [...]`, `message?` | Transforms each symbol and commits, like `blueprint_edit`. |
+
+A placement is `{symbol, at, rotate?, scale?, layer?, label?, labelOffset?}`. Ids are
+derived from `label` (or the symbol name) plus the placement index, so a symbol's parts
+share a prefix and can be selected together afterwards.
+
+The reply reports each symbol's **ports** — its connection points — already transformed by
+the placement. Wire to those exact coordinates rather than re-deriving them.
+
+## Checking
+
+`blueprint_check` takes `name` and `domain` (`general`, `building`, `electrical`, `iot`).
+
+`general` needs nothing but geometry: entities off the sheet, zero-length entities,
+coincident duplicates, zero-offset dimensions, empty layers, and a drawing with no
+dimensions at all.
+
+The domain rule sets read **layer names** for what an entity is and a `REF | key=value`
+annotation in a `text` entity for its parameters — the document schema stores geometry, not
+meaning. The domain skills define the layer names and keys.
+
+Anything it cannot read is reported as **NOT CHECKED**, never as a pass.
 
 ## Viewing
 

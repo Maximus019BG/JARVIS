@@ -1,0 +1,4 @@
+[test]
+# Isolates the suite from the developer's own ~/.config/jarvis and ~/.local/share/jarvis.
+# See test/setup.ts — it has to be a preload because the paths are module-level constants.
+preload = ["./test/setup.ts"]

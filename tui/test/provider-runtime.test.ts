@@ -7,7 +7,7 @@ import {
   parseOpenAIModels,
 } from "../src/agent/model-discovery.ts"
 import { classifyFailure, probeEntry, scrub } from "../src/agent/provider-test.ts"
-import { defaultModelID, listModels } from "../src/agent/provider.ts"
+import { defaultModelID, listModels, needsInstall, resolveModel } from "../src/agent/provider.ts"
 import { ConfigSchema, type Config, type ProviderConfig } from "../src/config/config.ts"
 import { providerHealth } from "../src/config/provider-status.ts"
 import { segments } from "../src/ui/components/status.tsx"
@@ -27,6 +27,35 @@ const entry = (over: Partial<ProviderConfig> = {}): ProviderConfig => ({
   models: { "m-1": {} },
   enabled: true,
   ...over,
+})
+
+describe("bundled providers", () => {
+  // A compiled binary resolves modules against its embedded $bunfs and does no
+  // node_modules lookup, so a provider installed at runtime is unreachable there. These
+  // four are linked in at build time; if one is dropped from package.json or from the
+  // BUNDLED map, the installed binary silently loses that provider and only a user finds
+  // out. Loading the factory here is what pins it.
+  const BUNDLED = ["@ai-sdk/openai-compatible", "@ai-sdk/anthropic", "@ai-sdk/openai", "@ai-sdk/google"]
+
+  test("never need an install", () => {
+    for (const npm of BUNDLED) expect(needsInstall(npm), npm).toBe(false)
+  })
+
+  test("each one resolves a model without touching the network", async () => {
+    // resolveModel builds the provider and the model object; no request is made.
+    const cases: [string, string, Record<string, unknown>][] = [
+      ["@ai-sdk/openai-compatible", "llama-3.3-70b-versatile", { baseURL: "https://example.invalid/v1", name: "p", apiKey: "x" }],
+      ["@ai-sdk/anthropic", "claude-sonnet-4-5", { apiKey: "x" }],
+      ["@ai-sdk/openai", "gpt-4o", { apiKey: "x" }],
+      ["@ai-sdk/google", "gemini-2.0-flash", { apiKey: "x" }],
+    ]
+    for (const [npm, model, options] of cases) {
+      const cfg = config({ provider: { p: { npm, options, models: { [model]: {} }, enabled: true } } })
+      const resolved = await resolveModel(cfg, `p/${model}`)
+      expect(resolved.id, npm).toBe(`p/${model}`)
+      expect(resolved.model, npm).toBeDefined()
+    }
+  })
 })
 
 describe("withHostedFallback", () => {

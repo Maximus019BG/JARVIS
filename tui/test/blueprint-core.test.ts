@@ -128,6 +128,29 @@ describe("applyOps", () => {
     expect(built.entities[0]).toMatchObject({ id: "e1", layer: "l0" })
   })
 
+  test("honours an explicit id, and moves what it just added", () => {
+    // The whole of symbol stamping rests on this: add the parts under known ids, then
+    // place them with one transform, in a single batch.
+    const built = withEntities(
+      { op: "add", entity: { id: "r1-a", type: "line", a: [0, 0], b: [10, 0] } },
+      { op: "add", entity: { id: "r1-b", type: "rect", at: [3, -2], w: 4, h: 4 } },
+      { op: "move", ids: ["r1-a", "r1-b"], by: [40, 60] },
+      { op: "rotate", ids: ["r1-a", "r1-b"], deg: 90, about: [40, 60] },
+    )
+    expect(built.entities.map((entity) => entity.id)).toEqual(["r1-a", "r1-b"])
+    // (0,0) pinned at the pivot; (10,0) swings 90° clockwise to (0,10) relative to it.
+    expect(built.entities[0]).toMatchObject({ a: [40, 60], b: [40, 70] })
+  })
+
+  test("refuses an id that is already taken", () => {
+    expect(() =>
+      withEntities(
+        { op: "add", entity: { id: "r1-a", type: "line", a: [0, 0], b: [1, 1] } },
+        { op: "add", entity: { id: "r1-a", type: "circle", c: [0, 0], r: 1 } },
+      ),
+    ).toThrow(BlueprintError)
+  })
+
   test("never mutates the input document", () => {
     const original = doc()
     applyOps(original, [{ op: "add", entity: { type: "line", a: [0, 0], b: [1, 1] } }])

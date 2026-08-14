@@ -5,6 +5,8 @@ export type MockPart =
   | { type: "text"; text: string }
   | { type: "tool"; id: string; name: string; input: unknown }
   | { type: "error"; error: unknown }
+  /** A gateway-style refusal: assistant text plus finish reason `failed_generation`. */
+  | { type: "failed-generation"; text: string }
 
 /**
  * One entry per model round trip. The agent loop calls the model once per step,
@@ -23,13 +25,24 @@ function chunks(parts: MockPart[]) {
       out.push({ type: "text-start", id }, { type: "text-delta", id, delta: part.text }, { type: "text-end", id })
     } else if (part.type === "tool") {
       out.push({ type: "tool-call", toolCallId: part.id, toolName: part.name, input: JSON.stringify(part.input) })
+    } else if (part.type === "failed-generation") {
+      const id = `f${index}`
+      out.push({ type: "text-start", id }, { type: "text-delta", id, delta: part.text }, { type: "text-end", id })
     } else {
       out.push({ type: "error", error: part.error })
     }
   }
-  const finishReason = parts.some((p) => p.type === "tool") ? "tool-calls" : "stop"
+  const finishReason = parts.some((p) => p.type === "tool")
+    ? { unified: "tool-calls" as const, raw: "tool_calls" }
+    : parts.some((p) => p.type === "failed-generation")
+      ? { unified: "other" as const, raw: "failed_generation" }
+      : { unified: "stop" as const, raw: "stop" }
   // LanguageModelV4Usage nests the counts; the `ai` layer flattens them for us.
-  out.push({ type: "finish", finishReason, usage: { inputTokens: { total: 10 }, outputTokens: { total: 5 } } })
+  out.push({
+    type: "finish",
+    finishReason,
+    usage: { inputTokens: { total: 10 }, outputTokens: { total: 5 } },
+  })
   return out
 }
 

@@ -114,6 +114,12 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
         if (!next.layers.some((existing) => existing.id === layer)) {
           throw new BlueprintError(`no such layer: ${layer}`)
         }
+        // An explicit id is how a caller stamps a symbol and then moves the whole of it in
+        // the same batch. `diff` and `merge3` key on id, so a repeat would not collide
+        // loudly — it would quietly lose one of the two entities in a three-way merge.
+        if (op.entity.id && next.entities.some((existing) => existing.id === op.entity.id)) {
+          throw new BlueprintError(`entity id already taken: ${op.entity.id}`)
+        }
         next.entities = [...next.entities, { ...op.entity, id: op.entity.id ?? `e${++seq}`, layer }]
         bump(`add ${op.entity.type}`)
         break

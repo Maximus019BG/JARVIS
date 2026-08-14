@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { run, type AgentEvent } from "../src/agent/agent.ts"
+import { run, type AgentEvent, type RunOptions } from "../src/agent/agent.ts"
 import { ConfigSchema } from "../src/config/config.ts"
 import { loadExtensions } from "../src/extend/extensions.ts"
 import { init } from "../src/cli/init.ts"
@@ -35,7 +35,7 @@ const script = (...steps: MockPart[][]) => {
 }
 
 /** One turn through the real loop, with whatever `.jarvis` holds in `cwd`. */
-async function turn(cwd: string, steps: MockPart[][], allow = true) {
+async function turn(cwd: string, steps: MockPart[][], allow = true, ask?: RunOptions["ask"]) {
   script(...steps)
   const events: AgentEvent[] = []
   const extensions = await loadExtensions(config, cwd)
@@ -45,6 +45,7 @@ async function turn(cwd: string, steps: MockPart[][], allow = true) {
     messages: [{ role: "user", content: "go" }],
     gate: new PermissionGate(config.permission, constantAsker(allow)),
     extensions,
+    ask,
     onEvent: (event) => events.push(event),
   })
   return { result, events, extensions }
@@ -169,6 +170,29 @@ describe("skills", () => {
     const cwd = repo()
     await turn(cwd, [[{ type: "text", text: "ok" }]])
     expect(toolNames(globalThis.mockCalls[0])).not.toContain("skill")
+  })
+})
+
+describe("ask", () => {
+  test("is only offered when the caller can put a question to someone", async () => {
+    const cwd = repo()
+    await turn(cwd, [[{ type: "text", text: "ok" }]])
+    expect(toolNames(globalThis.mockCalls[0])).not.toContain("ask")
+
+    await turn(cwd, [[{ type: "text", text: "ok" }]], true, async () => "mm")
+    expect(toolNames(globalThis.mockCalls[0])).toContain("ask")
+  })
+
+  test("the answer reaches the model, ungated", async () => {
+    const cwd = repo()
+    // `allow: false` — asking the user a question must not itself need approval.
+    const { events } = await turn(
+      cwd,
+      [[{ type: "tool", id: "1", name: "ask", input: { question: "units?", options: ["mm", "in"] } }], [{ type: "text", text: "done" }]],
+      false,
+      async (_question, options) => options[1]!,
+    )
+    expect(endOf(events, "ask")?.output).toBe("in")
   })
 })
 

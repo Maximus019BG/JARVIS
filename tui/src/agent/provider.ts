@@ -11,11 +11,34 @@ export class ProviderError extends Error {}
 const packageDir = join(dataDir, "packages")
 
 /**
+ * Providers linked into the binary at build time.
+ *
+ * A standalone executable built by `bun build --compile` resolves modules against its own
+ * embedded `$bunfs` and does **no** node_modules lookup — not for a bare specifier, not
+ * for an absolute path, and not for the transitive imports of a file it did manage to
+ * load. So the install-on-demand path below cannot work there, however well the package
+ * installed. The specifiers here are static string literals precisely so the bundler sees
+ * them and links the packages in; a variable specifier would be left dynamic and fail.
+ *
+ * Anything not listed still installs on demand, which works when jarvis runs from source.
+ */
+const BUNDLED: Record<string, () => Promise<unknown>> = {
+  "@ai-sdk/openai-compatible": () => import("@ai-sdk/openai-compatible"),
+  "@ai-sdk/anthropic": () => import("@ai-sdk/anthropic"),
+  "@ai-sdk/openai": () => import("@ai-sdk/openai"),
+  "@ai-sdk/google": () => import("@ai-sdk/google"),
+}
+
+/** True when running as a compiled binary, where on-demand packages cannot be loaded. */
+const COMPILED = import.meta.dir.startsWith("/$bunfs")
+
+/**
  * Whether talking to this provider will need an install first. Exported so a caller can say
  * "installing @ai-sdk/… (first run, this can take a while)" *before* awaiting, rather than
  * leaving the reader watching a silent spinner.
  */
 export function needsInstall(npm: string): boolean {
+  if (npm in BUNDLED) return false
   try {
     // Resolvable from jarvis itself: nothing to install.
     Bun.resolveSync(npm, import.meta.dir)
@@ -26,6 +49,16 @@ export function needsInstall(npm: string): boolean {
 }
 
 async function importPackage(npm: string): Promise<Record<string, unknown>> {
+  const bundled = BUNDLED[npm]
+  if (bundled) return (await bundled()) as Record<string, unknown>
+
+  if (COMPILED) {
+    throw new ProviderError(
+      `${npm} cannot be loaded by the compiled jarvis binary — a standalone executable cannot resolve packages installed at runtime. ` +
+        `Use one of ${Object.keys(BUNDLED).join(", ")}, or run jarvis from source with \`bun run start\`.`,
+    )
+  }
+
   try {
     return (await import(npm)) as Record<string, unknown>
   } catch {

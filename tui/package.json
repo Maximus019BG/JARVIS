@@ -24,6 +24,10 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.38",
+    "@ai-sdk/google": "^4.0.44",
+    "@ai-sdk/openai": "^4.0.41",
+    "@ai-sdk/openai-compatible": "^3.0.30",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentui/core": "^0.4.5",
     "@opentui/react": "^0.4.5",

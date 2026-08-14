@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { run, type AgentEvent } from "../src/agent/agent.ts"
+import { errorMessage, run, type AgentEvent } from "../src/agent/agent.ts"
 import { ConfigSchema } from "../src/config/config.ts"
 import { constantAsker, PermissionGate } from "../src/permission.ts"
 import type { MockPart } from "./fixtures/mock-provider.ts"
@@ -44,6 +44,38 @@ async function turn(prompt: string, cwd: string, allow = true) {
 }
 
 beforeEach(() => script())
+
+describe("errorMessage", () => {
+  test("reads a real Error", () => {
+    expect(errorMessage(new Error("boom"))).toBe("boom")
+    expect(errorMessage(new TypeError("wrong type"))).toBe("wrong type")
+  })
+
+  test("never returns [object Object]", () => {
+    // The bug this exists to stop: a thrown plain object rendered as "[object Object]"
+    // in the transcript, telling the user nothing at all.
+    for (const thrown of [{}, { code: 500 }, [], { toString: null }]) {
+      expect(errorMessage(thrown)).not.toBe("[object Object]")
+    }
+  })
+
+  test("digs the message out of an object that is not an Error", () => {
+    // A bundled copy of a provider SDK is a different realm, so its errors fail
+    // `instanceof Error` while carrying a perfectly good message.
+    expect(errorMessage({ message: "rate limited" })).toBe("rate limited")
+    expect(errorMessage({ error: "upstream refused" })).toBe("upstream refused")
+    expect(errorMessage({ error: { message: "invalid api key" } })).toBe("invalid api key")
+  })
+
+  test("falls back to JSON rather than to nothing", () => {
+    expect(errorMessage({ code: 429, retryAfter: 30 })).toBe('{"code":429,"retryAfter":30}')
+  })
+
+  test("passes strings and primitives through", () => {
+    expect(errorMessage("plain string")).toBe("plain string")
+    expect(errorMessage(undefined)).toBe("undefined")
+  })
+})
 
 describe("run", () => {
   test("streams text and reports usage and cost", async () => {
@@ -155,6 +187,58 @@ describe("run", () => {
 
     expect(events.find((e) => e.type === "tool-end" && e.name === "edit")).toMatchObject({ failed: false })
     expect(await Bun.file(join(cwd, "a.txt")).text()).toBe("two\n")
+  })
+
+  test("retries a failed_generation step instead of surfacing the gateway error", async () => {
+    const cwd = workspace()
+    writeFileSync(join(cwd, "hello.txt"), "hello\n")
+    script(
+      [{ type: "failed-generation", text: "Failed to call a function. Please adjust your prompt." }],
+      [{ type: "tool", id: "c1", name: "read", input: { filePath: "hello.txt" } }],
+      [{ type: "text", text: "retried ok" }],
+    )
+
+    const { result, events } = await turn("read hello.txt", cwd)
+    expect(result.text).toBe("retried ok")
+    // The failed attempt, the tool-call step, then the closing text step.
+    expect(globalThis.mockCalls).toHaveLength(3)
+    // The retry hint reached the model on the second attempt.
+    expect(JSON.stringify(globalThis.mockCalls[1])).toContain("failed to produce a valid tool call")
+    // The gateway's refusal text is noise — it must not reach the transcript or the model.
+    expect(events.some((e) => e.type === "error" && e.message.includes("retrying"))).toBe(true)
+    expect(result.messages.some((m) => "content" in m && String(m.content).includes("Failed to call"))).toBe(false)
+  })
+
+  test("gives up on failed_generation after the retries are spent, keeping the last error", async () => {
+    script(
+      [{ type: "failed-generation", text: "Failed to call a function." }],
+      [{ type: "failed-generation", text: "Failed to call a function." }],
+      [{ type: "failed-generation", text: "Failed to call a function." }],
+    )
+    const { result, events } = await turn("do something", workspace())
+    // 1 attempt + MAX_RETRIES(2) = 3 model calls, all refused.
+    expect(globalThis.mockCalls).toHaveLength(3)
+    const retries = events.filter((e) => e.type === "error" && e.message.includes("retrying"))
+    expect(retries).toHaveLength(2)
+    // The final attempt's refusal text is the last thing on screen.
+    expect(result.text).toContain("Failed to call a function")
+    // And an explanation lands so the raw gateway text is not all the user gets.
+    expect(events.some((e) => e.type === "error" && e.message.includes("weak at tool calling"))).toBe(true)
+  })
+
+  test("retries when the refusal arrives as plain text under finish reason `stop`", async () => {
+    const cwd = workspace()
+    writeFileSync(join(cwd, "hello.txt"), "hello\n")
+    // A refusal that Groq emits as assistant text with a normal `stop` finish reason.
+    script([{ type: "text", text: "Failed to call a function. Please adjust your prompt." }], [
+      { type: "tool", id: "c1", name: "read", input: { filePath: "hello.txt" } },
+    ], [
+      { type: "text", text: "retried ok" },
+    ])
+    const { result, events } = await turn("read hello.txt", cwd)
+    expect(result.text).toBe("retried ok")
+    expect(globalThis.mockCalls).toHaveLength(3)
+    expect(events.some((e) => e.type === "error" && e.message.includes("retrying"))).toBe(true)
   })
 
   test("delegates to a subagent and returns its text", async () => {
