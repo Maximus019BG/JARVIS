@@ -111,6 +111,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   })
   /** The setup flow's connection test. Null means "not started for this draft". */
   const [tested, setTested] = useState<TestState | null>(null)
+  /** Bumped to run the test again. A counter, because "retry" repeats a request that did not change. */
+  const [attempt, setAttempt] = useState(0)
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [selected, setSelected] = useState(0)
   const [quitting, setQuitting] = useState(false)
@@ -334,16 +336,25 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
 
   /** Runs the round-trip when the flow reaches its check step. */
   useEffect(() => {
-    if (!setup || setup.step !== "test" || tested) return
+    if (!setup || setup.step !== "test") return
     const { entry } = draftEntry(setup.draft)
     const controller = new AbortController()
     setTested({ running: true, installing: testWillInstall(entry) })
-    void testProvider({ config, cwd, id: setup.draft.id, entry, signal: controller.signal }).then((outcome) => {
+    // The typed key travels as an argument, never through the entry: what gets written still
+    // holds only the `{secret:…}` reference.
+    const key = setup.draft.keyMode === "store" ? setup.draft.key : undefined
+    void testProvider({ config, cwd, id: setup.draft.id, entry, key, signal: controller.signal }).then((outcome) => {
+      // A genuine cancel — esc, or leaving the step — and the outcome belongs to a draft nobody
+      // is looking at any more.
       if (controller.signal.aborted) return
       setTested({ running: false, outcome })
     })
     return () => controller.abort()
-  }, [config, cwd, setup, tested])
+    // `tested` is deliberately absent, for the same reason `discovered` is absent above: this
+    // effect writes it, and depending on its own write makes the cleanup abort the request it
+    // started one render earlier — leaving the step spinning on a result that was thrown away.
+    // `attempt` is what re-runs it.
+  }, [config, cwd, setup, attempt])
 
   /** Writes the draft, then reloads so the new provider is usable in this session. */
   const saveSetup = useCallback(
@@ -372,7 +383,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       if (!setup) return
       if (setup.step === "test") {
         if (value === "cancel") return setSetup(null)
-        if (value === "retry") return setTested(null)
+        if (value === "retry") {
+          setTested(null)
+          return setAttempt((n) => n + 1)
+        }
         if (value === "key") {
           setTested(null)
           return setSetup(switchKeyMode({ ...setup, step: "key" }, "store"))

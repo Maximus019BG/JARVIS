@@ -6,7 +6,7 @@ import {
   parseAnthropicModels,
   parseOpenAIModels,
 } from "../src/agent/model-discovery.ts"
-import { classifyFailure, scrub } from "../src/agent/provider-test.ts"
+import { classifyFailure, probeEntry, scrub } from "../src/agent/provider-test.ts"
 import { defaultModelID, listModels } from "../src/agent/provider.ts"
 import { ConfigSchema, type Config, type ProviderConfig } from "../src/config/config.ts"
 import { providerHealth } from "../src/config/provider-status.ts"
@@ -66,6 +66,31 @@ describe("withHostedFallback", () => {
   })
 })
 
+describe("probeEntry", () => {
+  // The regression guard for a wizard that could not pass its own check: a draft goes to the
+  // provider factory without ever passing through readConfigFile, so an unexpanded entry sends
+  // "{secret:groq-api-key}" as the bearer token and every key looks wrong.
+  test("a template is expanded rather than sent as the credential", () => {
+    process.env.PROBE_TEST_KEY = "sk-from-env"
+    const probed = probeEntry(entry({ options: { apiKey: "{env:PROBE_TEST_KEY}" } }), process.cwd())
+    expect(probed.options.apiKey).toBe("sk-from-env")
+  })
+
+  test("a typed key stands in for the secret that is not written yet", () => {
+    const drafted = entry({ options: { apiKey: "{secret:groq-api-key}", baseURL: "https://api.groq.com/openai/v1" } })
+    const probed = probeEntry(drafted, process.cwd(), "gsk-typed")
+    expect(probed.options.apiKey).toBe("gsk-typed")
+    // Only the copy being tested carries it; what gets written is untouched.
+    expect(drafted.options.apiKey).toBe("{secret:groq-api-key}")
+    expect(probed.options.baseURL).toBe("https://api.groq.com/openai/v1")
+  })
+
+  test("the typed key is redactable, so a failure cannot print it", () => {
+    const probed = probeEntry(entry(), process.cwd(), "gsk-typed-secret")
+    expect(scrub("rejected gsk-typed-secret", probed)).not.toContain("gsk-typed-secret")
+  })
+})
+
 describe("classifyFailure", () => {
   const at = (message: string, over: Partial<ProviderConfig> = {}) =>
     classifyFailure(new Error(message), config(), process.cwd(), "acme", entry(over))
@@ -88,6 +113,14 @@ describe("classifyFailure", () => {
 
   test("a refused connection is a network problem", () => {
     expect(at("connect ECONNREFUSED 127.0.0.1:11434").stage).toBe("network")
+  })
+
+  test("a deadline is a network problem, not an unexplained model one", () => {
+    // The wizard's last step has no outcome until the request settles, so a socket that is
+    // accepted and never answered used to hold it open indefinitely.
+    const outcome = at("timed out after 30s waiting for a reply")
+    expect(outcome.stage).toBe("network")
+    expect(outcome.message).toContain("timed out")
   })
 
   test("anything else is attributed to the model rather than guessed at", () => {
