@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type { Theme } from "../../config/theme.ts"
 import type { TestOutcome } from "../../agent/provider-test.ts"
 import { useEnter, useOscillator, type MotionLevel } from "../motion.ts"
-import { summarize, type Setup, type SetupCtx, type StepSpec } from "../provider-setup.ts"
+import { MODELS_DONE, summarize, type Setup, type SetupCtx, type StepSpec } from "../provider-setup.ts"
 import { clip, Modal, type Choice } from "./dialog.tsx"
 
 /** Bracketed paste carries bytes; older builds also expose the decoded text. */
@@ -231,7 +231,7 @@ export function Wizard({
               const value = String(option.value)
               // The models step toggles in place and only leaves on the "done" row, so a
               // multi-select is possible without a widget that supports one.
-              if (spec.kind === "models" && value !== " done") return onToggle(value)
+              if (spec.kind === "models" && value !== MODELS_DONE) return onToggle(value)
               onSubmit(value)
             }}
             style={{ flexGrow: 1 }}

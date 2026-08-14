@@ -10,6 +10,7 @@ import {
   beginSetup,
   draftEntry,
   modelChoices,
+  MODELS_DONE,
   planWrites,
   stepSpec,
   submitStep,
@@ -258,6 +259,15 @@ describe("presets and model choices", () => {
     setup = toggleModel(setup, "o4-mini")
     expect(setup.draft.models).not.toContain("o4-mini")
     expect(modelChoices(setup.draft, { ...ctx, discovered })[0]!.label).toContain("(2 selected)")
+  })
+
+  test("the done row carries the sentinel the wizard leaves on", () => {
+    // The regression guard for a flow that could not be finished: the row's value was a stray
+    // literal that no longer matched the wizard's, so enter on "done" toggled a phantom model
+    // instead of advancing, and the models step looped forever.
+    const rows = modelChoices(walk(["openai", "openai", "sk-1"]).setup.draft, ctx)
+    expect(rows[0]!.value).toBe(MODELS_DONE)
+    expect(rows.slice(1).every((row) => row.value !== MODELS_DONE)).toBe(true)
   })
 
   test("a preset default survives an endpoint that does not list it", () => {

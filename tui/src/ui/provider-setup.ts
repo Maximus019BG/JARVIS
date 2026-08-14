@@ -216,6 +216,13 @@ export function stepSpec(setup: Setup, ctx: SetupCtx): StepSpec {
 }
 
 /**
+ * The row that ends the models step. Leading space so it sorts first and cannot collide with a
+ * real model id. Exported because the wizard has to recognise it: a second literal here is how
+ * this row silently became a toggle instead of a submit.
+ */
+export const MODELS_DONE = " done"
+
+/**
  * The model list: whatever discovery found, plus anything already chosen (so a preset default
  * survives an endpoint that does not list it), with a leading row that ends the step.
  */
@@ -223,7 +230,7 @@ export function modelChoices(draft: Draft, ctx: SetupCtx): Choice[] {
   const chosen = new Set(draft.models)
   const seen = new Set<string>()
   const rows: Choice[] = [
-    { value: " done", label: `done (${chosen.size} selected)`, hint: chosen.size === 0 ? "pick at least one" : "" },
+    { value: MODELS_DONE, label: `done (${chosen.size} selected)`, hint: chosen.size === 0 ? "pick at least one" : "" },
   ]
   for (const choice of [...(ctx.discovered ?? []), ...draft.models.map((id) => ({ value: id, label: id }))]) {
     if (seen.has(choice.value)) continue
