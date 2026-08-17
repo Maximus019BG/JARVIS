@@ -2,11 +2,10 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
 import { device } from "~/server/db/schemas/device";
 import { isMcpScope } from "~/server/mcp/scopes";
-import { ownsWorkstation } from "~/server/ownership";
+import { ownedDevice } from "~/server/owned-device";
 
 /**
  * Replaces a device's MCP scopes. Replace rather than merge, for the same reason as the
@@ -20,24 +19,11 @@ const bodySchema = z.object({
   }),
 });
 
-async function ownedDevice(request: Request, deviceId: string) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const target = (await db.select().from(device).where(eq(device.id, deviceId)).limit(1))[0];
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  if (!(await ownsWorkstation(session.user.id, target.workstationId))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  return target;
-}
-
 export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId: string }> }) {
   const { deviceId } = await ctx.params;
 
-  const target = await ownedDevice(request, deviceId);
-  if (target instanceof NextResponse) return target;
+  const owned = await ownedDevice(request, deviceId);
+  if (owned instanceof NextResponse) return owned;
 
   let body: z.infer<typeof bodySchema>;
   try {
@@ -56,8 +42,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
 export async function GET(request: Request, ctx: { params: Promise<{ deviceId: string }> }) {
   const { deviceId } = await ctx.params;
 
-  const target = await ownedDevice(request, deviceId);
-  if (target instanceof NextResponse) return target;
+  const owned = await ownedDevice(request, deviceId);
+  if (owned instanceof NextResponse) return owned;
 
-  return NextResponse.json({ success: true, scopes: target.scopes });
+  return NextResponse.json({ success: true, scopes: owned.device.scopes });
 }

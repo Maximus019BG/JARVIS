@@ -13,6 +13,7 @@ export const env = createEnv({
       .default("development"),
     BETTER_AUTH_SECRET: z.string().min(32).max(248),
     BETTER_AUTH_ORGANIZATION_LIMIT: z.coerce.number().default(5),
+    BETTER_AUTH_URL: z.string().url().default("http://www.jarvisweb.cloud"),
     BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: z
       .string()
       .transform((val) => {
@@ -67,7 +68,7 @@ export const env = createEnv({
    * `NEXT_PUBLIC_`.
    */
   client: {
-    NEXT_PUBLIC_BASE_URL: z.string().url(),
+    NEXT_PUBLIC_BASE_URL: z.string().url().default("http://www.jarvisweb.cloud"),
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
   },
 
@@ -86,6 +87,7 @@ export const env = createEnv({
     BETTER_AUTH_ORGANIZATION_LIMIT: process.env.BETTER_AUTH_ORGANIZATION_LIMIT,
     BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN:
       process.env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN:
       process.env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN,
     RESEND_API_KEY: process.env.RESEND_API_KEY,

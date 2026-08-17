@@ -141,7 +141,20 @@ export const devicesApi = {
     return data;
   },
 
+  async rename(deviceId: string, name: string) {
+    const { data } = await axios.patch<{ name: string }>(`/api/device/${deviceId}`, { name });
+    return data;
+  },
+
   async revoke(deviceId: string) {
     await axios.post(`/api/device/${deviceId}/revoke`);
+  },
+
+  /**
+   * Permanent, unlike `revoke`. The server refuses with 409 `not_revoked` unless the device
+   * has already been revoked, so this can only ever be the second half of a deliberate pair.
+   */
+  async remove(deviceId: string) {
+    await axios.delete(`/api/device/${deviceId}`);
   },
 };

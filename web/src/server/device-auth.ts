@@ -90,6 +90,16 @@ export async function resolveDeviceToken(token: string): Promise<typeof device.$
   return found;
 }
 
+/**
+ * A device may only be purged once it has been revoked.
+ *
+ * Revoking is what actually stops the credential — `resolveDeviceToken` above rejects on the
+ * very next request. Deleting only tidies the list. Forcing that order means no single click
+ * both kills a token and destroys the record of it having existed, and the "who pushed this
+ * version" trail survives until someone deliberately gives it up.
+ */
+export const canDeleteDevice = (status: string): boolean => status === "revoked";
+
 /** Resolves a `Authorization: Bearer jvd_…` header to a device row, or the 401 to return. */
 export async function authenticateDevice(request: Request): Promise<DeviceAuth | NextResponse> {
   const found = await resolveDeviceToken(bearerToken(request));

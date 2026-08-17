@@ -2,12 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
-import { device } from "~/server/db/schemas/device";
 import { deviceGrant } from "~/server/db/schemas/device_grant";
-import { workstation } from "~/server/db/schemas/workstation";
+import { ownedDevice } from "~/server/owned-device";
 
 const bodySchema = z.object({
   blueprintIds: z.array(z.string()).default([]),
@@ -23,9 +21,8 @@ const bodySchema = z.object({
 export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId: string }> }) {
   const { deviceId } = await ctx.params;
 
-  //Get session and check if user is logged in
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const owned = await ownedDevice(request, deviceId);
+  if (owned instanceof NextResponse) return owned;
 
   let body: z.infer<typeof bodySchema>;
   try {
@@ -34,22 +31,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  //Check if device exists and if user owns the workstation the device is in
-  const target = (await db.select().from(device).where(eq(device.id, deviceId)).limit(1))[0];
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  //Check if user owns the workstation the device is in
-  const owned = (await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1))[0];
-  if (owned?.userId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const requested = [...new Set(body.blueprintIds.map((id) => id))];
   if (requested.length > 0) {
     const found = await db
       .select({ id: blueprint.id })
       .from(blueprint)
-      .where(eq(blueprint.workstationId, target.workstationId));
+      .where(eq(blueprint.workstationId, owned.device.workstationId));
     const allowed = new Set(found.map((row) => row.id));
     if (requested.some((id) => !allowed.has(id))) {
       return NextResponse.json({ error: "blueprint_not_in_workstation" }, { status: 400 });
@@ -69,7 +56,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
           deviceId,
           blueprintId: row.blueprintId,
           mode: body.mode,
-          createdBy: session.user.id,
+          createdBy: owned.userId,
           createdAt: new Date(),
         })),
       );
@@ -83,18 +70,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ deviceId:
 export async function GET(request: Request, ctx: { params: Promise<{ deviceId: string }> }) {
   const { deviceId } = await ctx.params;
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const target = (await db.select().from(device).where(eq(device.id, deviceId)).limit(1))[0];
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const owned = (
-    await db.select().from(workstation).where(eq(workstation.id, target.workstationId)).limit(1)
-  )[0];
-  if (owned?.userId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const owned = await ownedDevice(request, deviceId);
+  if (owned instanceof NextResponse) return owned;
 
   const grants = await db
     .select()
