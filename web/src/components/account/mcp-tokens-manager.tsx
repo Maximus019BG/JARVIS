@@ -207,6 +207,10 @@ export function McpTokensManager() {
   const revokedCount = (tokens ?? []).filter((device) => device.status === "revoked").length;
 
   if (view.kind === "reveal") {
+    // The command is the thing most people actually want on their clipboard — it carries the
+    // token inside it, so copying this is copying both.
+    const addCommand = `claude mcp add --transport http jarvis ${origin}/api/mcp --header "Authorization: Bearer ${view.token}"`;
+
     return (
       <div className="space-y-3">
         <div className="space-y-1">
@@ -228,9 +232,20 @@ export function McpTokensManager() {
 
         <div className="space-y-1">
           <Label className="text-xs">Add it to Claude Code</Label>
-          <code className="bg-muted block overflow-x-auto rounded border p-2 font-mono text-[11px] whitespace-pre">
-            {`claude mcp add --transport http jarvis ${origin}/api/mcp --header "Authorization: Bearer ${view.token}"`}
-          </code>
+          <div className="flex items-start gap-2">
+            <code className="bg-muted min-w-0 flex-1 overflow-x-auto rounded border p-2 font-mono text-[11px] whitespace-pre">
+              {addCommand}
+            </code>
+            <Button
+              size="icon"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => copy(addCommand, "Command")}
+              aria-label="Copy the claude mcp add command"
+            >
+              <Copy className="size-4" />
+            </Button>
+          </div>
         </div>
 
         <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
