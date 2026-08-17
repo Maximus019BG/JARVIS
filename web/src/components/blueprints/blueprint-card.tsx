@@ -12,7 +12,8 @@ import {
   Play,
   MoreVertical,
   Star,
-  Tag
+  Tag,
+  History
 } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
@@ -35,6 +36,7 @@ interface BlueprintCardProps {
   onClone?: (blueprint: Blueprint) => void;
   onRun?: (blueprint: Blueprint) => void;
   onView?: (blueprint: Blueprint) => void;
+  onHistory?: (blueprint: Blueprint) => void;
 }
 
 export function BlueprintCard({
@@ -43,7 +45,8 @@ export function BlueprintCard({
   onDelete,
   onClone,
   onRun,
-  onView
+  onView,
+  onHistory
 }: BlueprintCardProps) {
   const handleCardClick = () => {
     onView?.(blueprint);
@@ -52,13 +55,13 @@ export function BlueprintCard({
   return (
     <TooltipProvider>
       <Card 
-        className="group relative h-full transition-all duration-200 hover:shadow-lg hover:shadow-blue-100 dark:hover:shadow-blue-900/20 cursor-pointer border-l-4 border-l-blue-500"
+        className="group border-l-bp-accent relative h-full cursor-pointer border-l-2 transition-all duration-200"
         onClick={handleCardClick}
       >
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div className="flex-1 space-y-1">
-              <h3 className="font-semibold text-lg leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              <h3 className="group-hover:text-bp-accent font-mono text-sm leading-tight font-semibold tracking-[0.1em] uppercase transition-colors">
                 {blueprint.name}
               </h3>
               {blueprint.description && (
@@ -72,7 +75,7 @@ export function BlueprintCard({
               {blueprint.isActive && (
                 <Tooltip>
                   <TooltipTrigger>
-                    <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                    <div className="bg-bp-accent h-2 w-2 animate-pulse" />
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Active Blueprint</p>
@@ -101,6 +104,12 @@ export function BlueprintCard({
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(blueprint); }}>
                       <Edit3 className="h-4 w-4 mr-2" />
                       Edit
+                    </DropdownMenuItem>
+                  )}
+                  {onHistory && (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onHistory(blueprint); }}>
+                      <History className="h-4 w-4 mr-2" />
+                      Version history
                     </DropdownMenuItem>
                   )}
                   {onClone && (

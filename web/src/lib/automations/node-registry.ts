@@ -15,7 +15,7 @@ export const expressionValueSchema = z.object({
 export const coerceExpressionOrValue = <T extends z.ZodTypeAny>(schema: T) =>
   z.union([schema, z.string()]);
 
-export type UiFieldType = "string" | "number" | "boolean" | "json";
+export type UiFieldType = "string" | "number" | "boolean" | "json" | "text";
 
 export type UiFieldMeta = {
   key: string;
@@ -35,7 +35,8 @@ export type AutomationNodeType =
   | "set"
   | "if"
   | "merge"
-  | "log";
+  | "log"
+  | "agent";
 
 export type NodeRegistryItem<TParams extends Record<string, any>> = {
   type: AutomationNodeType;
@@ -168,6 +169,47 @@ export const nodeRegistry = {
       ],
     },
   } satisfies NodeRegistryItem<{ mode: string }>,
+
+  agent: {
+    type: "agent",
+    label: "Agent",
+    category: "core",
+    defaultParams: {
+      prompt: "",
+      cwd: "",
+      model: "",
+      timeoutSec: 900,
+    },
+    paramsSchema: z
+      .object({
+        prompt: z.string().min(1),
+        /** Relative to the worker's `--root`; "" means the root itself. */
+        cwd: z.string(),
+        /** "" leaves the choice to the workstation's own config. */
+        model: z.string(),
+        timeoutSec: z.number().int().min(30).max(7200),
+      })
+      .strict(),
+    ui: {
+      fields: [
+        {
+          key: "prompt",
+          label: "Prompt",
+          // `text`, not `json`: a prompt of "42" must stay the string "42".
+          type: "text",
+          placeholder: "fix the failing test on {{$json.branch}}",
+        },
+        {
+          key: "cwd",
+          label: "Working directory",
+          type: "string",
+          description: "Relative to the --root the worker was started with",
+        },
+        { key: "model", label: "Model", type: "string", placeholder: "anthropic/claude-opus-4-5" },
+        { key: "timeoutSec", label: "Timeout (s)", type: "number" },
+      ],
+    },
+  } satisfies NodeRegistryItem<{ prompt: string; cwd: string; model: string; timeoutSec: number }>,
 
   log: {
     type: "log",

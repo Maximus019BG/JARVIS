@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { eq, and } from "drizzle-orm";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { auth } from "~/lib/auth";
 import { workstation } from "~/server/db/schemas/workstation";
 
@@ -21,33 +20,19 @@ export async function GET(
     return NextResponse.json({ error: "Blueprint not found" }, { status: 404 });
   }
 
-  // Get encryption secret from environment
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch (error) {
-    console.error("Encryption secret not configured:", error);
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    );
-  }
-
   const session = await auth.api.getSession({ headers: _request.headers });
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Decode (or pass-through if not encrypted)
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedBlueprintId = decodeId(blueprintId, secret);
 
   // Ensure workstation belongs to user
   const ws = (
     await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
   if (!ws || ws.userId !== session.user.id) {
@@ -60,8 +45,8 @@ export async function GET(
     .from(blueprint)
     .where(
       and(
-        eq(blueprint.id, decodedBlueprintId),
-        eq(blueprint.workstationId, decodedWorkstationId),
+        eq(blueprint.id, blueprintId),
+        eq(blueprint.workstationId, workstationId),
       ),
     )
     .limit(1);

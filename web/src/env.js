@@ -13,6 +13,7 @@ export const env = createEnv({
       .default("development"),
     BETTER_AUTH_SECRET: z.string().min(32).max(248),
     BETTER_AUTH_ORGANIZATION_LIMIT: z.coerce.number().default(5),
+    BETTER_AUTH_URL: z.string().url().default("http://www.jarvisweb.cloud"),
     BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: z
       .string()
       .transform((val) => {
@@ -42,10 +43,23 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: z.string().min(1),
     GOOGLE_CLIENT_SECRET: z.string().min(1),
     RESEND_API_KEY: z.string().min(1),
-    ENCRYPTION_SECRET: z.string().min(8).max(256),
     AUTOMATION_WEBHOOK_SECRET: z.string().min(8),
-    BLUEPRINT_SYNC_JWT_SECRET: z.string().min(1).optional(),
-    BLUEPRINT_SYNC_HMAC_SECRET: z.string().min(1).optional(),
+
+    /**
+     * Master switch for /api/gateway/*. Off by default so a clone that has not configured any
+     * upstream answers 503 rather than misrouting a request. Every gateway var is optional:
+     * making one required would break every existing clone's boot.
+     *
+     * enum+transform rather than z.coerce.boolean(), because coerce("false") is `true`.
+     */
+    GATEWAY_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((val) => val === "true"),
+    /** Upstream credentials. Which upstream uses which is set in src/server/gateway/upstreams.ts. */
+    GATEWAY_KEY_A: z.string().min(8).optional(),
+    GATEWAY_KEY_B: z.string().min(8).optional(),
+    GATEWAY_KEY_C: z.string().min(8).optional(),
   },
 
   /**
@@ -54,7 +68,7 @@ export const env = createEnv({
    * `NEXT_PUBLIC_`.
    */
   client: {
-    NEXT_PUBLIC_BASE_URL: z.string().url(),
+    NEXT_PUBLIC_BASE_URL: z.string().url().default("http://www.jarvisweb.cloud"),
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
   },
 
@@ -73,14 +87,16 @@ export const env = createEnv({
     BETTER_AUTH_ORGANIZATION_LIMIT: process.env.BETTER_AUTH_ORGANIZATION_LIMIT,
     BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN:
       process.env.BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN:
       process.env.BETTER_AUTH_EMAIL_VERIFICATION_EXPIRES_IN,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
-    ENCRYPTION_SECRET: process.env.ENCRYPTION_SECRET,
     AUTOMATION_WEBHOOK_SECRET: process.env.AUTOMATION_WEBHOOK_SECRET,
-    BLUEPRINT_SYNC_JWT_SECRET: process.env.BLUEPRINT_SYNC_JWT_SECRET,
-    BLUEPRINT_SYNC_HMAC_SECRET: process.env.BLUEPRINT_SYNC_HMAC_SECRET,
+    GATEWAY_ENABLED: process.env.GATEWAY_ENABLED,
+    GATEWAY_KEY_A: process.env.GATEWAY_KEY_A,
+    GATEWAY_KEY_B: process.env.GATEWAY_KEY_B,
+    GATEWAY_KEY_C: process.env.GATEWAY_KEY_C,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

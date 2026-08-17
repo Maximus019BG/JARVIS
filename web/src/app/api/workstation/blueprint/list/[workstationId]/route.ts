@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { workstation } from "~/server/db/schemas/workstation";
 import { eq, and, sql } from "drizzle-orm";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { auth } from "~/lib/auth";
 
 export async function GET(
@@ -22,24 +21,12 @@ export async function GET(
       { status: 404 },
     );
 
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch (error) {
-    console.error("Encryption secret not configured", error);
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 },
-    );
-  }
-
-  const decodedWorkstationId = decodeId(workstationId, secret);
 
   const workstationRecord = (
     await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
   if (!workstationRecord || workstationRecord.userId !== session.user.id) {
@@ -52,7 +39,7 @@ export async function GET(
   let query = db
     .select()
     .from(blueprint)
-    .where(eq(blueprint.workstationId, decodedWorkstationId));
+    .where(eq(blueprint.workstationId, workstationId));
 
   if (recentOnly) {
     //TODO: add cutoff logic
@@ -63,7 +50,7 @@ export async function GET(
       .from(blueprint)
       .where(
         and(
-          eq(blueprint.workstationId, decodedWorkstationId),
+          eq(blueprint.workstationId, workstationId),
           // sql`(${blueprint.updatedAt} >= ${cutoff.toISOString()})`,
         ),
       );

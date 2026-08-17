@@ -50,6 +50,55 @@
       "when": 1775200000000,
       "tag": "0006_blueprint_versioning",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785835356651,
+      "tag": "0007_blueprint_device_pairing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786350178921,
+      "tag": "0008_sleepy_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786351011607,
+      "tag": "0009_fat_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786607080347,
+      "tag": "0010_amazing_serpent_society",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786608996802,
+      "tag": "0011_blue_gamora",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786638779846,
+      "tag": "0012_majestic_agent_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786960486269,
+      "tag": "0013_useful_catseye",
+      "breakpoints": true
     }
   ]
 }

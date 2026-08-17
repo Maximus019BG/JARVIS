@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { eq, and } from "drizzle-orm";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { workstation } from "~/server/db/schemas/workstation";
 import { z } from "zod";
 import { blueprintSaveSchema } from "~/lib/validation/blueprints";
@@ -13,6 +13,16 @@ export async function POST(
 ) {
   try {
     const { workstationId, blueprintId } = await ctx.params;
+
+    // This route used to be deliberately unauthenticated — "the device authenticates by
+    // providing the workstation ID" — which meant anyone holding an id could write. Devices
+    // now have real bearer tokens and use /api/blueprint/push, so this path is
+    // browser-only and requires a session plus ownership of the workstation below.
+    const session = await auth.api.getSession({ headers: _request.headers });
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Parse and validate request body in one go
     const data = blueprintSaveSchema.parse(await _request.json());
 
@@ -27,29 +37,13 @@ export async function POST(
       return NextResponse.json({ error: "Blueprint not found" }, { status: 404 });
     }
 
-    // Get encryption secret from environment
-    let secret: string;
-    try {
-      secret = getEncryptionSecret();
-    } catch (error) {
-      console.error("Encryption secret not configured:", error);
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 },
-      );
-    }
-
     // Decode (or pass-through if not encrypted)
-    const decodedWorkstationId = decodeId(workstationId, secret);
-    const decodedBlueprintId = decodeId(blueprintId, secret);
-
-    // Device authenticates by providing the workstation ID; do not require a user session here.
 
     const workstationExists = await db
       .select()
       .from(workstation)
       .where(
-        eq(workstation.id, decodedWorkstationId),
+        eq(workstation.id, workstationId),
       )
       .limit(1);
 
@@ -61,8 +55,9 @@ export async function POST(
       );
     }
 
-    // The device provided the workstation ID; we trust the device to reference the correct workstation.
-    // (If you need device-level auth later, add header-based tokens or a device registry.)
+    if (workstationRecord.userId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // Save or update blueprint
     const existing = await db
@@ -70,8 +65,8 @@ export async function POST(
       .from(blueprint)
       .where(
         and(
-          eq(blueprint.id, decodedBlueprintId),
-          eq(blueprint.workstationId, decodedWorkstationId),
+          eq(blueprint.id, blueprintId),
+          eq(blueprint.workstationId, workstationId),
         ),
       )
       .limit(1);
@@ -86,20 +81,20 @@ export async function POST(
         })
         .where(
           and(
-            eq(blueprint.id, decodedBlueprintId),
-            eq(blueprint.workstationId, decodedWorkstationId),
+            eq(blueprint.id, blueprintId),
+            eq(blueprint.workstationId, workstationId),
           ),
         );
 
       return NextResponse.json({ success: true });
     } else {
       await db.insert(blueprint).values({
-        id: decodedBlueprintId,
+        id: blueprintId,
         name: data.name ?? "Untitled Blueprint",
         createdAt: new Date(),
         createdBy: workstationRecord.userId,
         metadata: data.data ? JSON.stringify(data.data) : null,
-        workstationId: decodedWorkstationId,
+        workstationId: workstationId,
         updatedAt: new Date(),
       });
 

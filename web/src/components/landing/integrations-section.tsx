@@ -36,8 +36,8 @@ export default function IntegrationsSection() {
   }, [])
 
   return (
-    <section ref={sectionRef} className="relative bg-[#0a0a0a] text-white py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-[oklch(0.5506_0.1038_174.82/0.03)] via-transparent to-[oklch(0.5506_0.1038_174.82/0.03)]" />
+    <section ref={sectionRef} className="dark relative overflow-hidden bg-background py-32 text-foreground">
+      <div className="absolute inset-0 bg-gradient-to-b from-[var(--color-bp-accent-muted)] via-transparent to-[var(--color-bp-accent-muted)]" />
 
       <div className="relative z-10 container mx-auto px-8 md:px-16 lg:px-24 max-w-7xl">
         <div
@@ -52,7 +52,7 @@ export default function IntegrationsSection() {
             <span
               className="bg-clip-text text-transparent"
               style={{
-                backgroundImage: "linear-gradient(to right, oklch(0.5506 0.1038 174.82), oklch(0.7 0.14 174.82))",
+                backgroundImage: "linear-gradient(to right, var(--bp-accent), var(--bp-accent-bright))",
               }}
             >
               Integrations
@@ -67,7 +67,7 @@ export default function IntegrationsSection() {
           {integrations.map((integration, index) => (
             <div
               key={index}
-              className="flex flex-col items-center gap-4 p-6 rounded-xl border border-white/5 bg-white/[0.02] hover:border-[oklch(0.5506_0.1038_174.82/0.3)] hover:bg-white/[0.04] transition-all duration-300 group"
+              className="flex flex-col items-center gap-4 p-6 rounded-xl border border-white/5 bg-white/[0.02] hover:border-[var(--color-bp-accent)] hover:bg-white/[0.04] transition-all duration-300 group"
               style={{
                 opacity: isVisible ? 1 : 0,
                 transform: isVisible ? "scale(1)" : "scale(0.9)",

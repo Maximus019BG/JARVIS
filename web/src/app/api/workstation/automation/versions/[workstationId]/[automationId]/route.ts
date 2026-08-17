@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
-import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
-import { automation } from "~/server/db/schemas/automation";
+import { authorizeAutomation } from "~/server/automations/access";
 import { automationVersion } from "~/server/db/schemas/automation-version";
-import { workstation } from "~/server/db/schemas/workstation";
 
 export async function GET(
   request: Request,
@@ -14,45 +11,9 @@ export async function GET(
 ) {
   const { workstationId, automationId } = await ctx.params;
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let secret: string;
-  try {
-    secret = getEncryptionSecret();
-  } catch {
-    return NextResponse.json({ error: "Server config" }, { status: 500 });
-  }
-
-  const decodedWorkstationId = decodeId(workstationId, secret);
-  const decodedAutomationId = decodeId(automationId, secret);
-
-  const workstationRecord = (
-    await db
-      .select()
-      .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
-      .limit(1)
-  )[0];
-  if (!workstationRecord || workstationRecord.userId !== session.user.id)
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const automationRecord = (
-    await db
-      .select()
-      .from(automation)
-      .where(
-        and(
-          eq(automation.id, decodedAutomationId),
-          eq(automation.workstationId, decodedWorkstationId),
-        ),
-      )
-      .limit(1)
-  )[0];
-
-  if (!automationRecord)
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const authed = await authorizeAutomation(request, workstationId, automationId);
+  if (authed instanceof NextResponse) return authed;
+  const automationRecord = authed.automation;
 
   const versions = await db
     .select({
@@ -62,7 +23,7 @@ export async function GET(
       createdBy: automationVersion.createdBy,
     })
     .from(automationVersion)
-    .where(eq(automationVersion.automationId, decodedAutomationId))
+    .where(eq(automationVersion.automationId, automationId))
     .orderBy(desc(automationVersion.version));
 
   return NextResponse.json({

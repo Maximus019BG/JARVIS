@@ -1,0 +1,31 @@
+[Unit]
+Description=JARVIS projector kiosk
+# Waits for the daemon: chromium would otherwise show its own connection error on the
+# wall, and the reconnect loop in the page only helps once the page itself has loaded.
+After=jarvis-pi.service
+Requires=jarvis-pi.service
+
+[Service]
+Type=simple
+User=%i
+# cage is a single-application Wayland compositor — about 2MB, and not a desktop. This is
+# what lets Raspberry Pi OS Lite put a browser on HDMI without installing one.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+ExecStart=/usr/bin/cage -s -- /usr/bin/chromium-browser \
+  --kiosk \
+  --ozone-platform=wayland \
+  --enable-features=UseOzonePlatform \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  --hide-scrollbars \
+  --autoplay-policy=no-user-gesture-required \
+  http://localhost:7331/projector
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

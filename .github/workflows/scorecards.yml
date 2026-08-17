@@ -6,7 +6,7 @@ on:
     - cron: '33 1 * * 0'
   push:
     branches:
-      - main
+      - master
 
 permissions:
   contents: read

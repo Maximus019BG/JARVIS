@@ -1,0 +1,22 @@
+# The build context is this directory (see docker/Dockerfile). Docker only reads
+# .dockerignore from the context root, which is why this file is not inside docker/.
+
+node_modules
+dist
+docker
+test
+scripts
+coverage
+
+*.bun-build
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+.git
+.gitignore
+.idea
+.vscode
+
+README.md
+LICENSE

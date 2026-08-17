@@ -1,6 +1,27 @@
 import { db } from "~/server/db";
 import { session } from "~/server/db/schemas/session";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNotNull } from "drizzle-orm";
+
+/**
+ * Every live mobile push token a user has. The column lives on `session`, not `user`, so
+ * somebody logged in on two phones gets two notifications and somebody whose mobile
+ * session expired gets none — they answer in the web app instead.
+ */
+export async function getExpoPushTokensByUserId(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ token: session.mobileExpoPushToken })
+    .from(session)
+    .where(
+      and(
+        eq(session.userId, userId),
+        isNotNull(session.mobileExpoPushToken),
+        gt(session.expiresAt, new Date()),
+      ),
+    );
+  // De-duplicated: the same device re-authenticating leaves several sessions carrying one
+  // token, and Expo would deliver the notification once per row.
+  return [...new Set(rows.map((row) => row.token).filter((token): token is string => !!token))];
+}
 
 export async function updateSessionWithExpoPushToken(
   sessionId: string, 

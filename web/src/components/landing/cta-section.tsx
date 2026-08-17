@@ -29,11 +29,11 @@ export default function CTASection() {
   }, [])
 
   return (
-    <section ref={sectionRef} className="relative bg-[#0a0a0a] text-white py-32 overflow-hidden">
+    <section ref={sectionRef} className="dark relative overflow-hidden bg-background py-32 text-foreground">
       <div
         className="absolute inset-0 opacity-30"
         style={{
-          backgroundImage: "radial-gradient(circle at 50% 50%, oklch(0.5506 0.1038 174.82 / 0.15), transparent 50%)",
+          backgroundImage: "radial-gradient(circle at 50% 50%, var(--bp-accent-muted), transparent 50%)",
         }}
       />
 
@@ -51,7 +51,7 @@ export default function CTASection() {
             <span
               className="bg-clip-text text-transparent"
               style={{
-                backgroundImage: "linear-gradient(to right, oklch(0.5506 0.1038 174.82), oklch(0.7 0.14 174.82))",
+                backgroundImage: "linear-gradient(to right, var(--bp-accent), var(--bp-accent-bright))",
               }}
             >
               Your Workspace?
@@ -66,7 +66,7 @@ export default function CTASection() {
               size="lg"
               className="text-black font-semibold px-8 hover:opacity-90 hover:scale-105 transition-all"
               style={{
-                background: "oklch(0.5506 0.1038 174.82)",
+                background: "var(--bp-accent)",
               }}
             >
               Get Started

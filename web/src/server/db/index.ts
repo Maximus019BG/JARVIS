@@ -15,11 +15,17 @@ import * as automationRunStep from "~/server/db/schemas/automation-run-step";
 import * as automationJob from "~/server/db/schemas/automation-job";
 import * as automationTrigger from "~/server/db/schemas/automation-trigger";
 import * as device from "~/server/db/schemas/device";
+import * as deviceLink from "~/server/db/schemas/device_link";
+import * as deviceGrant from "~/server/db/schemas/device_grant";
 import * as nonce from "~/server/db/schemas/nonce";
 import * as syncLog from "~/server/db/schemas/sync_log";
 import * as idempotencyKey from "~/server/db/schemas/idempotency_key";
 import * as scriptFile from "~/server/db/schemas/script_file";
 import * as blueprintVersion from "~/server/db/schemas/blueprint_version";
+import * as approval from "~/server/db/schemas/approval";
+import * as agentSession from "~/server/db/schemas/agent_session";
+import * as sessionPrompt from "~/server/db/schemas/session_prompt";
+import * as gatewayUsage from "~/server/db/schemas/gateway_usage";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -43,11 +49,17 @@ export const schema = {
   ...automationJob,
   ...automationTrigger,
   ...device,
+  ...deviceLink,
+  ...deviceGrant,
   ...nonce,
   ...syncLog,
   ...idempotencyKey,
   ...scriptFile,
   ...blueprintVersion,
+  ...approval,
+  ...agentSession,
+  ...sessionPrompt,
+  ...gatewayUsage,
 };
 
 export const db = drizzle(conn, {

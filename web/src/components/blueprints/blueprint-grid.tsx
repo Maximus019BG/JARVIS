@@ -16,6 +16,7 @@ type Props = {
   onDelete: (b: Blueprint) => Promise<void> | void;
   onClone: (b: Blueprint) => Promise<void> | void;
   onRun: (b: Blueprint) => void;
+  onHistory: (b: Blueprint) => void;
 };
 
 export function BlueprintsGrid({
@@ -27,6 +28,7 @@ export function BlueprintsGrid({
   onDelete,
   onClone,
   onRun,
+  onHistory,
 }: Props) {
   if (blueprints.length === 0) {
     return (
@@ -62,6 +64,7 @@ export function BlueprintsGrid({
           onDelete={onDelete}
           onClone={onClone}
           onRun={onRun}
+          onHistory={onHistory}
         />
       ))}
     </div>

@@ -1,3 +1,5 @@
+"use client";
+
 /* eslint-disable @typescript-eslint/prefer-optional-chain */
 /* eslint-disable jsx-a11y/role-supports-aria-props */
 /* eslint-disable @next/next/no-img-element */
@@ -817,7 +819,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
       tabIndex={context.disabled ? undefined : 0}
       {...dropzoneProps}
       className={cn(
-        "hover:bg-accent/30 focus-visible:border-ring/50 data-[dragging]:border-primary/30 data-[invalid]:border-destructive data-[dragging]:bg-accent/30 data-[invalid]:ring-destructive/20 relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-colors outline-none select-none data-[disabled]:pointer-events-none",
+        "focus-visible:border-ring/50 border-bp-rule data-[dragging]:border-foreground data-[invalid]:border-destructive data-[invalid]:ring-destructive/20 bp-grid bp-ticks data-[dragging]:bp-hatch-animated relative flex cursor-pointer flex-col items-center justify-center gap-2 border border-dashed p-6 transition-colors outline-none select-none data-[disabled]:pointer-events-none",
         className,
       )}
       onClick={onClick}
@@ -988,7 +990,7 @@ function FileUploadItem(props: FileUploadItemProps) {
         dir={context.dir}
         {...itemProps}
         className={cn(
-          "relative flex items-center gap-2.5 rounded-md border p-3",
+          "relative flex items-center gap-2.5 border p-3",
           className,
         )}
       >
@@ -1301,7 +1303,7 @@ function FileUploadItemProgress(props: FileUploadItemProgressProps) {
           data-slot="file-upload-progress"
           {...progressProps}
           className={cn(
-            "bg-primary/20 relative h-1.5 w-full overflow-hidden rounded-full",
+            "bp-hatch border-border relative h-1.5 w-full overflow-hidden border",
             className,
           )}
         >
