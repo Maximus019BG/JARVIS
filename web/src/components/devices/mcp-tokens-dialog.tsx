@@ -32,7 +32,14 @@ export function McpTokensDialog() {
           Manage tokens
         </Button>
       </DialogTrigger>
-      <DialogContent className="flex h-full max-h-[40rem] flex-col overflow-auto sm:max-w-[calc(100%-2rem)] md:max-w-2xl">
+      {/*
+        Scroll on the inner pane rather than on DialogContent: DialogContent carries
+        `bp-notch`/`bp-ticks`, whose outline and corner ticks are `absolute; inset: 0`
+        pseudo-elements that scroll away with the content if it is the scroll container.
+        No `h-full` either — this dialog is short with two tokens and tall while minting one,
+        so it sizes to its content up to the cap.
+      */}
+      <DialogContent className="flex max-h-[min(40rem,85vh)] flex-col sm:max-w-[calc(100%-2rem)] md:max-w-2xl">
         <DialogHeader>
           <DialogTitle>MCP tokens</DialogTitle>
           <DialogDescription>
@@ -40,7 +47,9 @@ export function McpTokensDialog() {
             read/write rights per area.
           </DialogDescription>
         </DialogHeader>
-        <McpTokensManager />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <McpTokensManager />
+        </div>
       </DialogContent>
     </Dialog>
   );
