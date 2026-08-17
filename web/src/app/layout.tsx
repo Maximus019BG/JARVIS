@@ -20,9 +20,9 @@ export const metadata: Metadata = {
       "The Jarvis Cloud is a powerful platform that provides a comprehensive suite of tools and services for developers, businesses, and individuals to accelerate their projects and workflows. With its intuitive interface and robust features, Jarvis Cloud enables users to streamline their development processes, collaborate effectively, and achieve their goals faster.",
   },
   icons: [
-    { rel: "icon", url: "/icons/JARVIS-favicon-v2.svg" },
-    { rel: "apple-touch-icon", url: "/icons/JARVIS-favicon-v2.svg" },
-    { rel: "shortcut icon", url: "/icons/JARVIS-favicon-v2.svg" },
+    { rel: "icon", url: "/icons/JARVIS-favicon-v2.png" },
+    { rel: "apple-touch-icon", url: "/icons/JARVIS-favicon-v2.png" },
+    { rel: "shortcut icon", url: "/icons/JARVIS-favicon-v2.png" },
   ],
   authors: [{ name: "Jarvis Cloud" }],
   creator: "Jarvis Cloud",
