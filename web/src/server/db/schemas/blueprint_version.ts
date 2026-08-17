@@ -1,37 +1,49 @@
-import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { blueprint } from "./blueprint";
 import { user } from "./user";
 import { device } from "./device";
 
 /**
- * Immutable snapshot of a blueprint at each version.
+ * Immutable snapshot of a blueprint at one commit.
  *
- * Every time the `push` route creates or updates a blueprint, the
- * previous content is written here so that users can browse history
- * and roll back to any past version.
+ * The device's local git repo is the source of truth; this table mirrors it so the web
+ * can show history without a checkout. Rows are append-only — "restore" adds a new
+ * version equal to an old one, it never rewrites what happened.
  */
-export const blueprintVersion = pgTable("blueprint_version", {
-  id: text("id").primaryKey(),
+export const blueprintVersion = pgTable(
+  "blueprint_version",
+  {
+    id: text("id").primaryKey(),
 
-  blueprintId: text("blueprint_id")
-    .notNull()
-    .references(() => blueprint.id, { onDelete: "cascade" }),
+    blueprintId: text("blueprint_id")
+      .notNull()
+      .references(() => blueprint.id, { onDelete: "cascade" }),
 
-  version: integer("version").notNull(),
+    version: integer("version").notNull(),
 
-  /** Serialised JSON snapshot of the blueprint `data` at this version. */
-  metadata: text("metadata").notNull(),
+    /** The serialised BlueprintDoc at this commit. */
+    metadata: text("metadata").notNull(),
 
-  hash: text("hash"),
+    hash: text("hash"),
 
-  /** Device that pushed this version (nullable – may be a web save). */
-  deviceId: text("device_id").references(() => device.id, {
-    onDelete: "set null",
-  }),
+    /** Short sha of the local git commit this mirrors. */
+    commitSha: text("commit_sha"),
+    /** The commit this one built on — what makes a push fast-forward-only. */
+    parentSha: text("parent_sha"),
+    message: text("message"),
 
-  createdBy: text("created_by")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
+    /** Device that pushed this version (nullable – may be a web save). */
+    deviceId: text("device_id").references(() => device.id, {
+      onDelete: "set null",
+    }),
 
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  // Re-pushing a commit must be a no-op, not a duplicate row. This is what lets the push
+  // endpoint be retried safely when a reply is lost in flight.
+  (table) => [uniqueIndex("blueprint_version_commit_unique").on(table.blueprintId, table.commitSha)],
+);

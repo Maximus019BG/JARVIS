@@ -1,0 +1,43 @@
+# jarvis is interactive, so use `run`, not `up`:
+#
+#   docker compose -f docker/compose.yaml run --rm jarvis            # the TUI
+#   docker compose -f docker/compose.yaml run --rm jarvis models     # any subcommand
+#
+# WORKSPACE picks the project jarvis works on; it defaults to the directory you run
+# compose from. See docker/README.md.
+
+# Without this the project name would be "docker", after this file's directory.
+name: jarvis
+
+services:
+  jarvis:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: final
+    image: jarvis:local
+    init: true
+    # A TUI needs a terminal on both ends.
+    tty: true
+    stdin_open: true
+    volumes:
+      # The project jarvis reads and edits.
+      - ${WORKSPACE:-../..}:/workspace
+      # Your real config, agents, commands, skills, tools, plugins and themes.
+      - ${JARVIS_CONFIG:-~/.config/jarvis}:/config/jarvis
+      # Sessions and the provider packages jarvis installs on demand.
+      - jarvis-data:/data
+    environment:
+      # Only the keys your jarvis.jsonc actually references are needed.
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - VELOCITY_API_KEY
+      - GEMINI_API_KEY
+      - TERM=${TERM:-xterm-256color}
+      - COLORTERM=${COLORTERM:-truecolor}
+    # Uncomment so edited files belong to you instead of root. Requires
+    # `export UID GID` (bash) or the values written out literally.
+    # user: "${UID:-1000}:${GID:-1000}"
+
+volumes:
+  jarvis-data:

@@ -5,7 +5,6 @@
 /.pnp
 .pnp.js
 node_modules
-pnpm-lock.yaml
 
 # testing
 /coverage
@@ -56,6 +55,9 @@ drizzle.sqlite
 
 # dependencies
 node_modules/
+
+# Others
+.claude
 
 # Expo
 .expo/

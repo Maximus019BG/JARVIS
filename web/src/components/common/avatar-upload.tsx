@@ -1,3 +1,5 @@
+"use client";
+
 import { UploadIcon } from "lucide-react";
 import React from "react";
 import { Button } from "~/components/ui/button";
@@ -32,7 +34,6 @@ export function AvatarUpload({
       maxSize={10 * 1024 * 1024}
       className="flex-row gap-4"
       onValueChange={(files) => {
-        console.log(files);
         setFiles(files);
         onChange?.(files[0]);
       }}

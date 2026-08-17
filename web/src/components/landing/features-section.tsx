@@ -67,8 +67,8 @@ export default function FeaturesSection() {
   }, [])
 
   return (
-    <section ref={sectionRef} className="relative bg-[#0a0a0a] text-white py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[oklch(0.5506_0.1038_174.82/0.03)] to-transparent" />
+    <section ref={sectionRef} className="dark relative overflow-hidden bg-background py-32 text-foreground">
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[var(--color-bp-accent-muted)] to-transparent" />
 
       <div className="relative z-10 container mx-auto px-8 md:px-16 lg:px-24 max-w-7xl">
         <div className="text-center mb-20">
@@ -77,7 +77,7 @@ export default function FeaturesSection() {
             <span
               className="bg-clip-text text-transparent"
               style={{
-                backgroundImage: "linear-gradient(to right, oklch(0.5506 0.1038 174.82), oklch(0.7 0.14 174.82))",
+                backgroundImage: "linear-gradient(to right, var(--bp-accent), var(--bp-accent-bright))",
               }}
             >
               Workspace
@@ -96,7 +96,7 @@ export default function FeaturesSection() {
             return (
               <div
                 key={index}
-                className="group relative p-8 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-sm hover:border-[oklch(0.5506_0.1038_174.82/0.3)] transition-all duration-500 hover:bg-white/[0.04]"
+                className="group relative p-8 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-sm hover:border-[var(--color-bp-accent)] transition-all duration-500 hover:bg-white/[0.04]"
                 style={{
                   opacity: isVisible ? 1 : 0,
                   transform: isVisible ? "translateY(0)" : "translateY(30px)",
@@ -106,7 +106,7 @@ export default function FeaturesSection() {
                 <div
                   className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-xl"
                   style={{
-                    background: "radial-gradient(circle at center, oklch(0.5506 0.1038 174.82 / 0.1), transparent 70%)",
+                    background: "radial-gradient(circle at center, var(--bp-accent), transparent 70%)",
                   }}
                 />
 
@@ -114,11 +114,11 @@ export default function FeaturesSection() {
                   <div
                     className="w-14 h-14 rounded-xl flex items-center justify-center mb-6 transition-all duration-300 group-hover:scale-110"
                     style={{
-                      background: "oklch(0.5506 0.1038 174.82 / 0.1)",
-                      border: "1px solid oklch(0.5506 0.1038 174.82 / 0.2)",
+                      background: "var(--bp-accent)",
+                      border: "1px solid var(--bp-accent)",
                     }}
                   >
-                    <Icon className="w-7 h-7" style={{ color: "oklch(0.5506 0.1038 174.82)" }} />
+                    <Icon className="w-7 h-7" style={{ color: "var(--bp-accent)" }} />
                   </div>
 
                   <h3 className="text-2xl font-semibold mb-3 text-white">{feature.title}</h3>

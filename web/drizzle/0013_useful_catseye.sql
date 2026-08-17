@@ -1,0 +1,1 @@
+ALTER TABLE "device" ADD COLUMN "scopes" text[] DEFAULT '{}' NOT NULL;

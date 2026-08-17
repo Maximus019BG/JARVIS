@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "~/lib/auth";
-import { decodeId, getEncryptionSecret } from "~/lib/crypto-utils";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { workstation } from "~/server/db/schemas/workstation";
@@ -33,16 +32,12 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Decode IDs using configured secret (pass-through when not encrypted)
-    const secret = getEncryptionSecret();
-    const decodedWorkstationId = decodeId(workstationId, secret);
-    const decodedBlueprintId = decodeId(blueprintId, secret);
 
     // Verify workstation belongs to user
     const ws = await db
       .select()
       .from(workstation)
-      .where(eq(workstation.id, decodedWorkstationId))
+      .where(eq(workstation.id, workstationId))
       .limit(1);
 
     if (!ws[0] || ws[0].userId !== session.user.id) {
@@ -58,8 +53,8 @@ export async function GET(
       .from(blueprint)
       .where(
         and(
-          eq(blueprint.id, decodedBlueprintId),
-          eq(blueprint.workstationId, decodedWorkstationId),
+          eq(blueprint.id, blueprintId),
+          eq(blueprint.workstationId, workstationId),
         ),
       )
       .limit(1);

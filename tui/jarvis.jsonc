@@ -1,0 +1,55 @@
+{
+  // Project config for developing jarvis itself. Copy this to
+  // ~/.config/jarvis/jarvis.jsonc to use it everywhere.
+  "$schema": "./jarvis.schema.json",
+  "model": "anthropic/claude-opus-4-5",
+  "smallModel": "anthropic/claude-haiku-4-5",
+  "provider": {
+    "anthropic": {
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "apiKey": "{env:ANTHROPIC_API_KEY}"
+      },
+      "models": {
+        "claude-opus-4-5": { "name": "Claude Opus 4.5" },
+        "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" },
+        "claude-haiku-4-5": { "name": "Claude Haiku 4.5" }
+      }
+    },
+    // Any OpenAI-compatible gateway works the same way.
+    "velocity": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "name": "velocity",
+        "baseURL": "https://chat.velocity.online/api",
+        "apiKey": "{env:VELOCITY_API_KEY}"
+      },
+      "models": {
+        "verda.dstack/Kimi-K2.7-Code": { "name": "Kimi K2.7 Code" },
+        "openai.openai/gpt-5.4": { "name": "GPT-5.4" }
+      }
+    }
+  },
+  "permission": {
+    "write": "ask",
+    "edit": "ask",
+    "bash": "ask"
+    // "mcp" and "webfetch" default to "ask". Prefixes narrow them:
+    // "bash:git ": "allow", "mcp:github_": "allow", "webfetch:https://docs.": "allow"
+  },
+
+  // Run after a matching file is written; failures go back to the model. This is how
+  // formatting and diagnostics reach the agent, without an LSP.
+  "check": {
+    "**/*.ts": ["bunx tsc --noEmit"]
+  }
+
+  // Stop and ask once a session has cost this much, then every increment after.
+  // "maxCost": 5,
+
+  // Save "always allow" answers into .jarvis/jarvis.jsonc instead of losing them on exit.
+  // "persistGrants": true,
+
+  // Modal editing in the prompt box. Starts in insert; escape for normal.
+  // "vim": true
+}

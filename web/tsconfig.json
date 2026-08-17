@@ -31,9 +31,17 @@
     "incremental": true,
     /* Path Aliases */
     "baseUrl": ".",
+    /* `.ts` specifiers are how the tui writes its imports; the blueprint engine is
+       shared source, not a built package. Only files this app actually imports are
+       compiled, which is what keeps the Bun-only `@blueprint/store.ts` out — import it
+       here and tsc fails on `Cannot find name 'Bun'`, which is the intended guard. */
+    "allowImportingTsExtensions": true,
     "paths": {
       "~/*": [
         "./src/*"
+      ],
+      "@blueprint/*": [
+        "../tui/src/blueprint/*"
       ]
     }
   },
