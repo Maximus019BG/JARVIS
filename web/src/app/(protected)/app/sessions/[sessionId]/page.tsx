@@ -1,11 +1,10 @@
 import { eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { SessionPromptForm } from "~/components/sessions/session-prompt-form";
-import { auth } from "~/lib/auth";
+import { getSession } from "~/lib/session";
 import { money } from "~/lib/format";
 import { transcriptLines } from "~/lib/transcript-lines";
 import { db } from "~/server/db";
@@ -14,7 +13,7 @@ import { workstation } from "~/server/db/schemas/workstation";
 
 export default async function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSession();
   if (!session?.user) return null;
 
   const row = (

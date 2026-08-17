@@ -1,7 +1,6 @@
 import { desc, eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import Link from "next/link";
-import { auth } from "~/lib/auth";
+import { getSession } from "~/lib/session";
 import { db } from "~/server/db";
 import { agentSession } from "~/server/db/schemas/agent_session";
 import { workstation } from "~/server/db/schemas/workstation";
@@ -13,7 +12,7 @@ import { money, thousands } from "~/lib/format";
 export default async function SessionsPage() {
   // `(protected)/layout.tsx` has already redirected anyone unauthenticated; this is for the
   // ownership filter below, which is the actual authorization boundary.
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSession();
   if (!session?.user) return null;
 
   const rows = await db

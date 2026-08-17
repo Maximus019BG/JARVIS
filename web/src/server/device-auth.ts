@@ -113,4 +113,37 @@ export async function hasGrant(
   return need === "read" ? true : grants.some((grant) => grant.mode === "write");
 }
 
+/** What a device may reach: every blueprint in its workstation, or an explicit set. */
+export type Readable = "all" | Set<string>;
+
+/**
+ * The reachability rule, kept pure so it can be tested without a database.
+ *
+ * Mirrors `hasGrant(..., "read")`: a NULL `blueprint_id` is the workstation-wide grant and
+ * outranks the specific ones, and mode is irrelevant because a write grant implies read.
+ */
+export function grantsToReadable(grants: { blueprintId: string | null }[]): Readable {
+  if (grants.some((grant) => grant.blueprintId === null)) return "all";
+
+  const ids = new Set<string>();
+  for (const grant of grants) if (grant.blueprintId) ids.add(grant.blueprintId);
+  return ids;
+}
+
+/**
+ * Which blueprints a device may read, resolved in one query.
+ *
+ * Lives here rather than in the caller so the authorization boundary stays in one file.
+ * Callers filtering a list must use this: asking `hasGrant` per row is one round trip per
+ * blueprint, and the database is remote.
+ */
+export async function readableBlueprintIds(deviceId: string): Promise<Readable> {
+  return grantsToReadable(
+    await db
+      .select({ blueprintId: deviceGrant.blueprintId })
+      .from(deviceGrant)
+      .where(eq(deviceGrant.deviceId, deviceId)),
+  );
+}
+
 export const forbidden = (detail: string) => NextResponse.json({ error: "Forbidden", detail }, { status: 403 });

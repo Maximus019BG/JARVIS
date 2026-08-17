@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
 import { blueprintVersion } from "~/server/db/schemas/blueprint_version";
-import { authenticateDevice, forbidden, hasGrant } from "~/server/device-auth";
+import { authenticateDevice, forbidden, hasGrant, readableBlueprintIds } from "~/server/device-auth";
 
 const MAX_COMMITS = 200;
 
@@ -24,10 +24,9 @@ export async function GET(request: Request) {
       .select({ id: blueprint.id, name: blueprint.name, version: blueprint.version, updatedAt: blueprint.updatedAt })
       .from(blueprint)
       .where(eq(blueprint.workstationId, device.workstationId));
-    const reachable = [];
-    for (const row of all) {
-      if (await hasGrant(device.id, row.id, "read")) reachable.push(row);
-    }
+    // One grant lookup for the whole list. Asking per row was a round trip per blueprint.
+    const readable = await readableBlueprintIds(device.id);
+    const reachable = readable === "all" ? all : all.filter((row) => readable.has(row.id));
     return NextResponse.json({ success: true, blueprints: reachable });
   }
 

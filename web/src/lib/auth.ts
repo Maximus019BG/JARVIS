@@ -12,6 +12,20 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  /**
+   * The DB lives in Neon us-east-1, so every query is a ~230ms round trip and
+   * `getSession` runs on all 35 of its call sites. The cookie cache serves the
+   * session from a signed cookie instead, taking the common path to zero queries.
+   *
+   * Tradeoff: a revoked session stays valid for up to `maxAge`. Lower it if that matters.
+   */
+  session: {
+    cookieCache: { enabled: true, maxAge: 5 * 60 },
+  },
+  // NOTE: do not enable `experimental: { joins: true }` here. It would collapse the
+  // session+user lookup into one query, but this schema is passed to the adapter as a
+  // flat table map with no Drizzle `relations()`, so the adapter's join path throws
+  // `Cannot read properties of undefined (reading 'referencedTable')` on every request.
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false, // Changed to false - users can sign in immediately

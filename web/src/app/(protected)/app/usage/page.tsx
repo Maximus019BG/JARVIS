@@ -1,10 +1,9 @@
 import { and, desc, eq, gte } from "drizzle-orm";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
-import { auth } from "~/lib/auth";
+import { getSession } from "~/lib/session";
 import { money, thousands } from "~/lib/format";
 import { foldUsage } from "~/lib/usage";
 import { db } from "~/server/db";
@@ -18,7 +17,7 @@ const TOP_SESSIONS = 10;
 export default async function UsagePage() {
   // `(protected)/layout.tsx` has already redirected anyone unauthenticated; the ownership
   // filter in the query below is the actual authorization boundary.
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getSession();
   if (!session?.user) return null;
 
   const from = new Date();
