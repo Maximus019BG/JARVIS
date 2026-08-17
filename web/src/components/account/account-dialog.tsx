@@ -1,4 +1,5 @@
 import { AccountEmailSection } from "~/components/account/account-email-section";
+import { AccountMcpSection } from "~/components/account/account-mcp-section";
 import { AccountPasswordSection } from "~/components/account/account-password-section";
 import { AccountProfileSection } from "~/components/account/account-profile-section";
 import { AccountTwoFactorSection } from "~/components/account/account-two-factor-section";
@@ -24,6 +25,7 @@ export function AccountDialog({
           <TabsList>
             <TabsTrigger value="account">Account</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
+            <TabsTrigger value="mcp">MCP</TabsTrigger>
           </TabsList>
           <TabsContent value="account">
             <div className="flex flex-col gap-4">
@@ -36,6 +38,9 @@ export function AccountDialog({
           </TabsContent>
           <TabsContent value="security">
             <AccountTwoFactorSection />
+          </TabsContent>
+          <TabsContent value="mcp">
+            <AccountMcpSection />
           </TabsContent>
         </Tabs>
       </DialogContent>
