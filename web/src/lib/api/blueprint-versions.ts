@@ -74,6 +74,8 @@ export type DeviceRow = {
   lastSeenAt: string | null;
   approvedAt: string | null;
   createdAt: string;
+  /** MCP scopes, `<area>:<read|write>`. Empty means this token cannot use the MCP server. */
+  scopes: string[];
   access:
     | { scope: "all"; mode: string }
     | { scope: "some"; mode: string; blueprintIds: string[] };
@@ -112,6 +114,30 @@ export const devicesApi = {
     input: { blueprintIds?: string[]; allBlueprints?: boolean; mode?: "read" | "write" },
   ) {
     const { data } = await axios.patch<{ grants: number }>(`/api/device/${deviceId}/grants`, input);
+    return data;
+  },
+
+  async setScopes(deviceId: string, scopes: string[]) {
+    const { data } = await axios.patch<{ scopes: string[] }>(`/api/device/${deviceId}/scopes`, { scopes });
+    return data;
+  },
+
+  /**
+   * Mints an MCP token. The `token` in the reply is the only readable copy that will ever
+   * exist — the server stores a hash — so the caller has to show it before navigating away.
+   */
+  async createMcpToken(input: {
+    workstationId: string;
+    name: string;
+    scopes: string[];
+    blueprintIds?: string[];
+    allBlueprints?: boolean;
+    mode?: "read" | "write";
+  }) {
+    const { data } = await axios.post<{
+      token: string;
+      device: { id: string; name: string; scopes: string[] };
+    }>("/api/device/mcp-token", input);
     return data;
   },
 

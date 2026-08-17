@@ -25,6 +25,17 @@ export const device = pgTable("device", {
   platform: text("platform"),
   /** `active` | `revoked`. Checked on every authenticated request. */
   status: text("status").notNull().default("active"),
+  /**
+   * What this token may do over MCP, as `<area>:<read|write>` — see `server/mcp/scopes.ts`.
+   *
+   * A column on `device` rather than a side table because `authenticateDevice` already
+   * selects this row, so scopes cost zero extra round trips and the DB is remote.
+   *
+   * Only the MCP server reads it: the REST device routes predate it and are governed by
+   * `device_grant` alone. Blueprint-level granularity stays there too — `blueprints:write`
+   * says *may write blueprints at all*, the grant says *which ones*, and both must pass.
+   */
+  scopes: text("scopes").array().notNull().default([]),
   approvedBy: text("approved_by").references(() => user.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
   lastSeenAt: timestamp("last_seen_at"),

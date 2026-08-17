@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { auth } from "~/lib/auth";
-import { db } from "~/server/db";
-import { automation } from "~/server/db/schemas/automation";
-import { automationVersion } from "~/server/db/schemas/automation-version";
-import { workstation } from "~/server/db/schemas/workstation";
+import type { EditorGraph } from "~/server/automations/publish";
+import { saveAutomationGraph } from "~/server/automations/save";
+import { ownsWorkstation } from "~/server/ownership";
 
 const automationSaveSchema = z.object({
   name: z.string().min(1),
@@ -14,101 +12,34 @@ const automationSaveSchema = z.object({
 });
 
 export async function POST(
-  _request: Request,
+  request: Request,
   ctx: { params: Promise<{ workstationId: string; automationId: string }> },
 ) {
   const { workstationId, automationId } = await ctx.params;
-  const session = await auth.api.getSession({ headers: _request.headers });
-  if (!session?.user)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!workstationId)
-    return NextResponse.json(
-      { error: "Workstation not found" },
-      { status: 404 },
-    );
-  if (!automationId)
-    return NextResponse.json(
-      { error: "Automation not found" },
-      { status: 404 },
-    );
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-
-  const data = automationSaveSchema.parse(await _request.json());
-
-  const workstationRecord = (
-    await db
-      .select()
-      .from(workstation)
-      .where(eq(workstation.id, workstationId))
-      .limit(1)
-  )[0];
-  if (!workstationRecord || workstationRecord.userId !== session.user.id)
+  // Not `authorizeAutomation`: this route creates the automation as well as updating it, and
+  // that helper 404s on one that does not exist yet.
+  if (!(await ownsWorkstation(session.user.id, workstationId))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const existing = await db
-    .select()
-    .from(automation)
-    .where(
-      and(
-        eq(automation.id, automationId),
-        eq(automation.workstationId, workstationId),
-      ),
-    )
-    .limit(1);
-  // Upsert automation record
-  if (existing.length > 0) {
-    await db
-      .update(automation)
-      .set({
-        name: data.name,
-        // keep legacy metadata for backward compatibility (edit page still reads it)
-        metadata: data.data ? JSON.stringify(data.data) : null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(automation.id, automationId),
-          eq(automation.workstationId, workstationId),
-        ),
-      );
-  } else {
-    await db.insert(automation).values({
-      id: automationId,
-      name: data.name,
-      status: "draft",
-      publishedVersion: null,
-      createdAt: new Date(),
-      createdBy: workstationRecord.userId,
-      metadata: data.data ? JSON.stringify(data.data) : null,
-      workstationId: workstationId,
-      updatedAt: new Date(),
-    });
   }
 
-  // Create a new draft version snapshot on each save (simple + safe).
-  // Later we can add optimistic concurrency or explicit “Save version” UX.
-  const latest = (
-    await db
-      .select()
-      .from(automationVersion)
-      .where(eq(automationVersion.automationId, automationId))
-      .orderBy(desc(automationVersion.version))
-      .limit(1)
-  )[0];
+  let data: z.infer<typeof automationSaveSchema>;
+  try {
+    data = automationSaveSchema.parse(await request.json());
+  } catch {
+    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  }
 
-  const nextVersion = (latest?.version ?? 0) + 1;
-
-  await db.insert(automationVersion).values({
-    id: crypto.randomUUID(),
-    automationId: automationId,
-    version: nextVersion,
-    editorGraph: data.data ?? { nodes: [], edges: [] },
-    definition: null,
-    compiledPlan: null,
-    createdBy: session.user.id,
-    createdAt: new Date(),
+  const { version } = await saveAutomationGraph({
+    automationId,
+    workstationId,
+    userId: session.user.id,
+    name: data.name,
+    graph: (data.data as EditorGraph | undefined) ?? null,
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, version });
 }

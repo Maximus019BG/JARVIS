@@ -1,14 +1,11 @@
 import { BlueprintDocSchema } from "@blueprint/schema.ts";
 import { and, desc, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "~/server/db";
-import { blueprint } from "~/server/db/schemas/blueprint";
 import { blueprintVersion } from "~/server/db/schemas/blueprint_version";
-import { syncLog } from "~/server/db/schemas/sync_log";
 import { requireBlueprint } from "~/server/blueprint-access";
-import { sha256 } from "~/server/device-auth";
+import { appendBlueprintVersion } from "~/server/blueprint-write";
 
 const bodySchema = z.object({ ref: z.string().min(1).max(64) });
 
@@ -54,7 +51,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ blueprintI
 
   const head = (
     await db
-      .select()
+      .select({ version: blueprintVersion.version })
       .from(blueprintVersion)
       .where(eq(blueprintVersion.blueprintId, access.blueprint.id))
       .orderBy(desc(blueprintVersion.version))
@@ -65,48 +62,13 @@ export async function POST(request: Request, ctx: { params: Promise<{ blueprintI
     return NextResponse.json({ error: "already_current", version: head.version }, { status: 409 });
   }
 
-  const now = new Date();
-  const nextVersion = (head?.version ?? 0) + 1;
-
-  await db.transaction(async (tx) => {
-    await tx.insert(blueprintVersion).values({
-      id: `bpv_${nanoid(16)}`,
-      blueprintId: access.blueprint.id,
-      version: nextVersion,
-      metadata: source.metadata,
-      hash: sha256(source.metadata),
-      commitSha: null,
-      parentSha: head?.commitSha ?? null,
-      message: `restore v${source.version}${source.commitSha ? ` (${source.commitSha})` : ""}`,
-      deviceId: null,
-      createdBy: access.userId,
-      createdAt: now,
-    });
-
-    await tx
-      .update(blueprint)
-      .set({
-        metadata: source.metadata,
-        version: nextVersion,
-        hash: sha256(source.metadata),
-        updatedAt: now,
-        // The devices are now behind; their next sync has to reconcile.
-        syncStatus: "pending",
-      })
-      .where(eq(blueprint.id, access.blueprint.id));
-
-    await tx.insert(syncLog).values({
-      id: `syn_${nanoid(16)}`,
-      blueprintId: access.blueprint.id,
-      deviceId: null,
-      action: "restore",
-      direction: "down",
-      status: "ok",
-      versionBefore: head?.version ?? 0,
-      versionAfter: nextVersion,
-      createdAt: now,
-    });
+  const created = await appendBlueprintVersion({
+    blueprintId: access.blueprint.id,
+    metadata: source.metadata,
+    message: `restore v${source.version}${source.commitSha ? ` (${source.commitSha})` : ""}`,
+    action: "restore",
+    userId: access.userId,
   });
 
-  return NextResponse.json({ success: true, version: nextVersion, restoredFrom: source.version });
+  return NextResponse.json({ success: true, version: created.version, restoredFrom: source.version });
 }

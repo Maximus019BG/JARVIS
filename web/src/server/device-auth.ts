@@ -55,36 +55,45 @@ export const POLL_INTERVAL_SECONDS = 5;
 
 export type DeviceAuth = { device: typeof device.$inferSelect };
 
+/** Pulls the bearer value out of an `Authorization` header, or "" if there isn't one. */
+export function bearerToken(request: Request): string {
+  const header = request.headers.get("authorization") ?? "";
+  return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+}
+
 /**
- * Resolves a `Authorization: Bearer jvd_…` header to a device row.
+ * Resolves a `jvd_…` token to an active device row, or null.
  *
  * The stored value is a sha256, so the lookup is by hash and the comparison is
  * `timingSafeEqual` on top — a plain `eq` in SQL already leaks little, but the extra
  * compare costs nothing and keeps the property obvious to the next reader.
+ *
+ * Shared by the REST device routes and the MCP server so there is exactly one place a
+ * token-validation bug can live. Bumps `lastSeenAt` as a side effect: every caller is a
+ * device making a request, which is what that column means.
  */
-export async function authenticateDevice(request: Request): Promise<DeviceAuth | NextResponse> {
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!token.startsWith(TOKEN_PREFIX)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function resolveDeviceToken(token: string): Promise<typeof device.$inferSelect | null> {
+  if (!token.startsWith(TOKEN_PREFIX)) return null;
 
   const hash = sha256(token);
   const rows = await db.select().from(device).where(eq(device.tokenHash, hash)).limit(1);
   const found = rows[0];
-  if (!found?.tokenHash || found.status !== "active" || found.isActive === false) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!found?.tokenHash || found.status !== "active" || found.isActive === false) return null;
 
   const a = Buffer.from(found.tokenHash, "utf8");
   const b = Buffer.from(hash, "utf8");
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
   // Deliberately not awaited-and-checked: a failed heartbeat must not fail the request.
   void db.update(device).set({ lastSeenAt: new Date() }).where(eq(device.id, found.id));
 
+  return found;
+}
+
+/** Resolves a `Authorization: Bearer jvd_…` header to a device row, or the 401 to return. */
+export async function authenticateDevice(request: Request): Promise<DeviceAuth | NextResponse> {
+  const found = await resolveDeviceToken(bearerToken(request));
+  if (!found) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return { device: found };
 }
 

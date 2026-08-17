@@ -11,6 +11,7 @@ import { Separator } from "~/components/ui/separator";
 import { Switch } from "~/components/ui/switch";
 import { devicesApi, type DeviceRow } from "~/lib/api/blueprint-versions";
 import { sheet } from "~/lib/sheet-store";
+import { levelsFrom, ScopeMatrix, toScopes } from "./scope-matrix";
 import type { LinkableBlueprint } from "./link-device-dialog";
 
 /**
@@ -31,16 +32,22 @@ function AccessForm({
   const [chosen, setChosen] = useState<Set<string>>(
     new Set(device.access.scope === "some" ? device.access.blueprintIds : []),
   );
+  const [levels, setLevels] = useState(() => levelsFrom(device.scopes ?? []));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
-      const result = await devicesApi.setGrants(device.id, {
-        allBlueprints: all,
-        blueprintIds: all ? [] : [...chosen],
-        mode,
-      });
+      // Two independent boundaries, saved together because the sheet asks about both:
+      // grants are what the sync routes enforce, scopes are what the MCP server enforces.
+      const [result] = await Promise.all([
+        devicesApi.setGrants(device.id, {
+          allBlueprints: all,
+          blueprintIds: all ? [] : [...chosen],
+          mode,
+        }),
+        devicesApi.setScopes(device.id, toScopes(levels)),
+      ]);
       toast.success(
         result.grants === 0
           ? `${device.name} can no longer reach any blueprint`
@@ -113,6 +120,19 @@ function AccessForm({
           checked={mode === "write"}
           onCheckedChange={(checked) => setMode(checked ? "write" : "read")}
         />
+      </div>
+
+      <Separator />
+
+      <div className="space-y-2">
+        <div className="space-y-0.5">
+          <Label>MCP access</Label>
+          <p className="text-muted-foreground text-xs">
+            What this token may do through the MCP server. Everything on <em>none</em> means it cannot
+            use MCP at all — the tools are not even listed to it.
+          </p>
+        </div>
+        <ScopeMatrix levels={levels} onChange={setLevels} />
       </div>
 
       <div className="flex justify-end gap-2 pt-2">

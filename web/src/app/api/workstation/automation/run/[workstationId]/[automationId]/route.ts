@@ -1,11 +1,7 @@
-import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { auth } from "~/lib/auth";
+import { authorizeAutomation } from "~/server/automations/access";
 import { publishedVersionOf, startRun } from "~/server/automations/runner";
-import { db } from "~/server/db";
-import { automation } from "~/server/db/schemas/automation";
-import { workstation } from "~/server/db/schemas/workstation";
 
 /**
  * "Run now" — the manual trigger. Same body as the webhook receiver from the runner's point
@@ -20,24 +16,9 @@ export async function POST(
 ) {
   const { workstationId, automationId } = await ctx.params;
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const workstationRecord = (
-    await db.select().from(workstation).where(eq(workstation.id, workstationId)).limit(1)
-  )[0];
-  if (workstationRecord?.userId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const automationRecord = (
-    await db
-      .select()
-      .from(automation)
-      .where(and(eq(automation.id, automationId), eq(automation.workstationId, workstationId)))
-      .limit(1)
-  )[0];
-  if (!automationRecord) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const authed = await authorizeAutomation(request, workstationId, automationId);
+  if (authed instanceof NextResponse) return authed;
+  const automationRecord = authed.automation;
 
   if (automationRecord.status !== "active" || !automationRecord.publishedVersion) {
     return NextResponse.json({ error: "Automation not published" }, { status: 400 });

@@ -18,6 +18,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { devicesApi, type DeviceRow } from "~/lib/api/blueprint-versions";
 import { typeToConfirm } from "~/lib/type-to-confirm-store";
+import { CreateMcpTokenDialog } from "./create-mcp-token-dialog";
 import { openDeviceAccessSheet } from "./device-access-sheet";
 import { LinkDeviceDialog, type LinkableBlueprint } from "./link-device-dialog";
 
@@ -88,7 +89,8 @@ export function DevicesCard({
         <CardDescription>
           Machines that can sync blueprints with this workstation — a laptop running the TUI, or a Pi.
         </CardDescription>
-        <CardAction>
+        <CardAction className="flex gap-2">
+          <CreateMcpTokenDialog workstationId={workstationId} blueprints={blueprints} onCreated={load} />
           <LinkDeviceDialog
             workstationId={workstationId}
             blueprints={blueprints}

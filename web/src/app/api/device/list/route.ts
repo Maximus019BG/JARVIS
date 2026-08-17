@@ -48,6 +48,8 @@ export async function GET(request: Request) {
         lastSeenAt: row.lastSeenAt,
         approvedAt: row.approvedAt,
         createdAt: row.createdAt,
+        /** What this token may do over MCP. Empty means it cannot use the MCP server at all. */
+        scopes: row.scopes,
         access: all
           ? { scope: "all" as const, mode: all.mode }
           : {
