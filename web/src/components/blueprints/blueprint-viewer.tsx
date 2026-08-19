@@ -1,240 +1,172 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { checkDoc } from "@blueprint/check.ts";
+import type { BlueprintDoc } from "@blueprint/schema.ts";
 import axios from "axios";
+import { Edit, Eye, EyeOff, History, Maximize2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Edit } from "lucide-react";
+import { Skeleton } from "~/components/ui/skeleton";
+import { cn } from "~/lib/utils";
 
-type Line = { x0: number; x1: number; y0: number; y1: number };
+import { BlueprintCanvas } from "./canvas";
 
-type Metadata = {
-  name?: string;
-  signature?: string;
-  created_timestamp?: number;
-  width: number;
-  height: number;
-  grid?: {
-    grid_spacing_percent?: number;
-    real_world_spacing_cm?: number;
-    show_measurements?: boolean;
-    snap_to_grid?: boolean;
-  };
-  lines?: Line[];
-};
+type Props = { id: string; userId: string; workstationId: string };
 
-type Props = {
-  id: string;
-  userId: string;
-  workstationId: string;
-};
-
+/**
+ * Read-only view of a blueprint, rendered by the same canvas the editor and the history
+ * diff use — so what you see here is what you get there, rather than a third opinion about
+ * the same geometry.
+ */
 export function BlueprintViewer({ id, userId, workstationId }: Props) {
-  const [metadata, setMetadata] = useState<Metadata | null>(null);
+  const router = useRouter();
+  const [state, setState] = useState<{ doc: BlueprintDoc; name: string; version: number; legacy: boolean } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [fitKey, setFitKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
-    async function fetchMetadata() {
-      setLoading(true);
-      setError(null);
+    void (async () => {
       try {
-        const { data } = await axios.get<Metadata | { metadata: Metadata }>(
-          `/api/workstation/blueprint/${workstationId}/${id}/metadata`,
-        );
+        const { data } = await axios.get<{
+          doc: BlueprintDoc | null;
+          name: string;
+          version: number;
+          legacy: boolean;
+        }>(`/api/blueprint/${id}`);
         if (!mounted) return;
-        // assume metadata is directly returned or nested
-        const metadata = "metadata" in data ? data.metadata : data;
-        setMetadata(metadata);
-      } catch (err) {
-        console.error(err);
-        if (!mounted) return;
-        setError("Failed to load metadata");
+        if (!data.doc) setError("This blueprint has no readable content.");
+        else setState({ doc: data.doc, name: data.name, version: data.version, legacy: data.legacy });
+      } catch {
+        if (mounted) setError("Failed to load blueprint");
       } finally {
         if (mounted) setLoading(false);
       }
-    }
-    void fetchMetadata();
+    })();
     return () => {
       mounted = false;
     };
-  }, [id, workstationId]);
+  }, [id]);
 
-  if (loading) return <div className="p-6">Loading blueprint...</div>;
-  if (error || !metadata)
-    return <div className="p-6 text-red-600">{error ?? "No metadata"}</div>;
+  if (loading) {
+    return (
+      <div className="flex h-full gap-4 p-4">
+        <Skeleton className="flex-1" />
+        <Skeleton className="w-80" />
+      </div>
+    );
+  }
 
-  const width = metadata.width ?? 800;
-  const height = metadata.height ?? 600;
-  const gridPercent = metadata.grid?.grid_spacing_percent ?? 5;
-  const stepX = Math.max(1, Math.round((gridPercent / 100) * width));
-  const stepY = Math.max(1, Math.round((gridPercent / 100) * height));
+  if (error || !state) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+        <p className="text-muted-foreground text-sm">{error ?? "No blueprint"}</p>
+        <Button variant="outline" onClick={() => router.push("/app/blueprints")}>
+          Back to blueprints
+        </Button>
+      </div>
+    );
+  }
 
-  const toX = (v: number) => (v / 100) * width;
-  const toY = (v: number) => (v / 100) * height;
-
-  // Calculate line length in cm based on grid spacing
-  const realSpacingCm = metadata.grid?.real_world_spacing_cm ?? 5;
-  const calculateLength = (ln: Line) => {
-    const x1 = toX(ln.x0);
-    const y1 = toY(ln.y0);
-    const x2 = toX(ln.x1);
-    const y2 = toY(ln.y1);
-    const pixelLength = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    // Convert pixels to cm using grid spacing
-    const pixelsPerGridCell = stepX;
-    const cmPerPixel = realSpacingCm / pixelsPerGridCell;
-    return (pixelLength * cmPerPixel).toFixed(1);
-  };
+  const { doc } = state;
+  const report = checkDoc(doc, "general");
+  const errors = report.findings.filter((finding) => finding.severity === "error").length;
+  const [, , width, height] = doc.viewBox;
 
   return (
-    <div className="flex h-full w-full gap-4 overflow-hidden p-4">
-      <div className="relative flex min-w-0 flex-1 items-center justify-center rounded-md border bg-[#1a1a1a] p-4">
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          style={{
-            maxWidth: "100%",
-            maxHeight: "100%",
-            width: "auto",
-            height: "auto",
-          }}
-          preserveAspectRatio="xMidYMid meet"
+    <div className="flex h-full gap-4 overflow-hidden p-4">
+      <div className="bg-card relative min-w-0 flex-1 overflow-hidden rounded-md border">
+        <BlueprintCanvas doc={doc} hiddenLayers={hidden} fitKey={fitKey} />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="bg-background/80 absolute top-2 right-2 h-8 w-8 border backdrop-blur"
+          onClick={() => setFitKey((n) => n + 1)}
+          aria-label="Fit to sheet"
         >
-          {/* Grid lines */}
-          <defs>
-            <pattern
-              id="grid"
-              width={stepX}
-              height={stepY}
-              patternUnits="userSpaceOnUse"
-            >
-              <path
-                d={`M ${stepX} 0 L 0 0 0 ${stepY}`}
-                fill="none"
-                stroke="#4a4a4a"
-                strokeWidth="1.5"
-              />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="#1a1a1a" />
-          <rect width="100%" height="100%" fill="url(#grid)" />
-
-          {/* Draw blueprint lines */}
-          {metadata.lines?.map((ln, idx) => {
-            const x1 = toX(ln.x0);
-            const y1 = toY(ln.y0);
-            const x2 = toX(ln.x1);
-            const y2 = toY(ln.y1);
-            const midX = (x1 + x2) / 2;
-            const midY = (y1 + y2) / 2;
-            const length = calculateLength(ln);
-
-            // Calculate perpendicular offset for label
-            const dx = x2 - x1;
-            const dy = y2 - y1;
-            const lineLength = Math.sqrt(dx * dx + dy * dy);
-            const offsetDistance = 15;
-            const offsetX = (-dy / lineLength) * offsetDistance;
-            const offsetY = (dx / lineLength) * offsetDistance;
-
-            return (
-              <g key={idx}>
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="#ffffff"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                />
-                <text
-                  x={midX + offsetX}
-                  y={midY + offsetY}
-                  fill="#4ade80"
-                  fontSize="12"
-                  fontWeight="500"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                >
-                  {length} cm
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+          <Maximize2 className="h-4 w-4" />
+        </Button>
       </div>
 
-      <aside className="bg-card flex w-80 flex-shrink-0 flex-col rounded-md border p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">
-            {metadata.name ?? "Blueprint"}
-          </h3>
-          <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            Close
+      <aside className="bg-card flex w-80 shrink-0 flex-col gap-4 rounded-md border p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold">{state.name}</h3>
+            <p className="text-muted-foreground text-xs">
+              {Math.round(width * 100) / 100} × {Math.round(height * 100) / 100} {doc.units ?? "mm"}
+            </p>
+          </div>
+          <Badge variant="secondary" className="font-mono">
+            v{state.version}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="bg-muted/50 rounded-md border p-2">
+            <p className="text-muted-foreground text-[11px]">Objects</p>
+            <p className="tabular-nums">{doc.entities.length}</p>
+          </div>
+          <div className="bg-muted/50 rounded-md border p-2">
+            <p className="text-muted-foreground text-[11px]">Issues</p>
+            <p className={cn("tabular-nums", errors > 0 && "text-destructive")}>{errors}</p>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          <p className="text-muted-foreground text-xs font-medium">Layers</p>
+          {doc.layers.map((layer) => {
+            const off = hidden.has(layer.id) || layer.visible === false;
+            return (
+              <button
+                key={layer.id}
+                type="button"
+                onClick={() =>
+                  setHidden((current) => {
+                    const next = new Set(current);
+                    if (next.has(layer.id)) next.delete(layer.id);
+                    else next.add(layer.id);
+                    return next;
+                  })
+                }
+                className="hover:bg-muted/50 flex w-full items-center gap-2 rounded-md border p-2 text-left text-sm"
+              >
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full border"
+                  style={{ backgroundColor: layer.color ?? "#0f766e" }}
+                />
+                <span className={cn("flex-1 truncate", off && "opacity-50")}>{layer.name}</span>
+                {off ? <EyeOff className="h-3.5 w-3.5 opacity-50" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="space-y-2">
+          <Button
+            onClick={() => router.push(`/app/blueprints/${workstationId}/${id}/${userId}/edit`)}
+            className="w-full"
+            size="sm"
+          >
+            <Edit className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => router.push(`/app/blueprints/${workstationId}/${id}/${userId}/history`)}
+          >
+            <History className="mr-2 h-4 w-4" />
+            History
           </Button>
         </div>
-
-        <div className="flex-1 space-y-4 overflow-y-auto">
-          <div className="bg-muted/50 space-y-1 rounded-md border p-3">
-            <p className="text-muted-foreground text-xs font-medium">
-              Signature
-            </p>
-            <p className="font-mono text-xs break-all">
-              {metadata.signature ?? "-"}
-            </p>
-          </div>
-
-          <div className="bg-muted/50 space-y-2 rounded-md border p-3">
-            <div>
-              <p className="text-muted-foreground text-xs font-medium">
-                Dimensions
-              </p>
-              <p className="text-sm">
-                {width} × {height} px
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs font-medium">
-                Grid Spacing
-              </p>
-              <p className="text-sm">
-                {gridPercent}% ({metadata.grid?.real_world_spacing_cm ?? "-"}{" "}
-                cm)
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs font-medium">
-                Snap to Grid
-              </p>
-              <p className="text-sm">
-                {metadata.grid?.snap_to_grid ? "Enabled" : "Disabled"}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-muted/50 rounded-md border p-3">
-            <p className="text-muted-foreground text-xs font-medium">Created</p>
-            <p className="text-sm">
-              {metadata.created_timestamp
-                ? new Date(metadata.created_timestamp).toLocaleString()
-                : "-"}
-            </p>
-          </div>
-        </div>
-
-        <Button
-          onClick={() =>
-            router.push(`/app/blueprints/${workstationId}/${id}/${userId}/edit`)
-          }
-          className="mt-4 w-full"
-          size="sm"
-        >
-          <Edit className="mr-2 h-4 w-4" />
-          Edit
-        </Button>
       </aside>
     </div>
   );

@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -14,7 +15,7 @@ import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
 import { discoverModels, discoveryArgs } from "../agent/model-discovery.ts"
 import { testProvider, testWillInstall } from "../agent/provider-test.ts"
-import { isPaired } from "../blueprint/credentials.ts"
+import { credentialsPath, isPaired, readCredentials, writeCredentials } from "../blueprint/credentials.ts"
 import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
 import { providerHealth } from "../config/provider-status.ts"
 import { globalConfigFile } from "../config/persist.ts"
@@ -37,6 +38,24 @@ import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
+import { PairWizard } from "./components/pair-wizard.tsx"
+import {
+  backStep as backPairStep,
+  beginPair,
+  stepSpec as pairStepSpec,
+  submitStep as submitPairStep,
+  type Pair,
+  type PairCtx,
+} from "./pair-setup.ts"
+import {
+  defaultDeviceName,
+  fingerprint,
+  PairCancelled,
+  platformLabel,
+  pollForToken,
+  requestCode,
+  type CodeResponse,
+} from "../cli/pair-flow.ts"
 import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
@@ -45,7 +64,8 @@ import { Toasts, useToasts } from "./components/toast.tsx"
 import { Panel, panelBody, type PanelContent } from "./components/panel.tsx"
 import { tutorialContent } from "./tutorial.ts"
 import { Welcome } from "./components/welcome.tsx"
-import { readGit } from "./git.ts"
+import { gitEmail, readGit } from "./git.ts"
+import { findPreset, HOSTED_PRESET_ID } from "./provider-presets.ts"
 import type { MotionLevel } from "./motion.ts"
 import { ADD_PROVIDER, listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
 import { completion, suggest, type Suggestion } from "./suggest.ts"
@@ -68,6 +88,8 @@ export type AppProps = {
   agent?: string
   /** Nothing is configured, so open the provider flow on the first paint. */
   autoSetup?: boolean
+  /** First run on an unpaired machine: open the pairing flow before asking for a key. */
+  autoPair?: boolean
 }
 
 const SCROLL_LINES = 10
@@ -105,6 +127,22 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
    * construction: `Modal` has no backdrop and a fixed zIndex, so two open at once interleave.
    */
   const [setup, setSetup] = useState<Setup | null>(null)
+  /**
+   * The pairing flow. A fourth overlay, mutually exclusive with the others for the same
+   * reason: `Modal` has no backdrop and a fixed zIndex, so two open at once interleave.
+   */
+  const [pairing, setPairing] = useState<Pair | null>(null)
+  /**
+   * The live pairing, readable from inside the poll effect without making it a dependency.
+   * The countdown rewrites `pairing` on a timer; depending on it there would restart the
+   * request every tick.
+   */
+  const pairingRef = useRef<Pair | null>(null)
+  pairingRef.current = pairing
+  /** The issued code, kept out of state so a re-render cannot lose the device code. */
+  const pendingCode = useRef<CodeResponse | null>(null)
+  /** A preset the reader chose that needed pairing first, to resume once pairing lands. */
+  const resumeSetupWith = useRef<string | null>(null)
   /** Models offered at the setup flow's model step, filled in asynchronously. */
   const [discovered, setDiscovered] = useState<{ loading: boolean; models: Choice[]; note?: string }>({
     loading: false,
@@ -296,6 +334,136 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     [config.provider],
   )
 
+  const openPair = useCallback(() => {
+    setPicker(null)
+    setPanel(null)
+    setSetup(null)
+    const existing = readCredentials()
+    const context: PairCtx = {
+      existing: existing && {
+        deviceId: existing.deviceId,
+        workstationId: existing.workstationId,
+        baseUrl: existing.baseUrl,
+        name: existing.name,
+      },
+      knownBaseUrl: process.env.JARVIS_CLOUD_URL ?? config.cloud,
+      knownEmail: gitEmail(cwd),
+      defaults: { name: existing?.name ?? defaultDeviceName(), fingerprint: fingerprint(), platform: platformLabel() },
+    }
+    pendingCode.current = null
+    const started = beginPair(context)
+    setPairing(
+      existing
+        ? { ...started, paired: { deviceId: existing.deviceId, workstationId: existing.workstationId, name: existing.name ?? "" } }
+        : started,
+    )
+  }, [config.cloud, cwd])
+
+  /**
+   * Drives the waiting step: ask for a code, then poll until a human approves.
+   *
+   * Keyed on the step and the code rather than on `pairing` itself — the countdown writes to
+   * `pairing` several times a minute, and depending on the whole object would tear the poll
+   * down and start a fresh request on every tick.
+   */
+  const pairStep = pairing?.step
+  const pairCode = pairing?.code?.userCode
+  useEffect(() => {
+    if (pairStep !== "waiting") return
+    const controller = new AbortController()
+
+    void (async () => {
+      try {
+        let code: CodeResponse
+        if (!pairCode) {
+          const draft = pairingRef.current!.draft
+          code = await requestCode(draft.baseUrl, { name: draft.name, email: draft.email || undefined })
+          if (controller.signal.aborted) return
+          setPairing((current) =>
+            current && current.step === "waiting"
+              ? {
+                  ...current,
+                  code: {
+                    userCode: code.userCode,
+                    verificationUri: code.verificationUri,
+                    verificationUriComplete: code.verificationUriComplete,
+                    qr: code.qr,
+                  },
+                  secondsLeft: code.expiresIn,
+                }
+              : current,
+          )
+        } else {
+          code = pendingCode.current!
+        }
+        pendingCode.current = code
+
+        const draft = pairingRef.current!.draft
+        const paired = await pollForToken(draft.baseUrl, code, {
+          signal: controller.signal,
+          onTick: (secondsLeft) =>
+            setPairing((current) => (current?.step === "waiting" ? { ...current, secondsLeft } : current)),
+        })
+        writeCredentials({
+          baseUrl: draft.baseUrl,
+          deviceId: paired.deviceId,
+          token: paired.token,
+          workstationId: paired.workstationId,
+          name: paired.name || draft.name,
+        })
+        if (controller.signal.aborted) return
+        setPairing((current) =>
+          current ? { ...current, step: "done", paired: { ...paired } } : current,
+        )
+        toast(`paired as ${paired.deviceId}`)
+      } catch (error) {
+        if (controller.signal.aborted || error instanceof PairCancelled) return
+        setPairing(null)
+        turn.note(`pairing failed: ${error instanceof Error ? error.message : String(error)}`, "error")
+      }
+    })()
+
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pairStep, pairCode])
+
+  /**
+   * Closes the pairing overlay, honouring whatever was waiting on it.
+   *
+   * `paired` distinguishes the two exits: finishing resumes the exact preset the reader
+   * chose, while backing out still opens the provider flow, because a first run that
+   * cancels pairing has no model either way and must not be left facing an empty prompt.
+   */
+  const closePairing = useCallback(
+    (paired: boolean) => {
+      setPairing(null)
+      const resume = resumeSetupWith.current
+      resumeSetupWith.current = null
+      if (resume) openSetup(paired ? resume : undefined)
+    },
+    [openSetup],
+  )
+
+  const advancePair = useCallback(
+    (value: string) => {
+      if (!pairing) return
+      if (pairing.step === "status") {
+        if (value === "unpair") {
+          rmSync(credentialsPath, { force: true })
+          turn.note(
+            `unpaired — ${credentialsPath} removed. Its token stays valid until you revoke it under Settings → Devices.`,
+          )
+          return closePairing(false)
+        }
+        return closePairing(false)
+      }
+      // Now paired, so `presetChoices` and the draft's key mode both resolve differently.
+      if (pairing.step === "done") return closePairing(true)
+      setPairing(submitPairStep(pairing, value))
+    },
+    [closePairing, pairing, turn],
+  )
+
   /**
    * Looks up what the chosen provider offers, as soon as there is enough to ask with. Runs on
    * arriving at the models step rather than eagerly, so a key typed and then corrected is not
@@ -330,10 +498,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   // rendered when the reader cancels out.
   const autoOpened = useRef(false)
   useEffect(() => {
-    if (!initial.autoSetup || autoOpened.current) return
+    if ((!initial.autoSetup && !initial.autoPair) || autoOpened.current) return
     autoOpened.current = true
-    openSetup()
-  }, [initial.autoSetup, openSetup])
+    // Pairing first when both are pending: its `done` step chains into the provider flow, so
+    // opening both here would put two overlays on the same zIndex.
+    if (initial.autoPair) {
+      resumeSetupWith.current = HOSTED_PRESET_ID
+      openPair()
+    }
+    else openSetup()
+  }, [initial.autoPair, initial.autoSetup, openPair, openSetup])
 
   /** Runs the round-trip when the flow reaches its check step. */
   useEffect(() => {
@@ -382,6 +556,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const advanceSetup = useCallback(
     (value: string) => {
       if (!setup) return
+      /**
+       * The hosted provider needs a paired device, and is now offered to unpaired ones too.
+       * Picking it hands off to the pairing flow and remembers where to come back to, so the
+       * answer to "I want the one with no API key" is the flow that grants it rather than a
+       * refusal pointing at a shell command.
+       */
+      if (setup.step === "preset" && findPreset(value)?.requiresPairing && !isPaired()) {
+        resumeSetupWith.current = value
+        return openPair()
+      }
       if (setup.step === "test") {
         if (value === "cancel") return setSetup(null)
         if (value === "retry") {
@@ -396,7 +580,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       }
       setSetup(submitStep(setup, setup.step === "models" ? setup.draft.models : value, setupCtx))
     },
-    [saveSetup, setup, setupCtx],
+    [openPair, saveSetup, setup, setupCtx],
   )
 
   /**
@@ -429,12 +613,13 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         openPicker: setPicker,
         openPanel: setPanel,
         openSetup,
+        openPair,
         reload: reloadConfig,
         testProvider: runTest,
         quit: () => process.exit(0),
       })
     },
-    [commands, config, cwd, extensions, keymap, mcp, openSetup, reloadConfig, runTest, turn, width],
+    [commands, config, cwd, extensions, keymap, mcp, openPair, openSetup, reloadConfig, runTest, turn, width],
   )
 
   const shell = useCallback(
@@ -775,7 +960,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         />
       )}
 
-      {setup && !turn.permission && !turn.question && (
+      {pairing && !turn.permission && !turn.question && (
+        <PairWizard
+          pair={pairing}
+          spec={pairStepSpec(pairing)}
+          theme={theme}
+          motion={motion}
+          onSubmit={advancePair}
+          onBack={() => setPairing(backPairStep(pairing))}
+          onCancel={() => closePairing(false)}
+        />
+      )}
+
+      {setup && !pairing && !turn.permission && !turn.question && (
         <Wizard
           setup={setup}
           spec={stepSpec(setup, setupCtx)}

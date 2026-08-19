@@ -151,15 +151,22 @@ export const PRESETS: readonly Preset[] = [
 
 export const findPreset = (id: string): Preset | undefined => PRESETS.find((preset) => preset.id === id)
 
+/** The hosted provider, named once so the first-run hand-off does not hardcode the string. */
+export const HOSTED_PRESET_ID = "jarvis"
+
 /**
- * Presets to offer. An unpaired device does not see the hosted option: it cannot work without a
- * token, and offering a choice that fails is worse than not offering it — `hostedGuidance`
- * points at `jarvis pair` instead.
+ * Presets to offer.
+ *
+ * The hosted option is shown to an unpaired device too, with a hint saying what picking it
+ * will do. Hiding it used to be the safe-looking choice — it cannot work without a token —
+ * but the effect was that the one option costing no API key was invisible to exactly the
+ * people who had not got one yet. Now choosing it opens the pairing flow and comes back,
+ * so the choice is offered and then made to work rather than withheld.
  */
 export function presetChoices({ paired }: { paired: boolean }): Choice[] {
-  return PRESETS.filter((preset) => paired || !preset.requiresPairing).map((preset) => ({
+  return PRESETS.map((preset) => ({
     value: preset.id,
     label: preset.label,
-    hint: preset.hint,
+    hint: !paired && preset.requiresPairing ? `${preset.hint} · pairs this device first` : preset.hint,
   }))
 }

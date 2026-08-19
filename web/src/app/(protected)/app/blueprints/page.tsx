@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/pagination";
 
 import { BlueprintCard } from "~/components/blueprints/blueprint-card";
+import { BlueprintCreateDialog } from "~/components/blueprints/blueprint-create-dialog";
 import { BlueprintFiltersComponent } from "~/components/blueprints/blueprint-filters";
 import { BlueprintDetailModal } from "~/components/blueprints/blueprint-detail-modal";
 import { BlueprintGridSkeleton } from "~/components/blueprints/blueprint-skeleton";
@@ -46,6 +47,7 @@ export default function BlueprintsPage() {
     null,
   );
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [stats, setStats] = useState<{
     total: number;
     active: number;
@@ -141,9 +143,7 @@ export default function BlueprintsPage() {
     setCurrentPage(1); // Reset to first page when filters change
   };
 
-  const handleCreateNew = () => {
-    toast.info("Create a new blueprint by using jarvis");
-  };
+  const handleCreateNew = () => setIsCreateOpen(true);
 
   const handleViewBlueprint = (blueprint: Blueprint) => {
     setSelectedBlueprint(blueprint);
@@ -171,10 +171,8 @@ export default function BlueprintsPage() {
 
   const handleCloneBlueprint = async (blueprint: Blueprint) => {
     try {
-      const clonedBlueprint = await blueprintsApi.cloneBlueprint(
-        blueprint.id,
-        `${blueprint.name} (Copy)`,
-      );
+      // The server picks a free name; sending one here just means two places decide it.
+      const clonedBlueprint = await blueprintsApi.cloneBlueprint(blueprint.id);
       toast.success(`Blueprint cloned as "${clonedBlueprint.name}"`);
       void loadBlueprints(); // Refresh the list
     } catch (error) {
@@ -339,6 +337,12 @@ export default function BlueprintsPage() {
           {renderPagination()}
         </>
       )}
+
+      <BlueprintCreateDialog
+        workstationId={activeWorkstation.id}
+        open={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+      />
 
       {/* Blueprint Detail Modal */}
       <BlueprintDetailModal

@@ -234,9 +234,18 @@ describe("draftEntry and planWrites", () => {
 })
 
 describe("presets and model choices", () => {
-  test("an unpaired device is not offered the hosted provider", () => {
-    expect(presetChoices({ paired: false }).map((choice) => choice.value)).not.toContain("jarvis")
+  test("the hosted provider is offered whether or not the device is paired", () => {
+    // It used to be hidden when unpaired, which made the only no-API-key option invisible to
+    // exactly the people who had not got a key. Choosing it now opens pairing and comes back.
+    expect(presetChoices({ paired: false }).map((choice) => choice.value)).toContain("jarvis")
     expect(presetChoices({ paired: true }).map((choice) => choice.value)).toContain("jarvis")
+  })
+
+  test("an unpaired device is told that picking the hosted provider will pair it first", () => {
+    const hint = (paired: boolean) =>
+      presetChoices({ paired }).find((choice) => choice.value === "jarvis")?.hint ?? ""
+    expect(hint(false)).toContain("pairs this device first")
+    expect(hint(true)).not.toContain("pairs this device first")
   })
 
   test("picking the same preset twice suggests a free name rather than refusing", () => {

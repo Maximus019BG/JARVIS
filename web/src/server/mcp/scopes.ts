@@ -40,3 +40,18 @@ export function satisfies(held: readonly string[], need: McpScope): boolean {
   if (held.includes(need)) return true;
   return need.endsWith(":read") && held.includes(`${need.slice(0, -":read".length)}:write`);
 }
+
+/**
+ * What a device gets over MCP when nobody said otherwise.
+ *
+ * Approval used to leave `scopes` empty, which meant every freshly paired device was
+ * MCP-dead until someone went and ticked boxes for it — a state nothing in the UI
+ * explained. Defaulting from the blueprint permission the approver already chose keeps
+ * the two answers consistent: "read only" grants no `:write` anywhere.
+ *
+ * Pure, and next to `satisfies` rather than in the route, so the rule is testable without
+ * a database — the same reason `grantsToReadable` lives beside its callers in device-auth.
+ */
+export function defaultScopesForMode(mode: "read" | "write"): McpScope[] {
+  return mode === "write" ? [...ALL_SCOPES] : MCP_AREAS.map((area) => `${area}:read` as McpScope);
+}

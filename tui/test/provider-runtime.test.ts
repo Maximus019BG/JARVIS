@@ -90,7 +90,7 @@ describe("withHostedFallback", () => {
   test("guidance names both ways out, and goes quiet once there is a model", () => {
     const guidance = hostedGuidance(config())
     expect(guidance).toContain("/provider")
-    expect(guidance).toContain("jarvis pair")
+    expect(guidance).toContain("/pair")
     expect(hostedGuidance(config({ provider: { mine: entry() } }))).toBeUndefined()
   })
 })

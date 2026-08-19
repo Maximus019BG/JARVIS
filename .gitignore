@@ -185,3 +185,5 @@ build/
 hardware/data/*
 
 .firecrawl
+# Generated from tui/install.sh at build time by web/scripts/embed-install-sh.mjs
+web/src/app/install.sh/script.generated.ts

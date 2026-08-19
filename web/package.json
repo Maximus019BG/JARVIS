@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
+    "build": "node ./scripts/embed-install-sh.mjs && next build",
     "check": "eslint . && tsc --noEmit",
     "test": "jest --passWithNoTests",
     "db:baseline": "node ./scripts/db-baseline-drizzle.mjs",
@@ -13,7 +13,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "dev": "next dev --turbo",
+    "dev": "node ./scripts/embed-install-sh.mjs && next dev --turbo",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "lint": "eslint .",

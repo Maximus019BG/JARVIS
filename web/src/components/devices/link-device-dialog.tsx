@@ -1,13 +1,10 @@
 "use client";
 
 import { Fingerprint } from "~/components/animate-ui/icons/fingerprint";
-import { AlertCircle, Check, Monitor } from "lucide-react";
-import { useState } from "react";
+import { CheckCircle2, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { LoadingButton } from "~/components/common/loading-button";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -18,22 +15,29 @@ import {
   DialogTrigger,
 } from "~/components/ui/dialog";
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "~/components/ui/input-otp";
-import { Label } from "~/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
-import { ScrollArea } from "~/components/ui/scroll-area";
-import { Separator } from "~/components/ui/separator";
 import { devicesApi } from "~/lib/api/blueprint-versions";
+import { DeviceApproval, type LinkableBlueprint, type PendingRequest } from "./device-approval";
 
-export type LinkableBlueprint = { id: string; name: string };
-
-type PendingRequest = { name: string; fingerprint: string; platform: string | null; expiresAt: string };
+export type { LinkableBlueprint };
 
 /**
- * The approval half of the device pairing flow. Two steps on purpose: the code identifies
- * a request, and only then does the user see what is asking — name, platform and
- * fingerprint — before choosing what it may reach. Showing that *before* approving is the
- * whole defence against someone else's machine guessing a code.
+ * The approval half of the device pairing flow, entered by code.
+ *
+ * Three views on purpose: the code identifies a request, and only then does the reader see
+ * what is asking — name, platform and fingerprint — before choosing what it may reach.
+ * Showing that *before* approving is the whole defence against someone else's machine
+ * guessing a code.
+ *
+ * The third view is why this no longer closes on Approve. Approval creates the device row
+ * but no token; the device mints one on its next poll, up to five seconds later. Closing on
+ * Approve used to leave a toast promising it would finish "in a few seconds" and a table
+ * that never refreshed to show whether it had.
  */
+type View =
+  | { kind: "code" }
+  | { kind: "review"; request: PendingRequest }
+  | { kind: "waiting"; deviceId: string; name: string };
+
 export function LinkDeviceDialog({
   workstationId,
   blueprints,
@@ -47,25 +51,20 @@ export function LinkDeviceDialog({
 }) {
   const [open, setOpen] = useState(Boolean(defaultCode));
   const [code, setCode] = useState((defaultCode ?? "").replace(/[^0-9A-Za-z]/g, "").toUpperCase());
-  const [request, setRequest] = useState<PendingRequest | null>(null);
+  const [view, setView] = useState<View>({ kind: "code" });
   const [looking, setLooking] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [scope, setScope] = useState<"all" | "some">("all");
-  const [mode, setMode] = useState<"read" | "write">("write");
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [connected, setConnected] = useState(false);
 
   const reset = () => {
-    setRequest(null);
+    setView({ kind: "code" });
     setCode("");
-    setScope("all");
-    setMode("write");
-    setChosen(new Set());
+    setConnected(false);
   };
 
   const lookup = async (value: string) => {
     setLooking(true);
     try {
-      setRequest(await devicesApi.lookup(value));
+      setView({ kind: "review", request: await devicesApi.lookup(value) });
     } catch {
       toast.error("That code is unknown or has expired");
       setCode("");
@@ -74,35 +73,34 @@ export function LinkDeviceDialog({
     }
   };
 
-  const approve = async () => {
-    setSaving(true);
-    try {
-      const device = await devicesApi.approve({
-        userCode: code,
-        workstationId,
-        blueprintIds: scope === "some" ? [...chosen] : [],
-        allBlueprints: scope === "all",
-        mode,
-      });
-      toast.success(`${device.name} approved`, {
-        description: "It will finish pairing within a few seconds.",
-      });
-      setOpen(false);
-      reset();
-      onLinked?.();
-    } catch {
-      toast.error("Could not approve this device");
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Watch for the device taking delivery of its token, which is the moment it is actually
+  // usable. Stops on its own once that happens, and is torn down with the dialog.
+  const waitingFor = view.kind === "waiting" ? view.deviceId : null;
+  useEffect(() => {
+    if (!waitingFor || connected) return;
+    const timer = setInterval(() => {
+      void devicesApi
+        .list(workstationId)
+        .then((devices) => {
+          if (devices.find((device) => device.id === waitingFor)?.paired) {
+            setConnected(true);
+            onLinked?.();
+          }
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [connected, onLinked, waitingFor, workstationId]);
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        if (!next) {
+          reset();
+          onLinked?.();
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -115,11 +113,12 @@ export function LinkDeviceDialog({
         <DialogHeader>
           <DialogTitle>Link a device</DialogTitle>
           <DialogDescription>
-            Run <code className="font-mono text-xs">jarvis pair</code> on the machine and enter the code it shows.
+            Run <code className="font-mono text-xs">/pair</code> in JARVIS on that machine and enter
+            the code it shows.
           </DialogDescription>
         </DialogHeader>
 
-        {!request ? (
+        {view.kind === "code" && (
           <div className="flex flex-col items-center gap-4 py-2">
             <InputOTP
               maxLength={8}
@@ -145,118 +144,48 @@ export function LinkDeviceDialog({
                 <InputOTPSlot index={7} />
               </InputOTPGroup>
             </InputOTP>
-            <p className="text-muted-foreground text-xs">{looking ? "Checking…" : "Codes expire after 10 minutes"}</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="bg-muted/40 space-y-2 rounded-lg border p-3">
-              <div className="flex items-center gap-2">
-                <Monitor className="size-4" />
-                <span className="font-medium">{request.name}</span>
-                {request.platform && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    {request.platform}
-                  </Badge>
-                )}
-              </div>
-              <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                <Fingerprint className="size-3.5" />
-                <code className="font-mono">{request.fingerprint}</code>
-              </div>
-              <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
-                <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                Only approve this if the fingerprint matches the machine you just ran the command on.
-              </p>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <Label>Access</Label>
-              <RadioGroup value={scope} onValueChange={(value) => setScope(value as "all" | "some")}>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="all" id="scope-all" />
-                  <Label htmlFor="scope-all" className="font-normal">
-                    All blueprints, including new ones
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="some" id="scope-some" />
-                  <Label htmlFor="scope-some" className="font-normal">
-                    Only the ones I choose
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {scope === "some" && (
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {blueprints.length === 0 ? (
-                  <p className="text-muted-foreground p-2 text-xs">
-                    This workstation has no blueprints yet. Grant all access, or pair after the first push.
-                  </p>
-                ) : (
-                  blueprints.map((item) => (
-                    <label key={item.id} className="hover:bg-muted/60 flex items-center gap-2 rounded px-2 py-1.5">
-                      <Checkbox
-                        checked={chosen.has(item.id)}
-                        onCheckedChange={(checked) =>
-                          setChosen((current) => {
-                            const next = new Set(current);
-                            if (checked) next.add(item.id);
-                            else next.delete(item.id);
-                            return next;
-                          })
-                        }
-                      />
-                      <span className="truncate text-sm">{item.name}</span>
-                    </label>
-                  ))
-                )}
-              </ScrollArea>
-            )}
-
-            <div className="space-y-2">
-              <Label>Permission</Label>
-              <RadioGroup
-                value={mode}
-                onValueChange={(value) => setMode(value as "read" | "write")}
-                className="flex gap-4"
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="write" id="mode-write" />
-                  <Label htmlFor="mode-write" className="font-normal">
-                    Read and write
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="read" id="mode-read" />
-                  <Label htmlFor="mode-read" className="font-normal">
-                    Read only
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
+            <p className="text-muted-foreground text-xs">
+              {looking ? "Checking…" : "Codes expire after 10 minutes"}
+            </p>
           </div>
         )}
 
-        <DialogFooter>
-          {request && (
-            <>
-              <Button variant="ghost" onClick={reset}>
-                Back
-              </Button>
-              <LoadingButton
-                isLoading={saving}
-                onClick={approve}
-                disabled={scope === "some" && chosen.size === 0}
-              >
-                <Check className="size-4" />
-                Approve
-              </LoadingButton>
-            </>
-          )}
-        </DialogFooter>
+        {view.kind === "review" && (
+          <DeviceApproval
+            userCode={code}
+            workstationId={workstationId}
+            blueprints={blueprints}
+            request={view.request}
+            onBack={reset}
+            onApproved={(device) => setView({ kind: "waiting", deviceId: device.id, name: device.name })}
+          />
+        )}
+
+        {view.kind === "waiting" && (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            {connected ? (
+              <>
+                <CheckCircle2 className="text-primary size-8" />
+                <p className="font-medium">{view.name} is connected</p>
+                <p className="text-muted-foreground text-sm">It can sync blueprints with this workstation now.</p>
+              </>
+            ) : (
+              <>
+                <Loader2 className="text-muted-foreground size-8 animate-spin" />
+                <p className="font-medium">Waiting for {view.name} to connect…</p>
+                <p className="text-muted-foreground text-sm">
+                  Approved. It picks up its credentials on its next check, within a few seconds.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        {view.kind === "waiting" && (
+          <DialogFooter>
+            <Button onClick={() => setOpen(false)}>{connected ? "Done" : "Close"}</Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

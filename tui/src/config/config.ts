@@ -88,6 +88,14 @@ export const ConfigSchema = z
     /** Tool name (or "bash:<prefix>") -> ask | allow | deny. */
     permission: z.record(z.string(), PermissionSchema).default({}),
     keybinds: z.record(z.string(), z.string()).default({}),
+    /**
+     * Which JARVIS deployment this machine pairs with, as a prefill for `/pair`.
+     *
+     * Only a default for the wizard's first question — the address that actually matters is
+     * the one written into `credentials.json` at pairing time, so changing this afterwards
+     * does not move an already-paired device. `JARVIS_CLOUD_URL` wins over it.
+     */
+    cloud: z.string().optional(),
     theme: z.string().default("jarvis"),
     /** UI motion. `reduced` keeps the spinner only; `JARVIS_MOTION` overrides this. */
     animations: z.enum(["full", "reduced", "off"]).default("full"),

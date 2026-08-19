@@ -267,6 +267,9 @@
         "type": "string"
       }
     },
+    "cloud": {
+      "type": "string"
+    },
     "theme": {
       "default": "jarvis",
       "type": "string"

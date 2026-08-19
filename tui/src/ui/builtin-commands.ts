@@ -79,6 +79,8 @@ export type CommandDeps = {
   openPanel: (content: PanelContent) => void
   /** Opens the interactive provider setup flow, optionally starting from a known preset. */
   openSetup: (presetID?: string) => void
+  /** Opens the pairing flow, or this device's pairing when it already has one. */
+  openPair: () => void
   /**
    * Re-reads the config after a command wrote to it. Returns false if the result did not parse,
    * in which case the running session keeps the config it had.
@@ -95,7 +97,8 @@ export type CommandDeps = {
  * command table is readable in one place.
  */
 export function runCommand(command: Command, args: string, deps: CommandDeps): void {
-  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, openSetup, reload, quit } = deps
+  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, openSetup, openPair, reload, quit } =
+    deps
 
   if (command.kind === "prompt") {
     turn.send(expand(command, args), { agent: command.agent, model: command.model })
@@ -144,6 +147,8 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       })
       return content ? openPanel(content) : undefined
     }
+    case "pair":
+      return openPair()
     case "blueprint":
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
     case "stats":

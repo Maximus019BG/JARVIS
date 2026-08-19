@@ -166,3 +166,21 @@ export async function readableBlueprintIds(deviceId: string): Promise<Readable> 
 }
 
 export const forbidden = (detail: string) => NextResponse.json({ error: "Forbidden", detail }, { status: 403 });
+
+/**
+ * Whether a signed-in user may act on a pairing request.
+ *
+ * A request that named an email belongs to that account and to nobody else: without this, a
+ * code read over somebody's shoulder could be approved into an unrelated workstation, and
+ * `POST /api/device/reject` would let anyone cancel a stranger's pairing.
+ *
+ * An unaddressed request — `targetUserId` null — stays open to whoever holds the code,
+ * which is the behaviour that shipped before requests could be addressed at all.
+ *
+ * Pure, and here rather than in the three routes that need it, so the rule is checked once
+ * and can be tested without a database — the same reasoning as `canDeleteDevice` above.
+ */
+export function mayActOnLink(link: { targetUserId: string | null }, userId: string): boolean {
+  if (!userId) return false;
+  return link.targetUserId === null || link.targetUserId === userId;
+}

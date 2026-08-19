@@ -326,19 +326,45 @@ address a store outside the workspace, so the name is the sandbox.
 
 ### Syncing to the cloud
 
-`jarvis pair` connects this machine to a JARVIS web instance. It prints a short code and a
-URL; enter the code in the web app, which shows the device's name and fingerprint and asks
-which blueprints it may reach. This is the OAuth 2.0 device authorization grant (RFC 8628),
-so no password or token is ever typed on the device.
+`/pair` inside jarvis connects this machine to a JARVIS web instance. It asks where your
+JARVIS is, which account should approve the request, and what to call this machine — then
+waits, showing a QR you can scan with a phone. Approve it in the web app's Devices tab,
+where a request naming your email is already listed, or scan the QR to land straight on the
+approval screen. Either way the web app shows the device's name and fingerprint and asks
+which blueprints it may reach before anything is granted.
+
+This is the OAuth 2.0 device authorization grant (RFC 8628), so no password or token is
+ever typed on the device. Being paired also unlocks the `JARVIS (hosted)` provider, which
+needs no API key of its own — which is why a first run offers pairing before it asks for a
+key.
+
+`/pair` on an already-paired machine shows what it is paired to, and offers to unpair.
+
+The same thing without the interface, for a Pi being set up over SSH:
 
 ```
-jarvis pair                        pair against http://localhost:3000
-jarvis pair https://jarvis.example pair against a deployment
-jarvis device                      show this device's pairing
+jarvis pair me@example.com                        pair, and address it to that account
+jarvis pair me@example.com https://jarvis.example against a specific deployment
+jarvis pair https://jarvis.example                without naming an account — code only
+jarvis unpair -y                                  forget the pairing on this machine
+jarvis device                                     show this device's pairing
 ```
 
 Credentials land in `~/.local/share/jarvis/credentials.json` at mode `600` — deliberately
-not `jarvis.jsonc`, which people commit. `JARVIS_CLOUD_URL` sets the default address.
+not `jarvis.jsonc`, which people commit — and survive a reboot, so pairing is a
+once-per-machine step. `unpair` only clears that file; the token stays valid until it is revoked
+under Settings → Devices in the web app.
+
+The address is taken from `JARVIS_CLOUD_URL`, then the `cloud` key in your config, then
+whatever the wizard asks for. `install.sh --cloud <url>` writes that key, which is why a
+machine installed with the one-liner from the Devices tab never has to be told twice:
+
+```
+curl -fsSL https://jarvis.example/install.sh | sh
+```
+
+Add `--service` to that and the machine also runs `jarvis work` on boot through systemd, no
+desktop or browser required.
 
 The `blueprint_sync` tool then pushes and pulls:
 

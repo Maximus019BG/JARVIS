@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import { device } from './device';
+import { user } from './user';
 
 /**
  * One in-flight pairing request (RFC 8628 device authorization grant).
@@ -28,5 +29,14 @@ export const deviceLink = pgTable("device_link", {
    * stored, not even briefly.
    */
   approvedDeviceId: text("approved_device_id").references(() => device.id, { onDelete: "cascade" }),
+  /**
+   * Who this request is addressed to, when the device named an email. Lets the request show
+   * up in that user's pending list instead of making them transcribe the code.
+   *
+   * Nullable: a request that named no email is still valid and behaves exactly as before —
+   * it is simply invisible until someone enters its code. Approval checks this column, so a
+   * leaked code cannot be redeemed by a different account than the one it was addressed to.
+   */
+  targetUserId: text("target_user_id").references(() => user.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

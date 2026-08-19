@@ -6,6 +6,7 @@ import { loadKeymap } from "../config/keybinds.ts"
 import { startMcp } from "../extend/mcp.ts"
 import { hostedGuidance } from "../agent/hosted.ts"
 import { listModels } from "../agent/provider.ts"
+import { isPaired } from "../blueprint/credentials.ts"
 import { openSession } from "../agent/session.ts"
 import { pushSessions } from "../agent/session-sync.ts"
 import { loadTheme } from "../config/theme.ts"
@@ -41,6 +42,9 @@ export async function startTui(options: StartOptions) {
   // rather than a set of instructions to go and carry out somewhere else.
   const needsProvider = listModels(options.config).length === 0
   if (needsProvider) notes.unshift(hostedGuidance(options.config) ?? "")
+  // Pairing before keys, when the machine has neither. Being paired unlocks the hosted model,
+  // so asking for an API key first is asking for something pairing might make unnecessary.
+  const autoPair = needsProvider && !isPaired()
 
   // Ctrl-C is handled in the app so it can interrupt a running turn first.
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
@@ -64,6 +68,7 @@ export async function startTui(options: StartOptions) {
       model={options.model}
       agent={options.agent}
       autoSetup={needsProvider}
+      autoPair={autoPair}
     />,
   )
 }

@@ -41,6 +41,7 @@ const CONTEXTUAL: [string, string][] = [
 ]
 
 const WORTH_KNOWING: [string, string][] = [
+  ["/pair", "link this machine to the web app — unlocks JARVIS (hosted), no key needed"],
   ["/provider", "add a provider, step by step — a key is all it takes"],
   ["/provider test <id>", "a real request, so a bad key fails here and not mid-turn"],
   ["/provider stats", "per-day usage, failures and observed outages"],

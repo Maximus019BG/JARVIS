@@ -40,6 +40,7 @@ import { Separator } from "~/components/ui/separator";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Switch } from "~/components/ui/switch";
 import { devicesApi, type DeviceRow } from "~/lib/api/blueprint-versions";
+import { copyToClipboard } from "~/lib/copy";
 import { useWorkstationBlueprints } from "~/lib/workstation-blueprints";
 import { useActiveWorkstation, useListWorkstations } from "~/lib/workstation-hooks";
 
@@ -72,17 +73,10 @@ type View =
   | { kind: "reveal"; token: string }
   | { kind: "access"; device: DeviceRow };
 
+const copy = copyToClipboard;
+
 /** Which destructive question a row is currently asking, if any. */
 type Pending = { id: string; action: "revoke" | "delete" };
-
-const copy = async (value: string, what: string) => {
-  try {
-    await navigator.clipboard.writeText(value);
-    toast.success(`${what} copied`);
-  } catch {
-    toast.error("Could not copy — select it and copy by hand");
-  }
-};
 
 export function McpTokensManager() {
   const { data: workstations } = useListWorkstations();
