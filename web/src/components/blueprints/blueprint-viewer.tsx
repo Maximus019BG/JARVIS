@@ -95,7 +95,7 @@ export function BlueprintViewer({ id, userId, workstationId }: Props) {
         </Button>
       </div>
 
-      <aside className="bg-card flex w-80 shrink-0 flex-col gap-4 rounded-md border p-4">
+      <aside className="bg-card flex w-80 shrink-0 flex-col gap-4 overflow-hidden rounded-md border p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="truncate text-lg font-semibold">{state.name}</h3>
@@ -119,7 +119,7 @@ export function BlueprintViewer({ id, userId, workstationId }: Props) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain">
           <p className="text-muted-foreground text-xs font-medium">Layers</p>
           {doc.layers.map((layer) => {
             const off = hidden.has(layer.id) || layer.visible === false;

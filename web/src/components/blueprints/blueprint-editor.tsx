@@ -408,7 +408,7 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="bg-card flex flex-wrap items-center gap-3 border-b px-4 py-2.5">
+      <header className="bg-card flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-2.5">
         <Button variant="ghost" size="sm" onClick={() => router.push("/app/blueprints")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Blueprints
@@ -470,7 +470,7 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
       </header>
 
       {base.legacy && (
-        <Alert className="rounded-none border-x-0 border-t-0">
+        <Alert className="shrink-0 rounded-none border-x-0 border-t-0">
           <AlertDescription className="text-xs">
             This drawing was made in the old web editor. It has been converted so it can be edited,
             versioned and synced — saving stores the converted version, and the original stays in
@@ -479,8 +479,8 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
         </Alert>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-3 p-3">
-        <EditorToolbar tool={tool} onToolChange={(next) => { cancelAll(); setTool(next); if (next === "symbol") setTab("symbols"); }} />
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden p-3">
+        <EditorToolbar className="shrink-0 overflow-y-auto overscroll-contain" tool={tool} onToolChange={(next) => { cancelAll(); setTool(next); if (next === "symbol") setTab("symbols"); }} />
 
         <div className="bg-card relative min-w-0 flex-1 overflow-hidden rounded-md border">
           <BlueprintCanvas
@@ -585,9 +585,9 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
           </div>
         </div>
 
-        <aside className="bg-card flex w-80 shrink-0 flex-col rounded-md border">
+        <aside className="bg-card flex w-80 shrink-0 flex-col overflow-hidden rounded-md border">
           <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="m-2 grid grid-cols-4">
+            <TabsList className="m-2 grid shrink-0 grid-cols-4">
               <TabsTrigger value="properties" className="text-xs">
                 Object
               </TabsTrigger>
@@ -601,7 +601,7 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
                 Check
               </TabsTrigger>
             </TabsList>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3">
               <TabsContent value="properties" className="mt-0">
                 <PropertiesPanel doc={doc} selection={selection} onOps={push} />
               </TabsContent>
