@@ -155,6 +155,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [selected, setSelected] = useState(0)
   const [quitting, setQuitting] = useState(false)
+  /** Whether thinking blocks are unfolded. One switch for all of them — the transcript has no cursor to expand just one. */
+  const [thinking, setThinking] = useState(false)
   /** Whether the arming press also killed a turn, so the hint can say both things happened. */
   const [interrupted, setInterrupted] = useState(false)
   const { toasts, toast } = useToasts()
@@ -862,6 +864,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     else if (is("scrollDown")) scroll.current?.scrollBy({ x: 0, y: SCROLL_LINES })
     else if (is("scrollHalfUp")) scroll.current?.scrollBy({ x: 0, y: -Math.floor(height / 2) })
     else if (is("scrollHalfDown")) scroll.current?.scrollBy({ x: 0, y: Math.floor(height / 2) })
+    else if (is("toggleReasoning")) setThinking((shown) => !shown)
     else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
   })
 
@@ -899,7 +902,14 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           }}
         >
           {welcome}
-          <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
+          <Messages
+            items={turn.items}
+            theme={theme}
+            motion={motion}
+            streaming={turn.busy}
+            thinking={thinking}
+            thinkingKey={describe(keymap.toggleReasoning)}
+          />
         </scrollbox>
       )}
 

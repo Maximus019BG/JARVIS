@@ -21,6 +21,8 @@ export type Action =
   | "acceptSuggestion"
   /** Opens the tutorial overlay. Not ctrl+h: many terminals send that for backspace. */
   | "tutorial"
+  /** Expands every thinking block to its full text, or folds them back to the tail. */
+  | "toggleReasoning"
 
 export const DEFAULT_KEYBINDS: Record<Action, string> = {
   submit: "return",
@@ -46,6 +48,8 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   scrollBottom: "end",
   acceptSuggestion: "tab",
   tutorial: "ctrl+g",
+  // alt, like providerSetup: every free ctrl chord is either bound above or the textarea's.
+  toggleReasoning: "alt+r",
 }
 
 export type Chord = { name: string; ctrl: boolean; shift: boolean; meta: boolean }

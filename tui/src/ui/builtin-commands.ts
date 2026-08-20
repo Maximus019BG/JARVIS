@@ -32,6 +32,7 @@ export const KEY_HELP: [keyof Keymap, string][] = [
   ["scrollHalfUp", "scroll up"],
   ["scrollHalfDown", "scroll down"],
   ["scrollBottom", "jump to newest"],
+  ["toggleReasoning", "expand thinking"],
 ]
 
 export function help(keymap: Keymap): string {

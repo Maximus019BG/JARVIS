@@ -34,6 +34,56 @@ describe("resolvePath", () => {
   })
 })
 
+describe("blueprint_edit", () => {
+  // The failure this replaces: a model called blueprint_edit with `simple_electrical`, was
+  // refused for the underscore, retried with a valid name, and got "no blueprint named …"
+  // because it never worked out it had to call `blueprint` action:"create" first. One call
+  // has to be enough, and the name it sends has to be the name it gets.
+  test("one call draws, with no create call and a name a model would really send", async () => {
+    const { ctx, tools } = setup()
+    const out = await call(tools.blueprint_edit, {
+      name: "simple_electrical",
+      ops: [
+        { op: "add", entity: { type: "circle", c: [20, 20], r: 6 } },
+        { op: "add", entity: { type: "line", a: [0, 20], b: [14, 20] } },
+      ],
+    })
+    expect(out).toContain("simple-electrical")
+    expect(out).toContain("2 entities")
+    const listed = await call(tools.blueprint, { action: "list" })
+    expect(listed).toContain("simple-electrical")
+    // Committed, not just written: the store is a git repo and history is the point of it.
+    expect(await call(tools.blueprint, { action: "history", name: "simple_electrical" })).toContain("add circle")
+  })
+
+  test("a second call edits the same blueprint rather than starting a new one", async () => {
+    const { tools } = setup()
+    await call(tools.blueprint_edit, { name: "plate", ops: [{ op: "add", entity: { type: "circle", c: [0, 0], r: 5 } }] })
+    const out = await call(tools.blueprint_edit, {
+      name: "plate",
+      ops: [{ op: "add", entity: { type: "circle", c: [10, 0], r: 5 } }],
+    })
+    expect(out).toContain("2 entities")
+  })
+
+  test("an entity that is invalid for its type is still refused", async () => {
+    const { tools } = setup()
+    // The flat payload is looser on the wire, not in what reaches disk.
+    expect(call(tools.blueprint_edit, { name: "plate", ops: [{ op: "add", entity: { type: "circle", c: [0, 0] } }] }))
+      .rejects.toThrow(/circle/)
+    expect(await call(tools.blueprint, { action: "list" })).toContain("no blueprints yet")
+  })
+})
+
+describe("blueprint_symbol", () => {
+  test("places on a blueprint that does not exist yet", async () => {
+    const { tools } = setup()
+    const out = await call(tools.blueprint_symbol, { action: "place", name: "circuit", symbol: "resistor", at: [10, 10] })
+    expect(out).toContain("circuit")
+    expect(await call(tools.blueprint, { action: "list" })).toContain("circuit")
+  })
+})
+
 describe("ask", () => {
   test("is absent when there is nobody to answer", () => {
     const { tools } = setup()

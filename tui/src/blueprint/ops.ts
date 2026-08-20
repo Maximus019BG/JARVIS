@@ -42,8 +42,25 @@ const PatchSchema = z.object({
   dash: z.enum(["solid", "dashed", "dotted"]).optional(),
 })
 
+/**
+ * The `add` payload as the model sees it: `type` plus every entity field, all optional.
+ * `EntitySchema` is an eight-variant union, and nesting it inside this ten-variant one gave
+ * `blueprint_edit` a 7.6 KB input schema seventeen levels deep — two unions a model has to
+ * pick through in one call, which mid-sized models miss and Groq turns into a hard
+ * `failed_generation`. Flat here, narrowed by `EntitySchema.safeParse` in `applyOps`, so
+ * nothing downstream ever sees an entity that has not been validated. Same trade the symbol
+ * tool already makes for its `placements` array.
+ */
+const FlatEntitySchema = PatchSchema.extend({
+  type: z.enum(["line", "polyline", "rect", "circle", "arc", "path", "text", "dimension"]),
+  id: z.string().optional(),
+  /** `pathCommand` is a five-variant union of differently shaped tuples — the deepest thing
+   *  in the whole schema, and the reason this one field is loose rather than typed here. */
+  d: z.array(z.array(z.union([z.string(), z.number()]))).min(1).optional(),
+})
+
 export const OpSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("add"), entity: EntitySchema }),
+  z.object({ op: z.literal("add"), entity: FlatEntitySchema }),
   z.object({ op: z.literal("update"), id: z.string(), patch: PatchSchema }),
   z.object({ op: z.literal("delete"), ids }),
   z.object({ op: z.literal("move"), ids, by: point.describe("[dx, dy]") }),
@@ -110,18 +127,25 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
   for (const op of ops) {
     switch (op.op) {
       case "add": {
-        const layer = op.entity.layer ?? next.layers[0]!.id
+        // Narrow the flat payload to a real entity here — the same safeParse `update` runs
+        // below, and the only place it happens for `add`.
+        const parsed = EntitySchema.safeParse(op.entity)
+        if (!parsed.success) {
+          throw new BlueprintError(`invalid ${op.entity.type}: ${parsed.error.issues[0]?.message ?? "unknown"}`)
+        }
+        const entity = parsed.data
+        const layer = entity.layer ?? next.layers[0]!.id
         if (!next.layers.some((existing) => existing.id === layer)) {
           throw new BlueprintError(`no such layer: ${layer}`)
         }
         // An explicit id is how a caller stamps a symbol and then moves the whole of it in
         // the same batch. `diff` and `merge3` key on id, so a repeat would not collide
         // loudly — it would quietly lose one of the two entities in a three-way merge.
-        if (op.entity.id && next.entities.some((existing) => existing.id === op.entity.id)) {
-          throw new BlueprintError(`entity id already taken: ${op.entity.id}`)
+        if (entity.id && next.entities.some((existing) => existing.id === entity.id)) {
+          throw new BlueprintError(`entity id already taken: ${entity.id}`)
         }
-        next.entities = [...next.entities, { ...op.entity, id: op.entity.id ?? `e${++seq}`, layer }]
-        bump(`add ${op.entity.type}`)
+        next.entities = [...next.entities, { ...entity, id: entity.id ?? `e${++seq}`, layer }]
+        bump(`add ${entity.type}`)
         break
       }
       case "update": {

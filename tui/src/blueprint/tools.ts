@@ -17,6 +17,7 @@ import {
   history,
   listBlueprints,
   readDoc,
+  readOrCreate,
   safeName,
   writeDoc,
 } from "./store.ts"
@@ -127,7 +128,7 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
   tool({
     description: [
       "Draw on a blueprint by applying a list of operations, then commit them to git.",
-      'The blueprint must exist first — call `blueprint` action:"create" before the first edit.',
+      'A blueprint that does not exist yet is created by the first edit; `blueprint` action:"create" is only needed to set non-default units or sheet size.',
       "Coordinates are in the drawing's units with Y pointing DOWN, like SVG.",
       "Entity ids are assigned automatically on `add` — read them back from the preview or `blueprint` action:\"info\".",
       "Returns a braille rendering of the result, so check it and fix what looks wrong.",
@@ -141,7 +142,7 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
     }),
     execute: async ({ name, ops, message, view: region }) => {
       const safe = safeName(name)
-      const doc = readDoc(root, safe)
+      const doc = readOrCreate(root, safe)
       // Apply first: an op set that will not apply should never reach the permission
       // prompt, let alone the disk.
       const { doc: next, summary } = applyOps(doc, ops)

@@ -6,7 +6,7 @@ import { expand, loadCommands, parseCommandLine, type Command } from "../src/ext
 import { describe as describeChord, loadKeymap, matches, parseChord } from "../src/config/keybinds.ts"
 import { loadTheme, THEMES } from "../src/config/theme.ts"
 import type { Session } from "../src/agent/session.ts"
-import { outputBudget } from "../src/ui/components/messages.tsx"
+import { outputBudget, reasoningLines } from "../src/ui/components/messages.tsx"
 import { segments, type Part } from "../src/ui/components/status.tsx"
 import { parseGit } from "../src/ui/git.ts"
 import { lerpHex, resolveMotion } from "../src/ui/motion.ts"
@@ -27,6 +27,18 @@ describe("outputBudget", () => {
   test("a drawing survives, because the picture is the answer", () => {
     expect(outputBudget("blueprint_edit", true, false)).toBe(30)
     expect(outputBudget("blueprint_view", true, false)).toBe(30)
+  })
+})
+
+describe("reasoningLines", () => {
+  const text = "one\n\ntwo\nthree\nfour"
+
+  test("collapsed keeps the tail, blank lines dropped", () => {
+    expect(reasoningLines(text, false)).toEqual(["two", "three", "four"])
+  })
+
+  test("expanded keeps everything", () => {
+    expect(reasoningLines(text, true)).toEqual(["one", "two", "three", "four"])
   })
 })
 

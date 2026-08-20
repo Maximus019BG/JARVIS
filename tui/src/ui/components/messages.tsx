@@ -24,6 +24,15 @@ const DRAWN_LINES = 30
 export const outputBudget = (name: string, done: boolean, failed?: boolean): number =>
   DRAWS.has(name) ? DRAWN_LINES : done && !failed ? 0 : OUTPUT_LINES
 
+/**
+ * The thinking lines a reasoning block shows. Collapsed keeps the tail, so a streaming
+ * block reads as the model's latest thought; expanded shows all of it.
+ */
+export const reasoningLines = (text: string, expanded: boolean): string[] => {
+  const lines = text.split("\n").filter((line) => line.trim())
+  return expanded ? lines : lines.slice(-REASONING_LINES)
+}
+
 /** One transcript entry, fading itself in the first time it appears. */
 function Entry({ motion, children }: { motion: MotionLevel; children: ReactNode }) {
   const box = useRef<BoxRenderable>(null)
@@ -86,11 +95,17 @@ export function Messages({
   theme,
   motion,
   streaming,
+  thinking,
+  thinkingKey,
 }: {
   items: Item[]
   theme: Theme
   motion: MotionLevel
   streaming: boolean
+  /** Whether thinking blocks show in full; toggled by `toggleReasoning`. */
+  thinking: boolean
+  /** Describes that binding, so the fold marker says how to open it. */
+  thinkingKey: string
 }) {
   return (
     <box style={{ flexDirection: "column", width: "100%", gap: 1 }}>
@@ -115,10 +130,14 @@ export function Messages({
               </Entry>
             )
           case "reasoning": {
-            const lines = item.text.split("\n").filter((line) => line.trim())
+            const shown = reasoningLines(item.text, thinking)
+            const hidden = item.text.split("\n").filter((line) => line.trim()).length - shown.length
             return (
               <Entry key={index} motion={motion}>
-                {lines.slice(-REASONING_LINES).map((line, i) => (
+                <text fg={theme.dim}>
+                  {thinking ? "  ▾ thinking" : `  ▸ thinking${hidden > 0 ? ` · +${hidden} lines` : ""} · ${thinkingKey}`}
+                </text>
+                {shown.map((line, i) => (
                   <text key={i} fg={theme.dim}>
                     {`  ${line}`}
                   </text>

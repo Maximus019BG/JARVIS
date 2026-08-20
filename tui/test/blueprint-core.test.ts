@@ -9,6 +9,45 @@ const doc = (): BlueprintDoc => emptyDoc("plate")
 
 const withEntities = (...ops: Parameters<typeof applyOps>[1]) => applyOps(doc(), ops).doc
 
+describe("add validates the flat entity payload", () => {
+  // `blueprint_edit` takes `entity` as one flat object with every field optional so a model
+  // does not have to pick a variant inside a variant. applyOps is the only thing that narrows
+  // it back, so these are the tests that the loosened schema did not loosen validation.
+  test("a field the type requires cannot be missing", () => {
+    expect(() => withEntities({ op: "add", entity: { type: "circle", c: [0, 0] } })).toThrow(BlueprintError)
+    expect(() => withEntities({ op: "add", entity: { type: "line", a: [0, 0] } })).toThrow(BlueprintError)
+    expect(() => withEntities({ op: "add", entity: { type: "text", at: [0, 0] } })).toThrow(BlueprintError)
+  })
+
+  test("a field the type requires cannot be out of range", () => {
+    expect(() => withEntities({ op: "add", entity: { type: "circle", c: [0, 0], r: -1 } })).toThrow(BlueprintError)
+  })
+
+  test("the error names the type, so the model knows which shape it got wrong", () => {
+    expect(() => withEntities({ op: "add", entity: { type: "circle", c: [0, 0] } })).toThrow(/circle/)
+  })
+
+  test("fields belonging to another type are dropped, not stored", () => {
+    // A model that sends a circle with a stray `a` from the line shape gets a clean circle.
+    const [entity] = withEntities({ op: "add", entity: { type: "circle", c: [1, 2], r: 3, a: [9, 9] } }).entities
+    expect(entity).toMatchObject({ type: "circle", c: [1, 2], r: 3 })
+    expect(entity).not.toHaveProperty("a")
+  })
+
+  test("a path still round-trips through the loose `d` field", () => {
+    const [entity] = withEntities({
+      op: "add",
+      entity: { type: "path", d: [["M", 0, 0], ["L", 10, 0], ["Q", 10, 5, 5, 5], ["Z"]] },
+    }).entities
+    expect(entity).toMatchObject({ type: "path" })
+    expect((entity as { d: unknown[] }).d).toHaveLength(4)
+  })
+
+  test("a path command with the wrong arity is refused", () => {
+    expect(() => withEntities({ op: "add", entity: { type: "path", d: [["M", 0]] } })).toThrow(BlueprintError)
+  })
+})
+
 describe("serialize", () => {
   test("round-trips through parseDoc", () => {
     const built = withEntities(

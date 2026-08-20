@@ -4,7 +4,7 @@ import { ToolError, type ToolContext } from "../tools/context.ts"
 import { apply, compose, rotate, scale, transform, translate, type Mat } from "./geom.ts"
 import { applyOps, type Op } from "./ops.ts"
 import { serialize, type Entity, type Pt } from "./schema.ts"
-import { readDoc, safeName, writeDoc } from "./store.ts"
+import { readOrCreate, safeName, writeDoc } from "./store.ts"
 import { DOMAINS, findSymbol, searchSymbols, type SymbolDomain } from "./symbols/index.ts"
 
 /**
@@ -60,7 +60,7 @@ export const blueprintSymbolTool = (ctx: ToolContext, root: string) =>
     description: [
       "Place standard symbols on a blueprint: IEC 60617 electrical, architectural plan symbols, and IoT wiring blocks.",
       'Call it with action:"list" and a query first to find the name you want, then action:"place".',
-      'Placing needs the blueprint to exist — call `blueprint` action:"create" before the first placement.',
+      "Placing creates the blueprint if it does not exist yet.",
       "Placing returns each symbol's connection points already transformed, so wire them up with `blueprint_edit`",
       "using those coordinates rather than working out the trigonometry.",
       "Batch every symbol of one figure into a single place call: pass `placements` as an array of {symbol, at}.",
@@ -122,7 +122,7 @@ export const blueprintSymbolTool = (ctx: ToolContext, root: string) =>
       if (!effective) throw new ToolError("place needs at least one placement — pass `placements` or a flat `symbol` with `at`")
 
       const safe = safeName(name)
-      const doc = readDoc(root, safe)
+      const doc = readOrCreate(root, safe)
 
       const ops: Op[] = []
       const report: string[] = []

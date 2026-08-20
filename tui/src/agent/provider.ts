@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { LanguageModel } from "ai"
+import { wrapLanguageModel, type LanguageModel } from "ai"
 import type { Config, ModelConfig, ProviderConfig } from "../config/config.ts"
 import { dataDir } from "../config/paths.ts"
 import { catalogKey, modelInfo } from "./catalog.ts"
@@ -146,6 +146,33 @@ export function parseModelID(id: string): { providerID: string; modelID: string 
   return { providerID: id.slice(0, slash), modelID: id.slice(slash + 1) }
 }
 
+/**
+ * Groq refuses the `reasoning_content` that `@ai-sdk/openai-compatible` puts back on an
+ * assistant message the same gateway produced a moment earlier — its own field, rejected on
+ * the way in — so step two of every multi-step turn 400s and nothing that needs a second
+ * tool call can ever finish. The reasoning is display-only on this path, so dropping it
+ * before it is sent costs nothing.
+ *
+ * Scoped to openai-compatible on purpose: Anthropic needs its thinking blocks handed back
+ * intact or a tool-use turn fails signature verification.
+ */
+function withoutReasoning(model: LanguageModel): LanguageModel {
+  if (typeof model === "string") return model
+  return wrapLanguageModel({
+    model,
+    middleware: {
+      transformParams: async ({ params }) => ({
+        ...params,
+        prompt: params.prompt.map((message) =>
+          message.role === "assistant"
+            ? { ...message, content: message.content.filter((part) => part.type !== "reasoning") }
+            : message,
+        ),
+      }),
+    },
+  })
+}
+
 export async function resolveModel(config: Config, id: string): Promise<ResolvedModel> {
   const { providerID, modelID } = parseModelID(id)
   const providerConfig = config.provider[providerID]
@@ -155,7 +182,8 @@ export async function resolveModel(config: Config, id: string): Promise<Resolved
   }
   if (!providerConfig.enabled) throw new ProviderError(`provider "${providerID}" is disabled`)
   const provider = await loadProvider(providerID, providerConfig)
-  const model = provider.languageModel ? provider.languageModel(modelID) : provider(modelID)
+  const created = provider.languageModel ? provider.languageModel(modelID) : provider(modelID)
+  const model = providerConfig.npm === "@ai-sdk/openai-compatible" ? withoutReasoning(created) : created
   const configured = providerConfig.models[modelID] ?? {}
   // Nothing left for the catalog to add, so don't go looking.
   const complete = configured.contextLimit !== undefined && configured.cost !== undefined
