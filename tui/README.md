@@ -304,7 +304,7 @@ them as braille, SVG or raw JSON. Every edit is committed automatically, so `blu
 `action: "history"` and `blueprint_view` `at: "<sha>"` reach any past version.
 
 ```
-/blueprint                   list the store
+/blueprint                   pick one from the store with the arrow keys
 /blueprint plate             draw one in the terminal, with its history
 ```
 

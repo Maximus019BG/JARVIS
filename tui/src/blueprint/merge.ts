@@ -1,5 +1,5 @@
 import { byId } from "./diff.ts"
-import { canonicalEntity, seqOf, type BlueprintDoc, type Entity, type Layer } from "./schema.ts"
+import { canonicalEntity, seqOf, type BlueprintDoc, type Entity, type Layer, type Part } from "./schema.ts"
 
 export type MergeConflict = {
   id: string
@@ -35,6 +35,27 @@ function unionViewBox(a: BlueprintDoc["viewBox"], b: BlueprintDoc["viewBox"]): B
   const maxX = Math.max(a[0] + a[2], b[0] + b[2])
   const maxY = Math.max(a[1] + a[3], b[1] + b[3])
   return [minX, minY, maxX - minX, maxY - minY]
+}
+
+/**
+ * Parts, unioned by ref, ours winning a tie.
+ *
+ * A part is a record of geometry that lives in `entities`, so the entity merge above is
+ * what actually decides whether a symbol survives — this only keeps the record in step
+ * with it. Parts whose entities did not make it through are dropped, because a part
+ * pointing at geometry nobody draws is exactly the stale port `connect` must never wire to.
+ */
+function mergeParts(ours: BlueprintDoc, theirs: BlueprintDoc, entities: readonly Entity[]): Part[] {
+  const merged: Part[] = []
+  const seen = new Set<string>()
+  for (const part of [...(ours.parts ?? []), ...(theirs.parts ?? [])]) {
+    const key = part.ref.toLowerCase()
+    if (seen.has(key)) continue
+    if (!entities.some((entity) => entity.id?.startsWith(`${part.prefix}-`))) continue
+    seen.add(key)
+    merged.push(part)
+  }
+  return merged
 }
 
 function mergeLayers(base: BlueprintDoc, ours: BlueprintDoc, theirs: BlueprintDoc): Layer[] {
@@ -154,6 +175,7 @@ export function merge3(base: BlueprintDoc, ours: BlueprintDoc, theirs: Blueprint
       // A merge can orphan an entity onto a layer the other side deleted; parking it on
       // the first layer keeps the document valid rather than unparseable.
       entities: merged,
+      parts: mergeParts(ours, theirs, merged),
       // Past both sides' counters, so the next `add` on either cannot reuse an id that
       // now exists here.
       seq: Math.max(seqOf(ours), seqOf(theirs), seqOf({ entities: merged })),

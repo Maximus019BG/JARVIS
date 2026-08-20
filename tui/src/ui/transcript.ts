@@ -21,6 +21,26 @@ export type Item =
 export type Note = { kind: "note"; text: string; level: "info" | "error" }
 
 /**
+ * Which blueprint the transcript is about, and a token that changes when it may have
+ * changed on disk.
+ *
+ * Derived from the tool calls already in the transcript rather than plumbed through from
+ * the tools: every call carries its raw input, and the last blueprint one names the
+ * drawing. Nothing in the blueprint store has to know a UI exists, and there is no watcher
+ * to leak. `revision` folds in `endedAt`, so a finished edit is a new token and a call
+ * still running is not.
+ */
+export function activeBlueprint(items: readonly Item[]): { name: string; revision: string } | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]!
+    if (item.kind !== "tool" || !item.name.startsWith("blueprint")) continue
+    const named = (item.input as { name?: unknown } | null)?.name
+    if (typeof named === "string" && named) return { name: named, revision: `${item.id}:${item.endedAt ?? 0}` }
+  }
+  return undefined
+}
+
+/**
  * Folds a stream of agent events into the list the UI renders. Text deltas append
  * to the trailing assistant item so streaming reads as one growing block, and tool
  * results land on the card the tool call created.

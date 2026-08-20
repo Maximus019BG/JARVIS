@@ -131,6 +131,12 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
       'A blueprint that does not exist yet is created by the first edit; `blueprint` action:"create" is only needed to set non-default units or sheet size.',
       "Coordinates are in the drawing's units with Y pointing DOWN, like SVG.",
       "Entity ids are assigned automatically on `add` — read them back from the preview or `blueprint` action:\"info\".",
+      // The three ops that exist so nobody has to do trigonometry. Stated as the method
+      // rather than as an option, because a model given the choice draws wires by hand.
+      'For anything made of standard parts use op:"place" to drop a symbol roughly where it belongs with a `label`,',
+      'then op:"connect" with from:"R1.2" and to:"U1.5" to wire two ports — the route is found for you, around the',
+      'other parts. Do NOT work out wire coordinates yourself. op:"arrange" snaps parts to the grid and separates',
+      "any that overlap, so rough placement is enough.",
       "Returns a braille rendering of the result, so check it and fix what looks wrong.",
       "Batch a whole figure into one call rather than one op per call.",
     ].join(" "),
@@ -145,7 +151,7 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
       const doc = readOrCreate(root, safe)
       // Apply first: an op set that will not apply should never reach the permission
       // prompt, let alone the disk.
-      const { doc: next, summary } = applyOps(doc, ops)
+      const { doc: next, summary, warnings } = applyOps(doc, ops)
 
       await ctx.gate.check({
         tool: "blueprint_edit",
@@ -155,7 +161,10 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
       })
 
       const sha = writeDoc(root, safe, next, message ?? summary)
-      return `${safe} ${sha} — ${summary}\n\n${preview(next, { view: region })}`
+      // Warnings first: a wire that had to cross a part is the one thing in the result the
+      // model must act on, and the preview below is 22 rows tall.
+      const notes = warnings.map((warning) => `warning: ${warning}`).join("\n")
+      return `${safe} ${sha} — ${summary}\n${notes ? `${notes}\n` : ""}\n${preview(next, { view: region })}`
     },
   })
 

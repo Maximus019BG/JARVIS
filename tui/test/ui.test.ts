@@ -11,8 +11,12 @@ import { segments, type Part } from "../src/ui/components/status.tsx"
 import { parseGit } from "../src/ui/git.ts"
 import { lerpHex, resolveMotion } from "../src/ui/motion.ts"
 import { completion, suggest } from "../src/ui/suggest.ts"
-import { applyEvent, summarize, type Item } from "../src/ui/transcript.ts"
+import { activeBlueprint, applyEvent, summarize, type Item } from "../src/ui/transcript.ts"
 import { restore } from "../src/ui/use-turn.ts"
+import { pickerChoices } from "../src/ui/pickers.ts"
+import { runCommand } from "../src/ui/builtin-commands.ts"
+import { ensureRepo, writeDoc } from "../src/blueprint/store.ts"
+import { emptyDoc } from "../src/blueprint/schema.ts"
 
 describe("outputBudget", () => {
   test("a call that worked collapses to its summary line", () => {
@@ -33,12 +37,17 @@ describe("outputBudget", () => {
 describe("reasoningLines", () => {
   const text = "one\n\ntwo\nthree\nfour"
 
-  test("collapsed keeps the tail, blank lines dropped", () => {
-    expect(reasoningLines(text, false)).toEqual(["two", "three", "four"])
+  test("folded shows nothing — the header is the whole block", () => {
+    expect(reasoningLines(text, false)).toEqual([])
   })
 
-  test("expanded keeps everything", () => {
+  test("folded but still streaming keeps the tail, blank lines dropped", () => {
+    expect(reasoningLines(text, false, true)).toEqual(["two", "three", "four"])
+  })
+
+  test("open keeps everything, streaming or not", () => {
     expect(reasoningLines(text, true)).toEqual(["one", "two", "three", "four"])
+    expect(reasoningLines(text, true, true)).toEqual(["one", "two", "three", "four"])
   })
 })
 
@@ -94,6 +103,41 @@ describe("applyEvent", () => {
     items = applyEvent(items, { type: "tool-start", id: "c1", name: "read", input: {} }, undefined, 1000)
     items = applyEvent(items, { type: "tool-end", id: "c1", name: "read", output: "ok", failed: false }, undefined, 1400)
     expect(items[0]).toMatchObject({ startedAt: 1000, endedAt: 1400 })
+  })
+})
+
+describe("activeBlueprint", () => {
+  const tool = (name: string, input: unknown, id: string, endedAt?: number): Item => ({
+    kind: "tool",
+    id,
+    name,
+    input,
+    startedAt: 0,
+    ...(endedAt !== undefined && { endedAt }),
+  })
+
+  test("finds nothing in a transcript that never touched one", () => {
+    expect(activeBlueprint([{ kind: "user", text: "hello" }, tool("read", { path: "a.ts" }, "t1")])).toBeUndefined()
+  })
+
+  test("takes the most recent blueprint tool call, whichever tool it was", () => {
+    const items = [
+      tool("blueprint_edit", { name: "plate" }, "t1", 5),
+      tool("bash", { command: "ls" }, "t2", 6),
+      tool("blueprint_symbol", { name: "circuit" }, "t3", 7),
+    ]
+    expect(activeBlueprint(items)?.name).toBe("circuit")
+  })
+
+  test("the revision changes when a call finishes, so the pane redraws", () => {
+    const running = tool("blueprint_edit", { name: "plate" }, "t1")
+    const done = tool("blueprint_edit", { name: "plate" }, "t1", 42)
+    expect(activeBlueprint([running])!.revision).not.toBe(activeBlueprint([done])!.revision)
+  })
+
+  test("a call with no name is skipped, not reported as a blueprint called undefined", () => {
+    const items = [tool("blueprint_edit", { name: "plate" }, "t1", 1), tool("blueprint", { action: "list" }, "t2", 2)]
+    expect(activeBlueprint(items)?.name).toBe("plate")
   })
 })
 
@@ -369,5 +413,51 @@ describe("themes", () => {
   test("built-ins resolve by name and unknown names fall back", () => {
     expect(loadTheme("light")).toEqual(THEMES.light!)
     expect(loadTheme("does-not-exist")).toEqual(THEMES.jarvis!)
+  })
+})
+
+describe("pickerChoices", () => {
+  test("blueprint rows come from the store, one per file", () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-picker-"))
+    ensureRepo(root)
+    writeDoc(root, "plate", emptyDoc("plate"), "create")
+    writeDoc(root, "bracket", emptyDoc("bracket"), "create")
+
+    const ctx = { config: { blueprint: { dir: root } }, cwd: root, agents: {}, commands: [], files: [] }
+    const rows = pickerChoices("blueprint", ctx as never)
+
+    expect(rows.map((row) => row.value)).toEqual(["bracket", "plate"])
+    expect(rows[0]!.label).toBe("bracket")
+    expect(rows[0]!.hint).toContain("0 entities")
+  })
+})
+
+describe("runCommand /blueprint", () => {
+  const run = (args: string, dir: string) => {
+    const picked: string[] = []
+    const panels: string[] = []
+    const deps = {
+      config: { blueprint: { dir } },
+      width: 80,
+      openPicker: (kind: string) => picked.push(kind),
+      openPanel: (content: { title: string }) => panels.push(content.title),
+    }
+    runCommand({ name: "blueprint", description: "", kind: "builtin" }, args, deps as never)
+    return { picked, panels }
+  }
+
+  test("bare /blueprint picks; a name still draws", () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-cmd-"))
+    ensureRepo(root)
+    writeDoc(root, "plate", emptyDoc("plate"), "create")
+
+    expect(run("", root)).toEqual({ picked: ["blueprint"], panels: [] })
+    expect(run("plate", root).panels[0]).toContain("plate")
+  })
+
+  test("an empty store keeps the panel — the picker would hide how to make one", () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-cmd-empty-"))
+    ensureRepo(root)
+    expect(run("", root)).toEqual({ picked: [], panels: ["blueprints"] })
   })
 })

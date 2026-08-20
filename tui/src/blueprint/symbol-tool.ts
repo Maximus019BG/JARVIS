@@ -1,32 +1,20 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { ToolError, type ToolContext } from "../tools/context.ts"
-import { apply, compose, rotate, scale, transform, translate, type Mat } from "./geom.ts"
 import { applyOps, type Op } from "./ops.ts"
-import { serialize, type Entity, type Pt } from "./schema.ts"
+import { serialize } from "./schema.ts"
 import { readOrCreate, safeName, writeDoc } from "./store.ts"
-import { DOMAINS, findSymbol, searchSymbols, type SymbolDomain } from "./symbols/index.ts"
+import { DOMAINS, searchSymbols, type SymbolDomain } from "./symbols/index.ts"
 
 /**
- * Places symbols from the libraries. Everything here is composition of things that
- * already exist — `geom.transform` moves the entities, `applyOps` adds them, `writeDoc`
- * commits — so a symbol is data and this is the only code that knows it is a symbol.
+ * Places symbols from the libraries. The placement itself is one `place` op per symbol —
+ * `place.ts` does the geometry, `applyOps` records the part, `writeDoc` commits — so this
+ * file knows about permissions and the filesystem and nothing else.
  *
  * The reason it is a tool rather than op-JSON in a skill: there are 400-odd symbols, and
  * a model cannot hold their geometry. `list` is how it finds one without reading a
  * library file.
  */
-
-/**
- * Ids get a per-placement prefix so a symbol's parts move as a unit later. `e` is
- * excluded deliberately: `seqOf` parses `^e(\d+)` to find the next free id, so a symbol
- * called `e5-a` would poison the counter and the next `add` would collide.
- */
-function prefixFor(label: string | undefined, symbol: string, index: number): string {
-  const base = (label ?? symbol.replace(/^[a-z]+\//, "")).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-  const safe = base.replace(/^e(?=\d)/, "x") || "sym"
-  return `${safe}-${index}`
-}
 
 const point = z.tuple([z.number(), z.number()])
 
@@ -61,8 +49,9 @@ export const blueprintSymbolTool = (ctx: ToolContext, root: string) =>
       "Place standard symbols on a blueprint: IEC 60617 electrical, architectural plan symbols, and IoT wiring blocks.",
       'Call it with action:"list" and a query first to find the name you want, then action:"place".',
       "Placing creates the blueprint if it does not exist yet.",
-      "Placing returns each symbol's connection points already transformed, so wire them up with `blueprint_edit`",
-      "using those coordinates rather than working out the trigonometry.",
+      "Put symbols roughly where they belong and give each a `label` — schematic parts are snapped to the",
+      "2.54 mm grid and pushed apart if they overlap. Do NOT work out wire coordinates: connect them with",
+      '`blueprint_edit` using op:"connect" with from:"R1.2", to:"U1.5", and the route is worked out for you.',
       "Batch every symbol of one figure into a single place call: pass `placements` as an array of {symbol, at}.",
       "A single symbol may instead be given flattened, e.g. symbol:\"resistor\", at:[10,10], label:\"R1\" — accepted so a model that cannot nest the array still works.",
     ].join(" "),
@@ -124,54 +113,24 @@ export const blueprintSymbolTool = (ctx: ToolContext, root: string) =>
       const safe = safeName(name)
       const doc = readOrCreate(root, safe)
 
-      const ops: Op[] = []
-      const report: string[] = []
-      effective.forEach((entry, index) => {
-        const found = findSymbol(entry.symbol)
-        if (!found) {
-          throw new ToolError(`no such symbol: ${entry.symbol} — use action:"list" with a query to find one`)
-        }
-        const { symbol } = found
-        // Scale, then rotate, then translate: `compose(a, b)` applies b first, so the
-        // symbol is shaped and turned about its own origin before it is moved into place.
-        const matrix: Mat = compose(
-          translate(entry.at[0], entry.at[1]),
-          compose(rotate(entry.rotate ?? 0), scale(entry.scale ?? 1, entry.scale ?? 1)),
-        )
-        const prefix = prefixFor(entry.label, entry.symbol, index + 1)
-        symbol.entities.forEach((source, i) => {
-          const placed = transform(source, matrix) as Entity
-          ops.push({
-            op: "add",
-            entity: { ...placed, id: `${prefix}-${i}`, ...(entry.layer ? { layer: entry.layer } : {}) },
-          })
-        })
-        if (entry.label) {
-          const [dx, dy] = entry.labelOffset ?? [0, -6 * (entry.scale ?? 1)]
-          ops.push({
-            op: "add",
-            entity: {
-              type: "text",
-              at: [entry.at[0] + dx, entry.at[1] + dy],
-              text: entry.label,
-              size: 2.5 * (entry.scale ?? 1),
-              id: `${prefix}-label`,
-              ...(entry.layer ? { layer: entry.layer } : {}),
-            },
-          })
-        }
-        const ports: Pt[] = (symbol.ports ?? []).map((port) => apply(matrix, port))
-        const round = (n: number) => Math.round(n * 100) / 100
-        report.push(
-          `${entry.label ? `${entry.label} ` : ""}${entry.symbol} at [${entry.at.join(", ")}]${entry.rotate ? ` rot ${entry.rotate}°` : ""} → ids ${prefix}-*` +
-            (ports.length > 0 ? `\n  ports: ${ports.map((p, i) => `${i + 1}:[${round(p[0])}, ${round(p[1])}]`).join("  ")}` : ""),
-        )
-      })
+      const ops: Op[] = effective.map((entry) => ({ op: "place" as const, ...entry }))
 
       // Apply before asking, exactly as `blueprint_edit` does: a placement that will not
       // apply should never reach the permission prompt, let alone the disk.
       const { doc: next, summary } = applyOps(doc, ops)
       const what = `place ${effective.length} symbol${effective.length === 1 ? "" : "s"}`
+
+      // Report the parts by ref and port count, not by coordinate. The whole point of
+      // recording ports is that nobody has to copy them back out — `connect` takes the
+      // names printed here.
+      const placed = next.parts.slice(next.parts.length - effective.length)
+      const report = placed.map(
+        (part) =>
+          `${part.ref}  ${part.symbol} at [${part.at.map((n) => Math.round(n * 100) / 100).join(", ")}]` +
+          (part.ports.length > 0
+            ? `  — connect with ${part.ref}.1..${part.ref}.${part.ports.length}`
+            : "  — no connection points"),
+      )
 
       await ctx.gate.check({
         tool: "blueprint_symbol",

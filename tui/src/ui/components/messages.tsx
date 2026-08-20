@@ -1,5 +1,5 @@
 import type { BoxRenderable, TextRenderable } from "@opentui/core"
-import { useRef, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import type { Theme } from "../../config/theme.ts"
 import { lerpHex, useEnter, useFlash, type MotionLevel } from "../motion.ts"
 import { Markdown } from "./markdown.tsx"
@@ -7,7 +7,7 @@ import { summarize, type Item } from "../transcript.ts"
 
 /** Preview length for a call that is still running or that failed. */
 const OUTPUT_LINES = 8
-/** Reasoning is skimmable context, not the answer; only its tail stays on screen. */
+/** While the model is still thinking, this much of the tail shows as a sign of life. */
 const REASONING_LINES = 3
 const FLASH_MS = 200
 /** Tools whose output is a picture or a report — the answer itself, not a status line. */
@@ -25,12 +25,13 @@ export const outputBudget = (name: string, done: boolean, failed?: boolean): num
   DRAWS.has(name) ? DRAWN_LINES : done && !failed ? 0 : OUTPUT_LINES
 
 /**
- * The thinking lines a reasoning block shows. Collapsed keeps the tail, so a streaming
- * block reads as the model's latest thought; expanded shows all of it.
+ * The thinking lines a reasoning block shows. Folded it shows none — reasoning is not the
+ * answer, and a wall of it buries the answer — except while it is still streaming, where
+ * the tail is the only sign the model is working.
  */
-export const reasoningLines = (text: string, expanded: boolean): string[] => {
+export const reasoningLines = (text: string, expanded: boolean, live = false): string[] => {
   const lines = text.split("\n").filter((line) => line.trim())
-  return expanded ? lines : lines.slice(-REASONING_LINES)
+  return expanded ? lines : live ? lines.slice(-REASONING_LINES) : []
 }
 
 /** One transcript entry, fading itself in the first time it appears. */
@@ -90,22 +91,57 @@ function ToolCard({
   )
 }
 
+/**
+ * One thinking block, folded to its header. Clicking anywhere on it toggles just this one;
+ * `toggleReasoning` remounts every block with a new `open`, which toggles them all.
+ */
+function Reasoning({
+  item,
+  theme,
+  motion,
+  open: initial,
+  live,
+}: {
+  item: Extract<Item, { kind: "reasoning" }>
+  theme: Theme
+  motion: MotionLevel
+  open: boolean
+  live: boolean
+}) {
+  const [open, setOpen] = useState(initial)
+  const lines = reasoningLines(item.text, open, live)
+  const total = item.text.split("\n").filter((line) => line.trim()).length
+
+  return (
+    <Entry motion={motion}>
+      <box
+        onMouseDown={() => setOpen((shown) => !shown)}
+        style={{ flexDirection: "column", width: "100%" }}
+      >
+        <text fg={theme.dim}>{`  ${open ? "▾" : "▸"} thinking${total > 0 ? ` · ${total} lines` : ""}`}</text>
+        {lines.map((line, i) => (
+          <text key={i} fg={theme.dim}>
+            {`  ${line}`}
+          </text>
+        ))}
+      </box>
+    </Entry>
+  )
+}
+
 export function Messages({
   items,
   theme,
   motion,
   streaming,
   thinking,
-  thinkingKey,
 }: {
   items: Item[]
   theme: Theme
   motion: MotionLevel
   streaming: boolean
-  /** Whether thinking blocks show in full; toggled by `toggleReasoning`. */
+  /** Whether thinking blocks start unfolded; flipped by `toggleReasoning`. */
   thinking: boolean
-  /** Describes that binding, so the fold marker says how to open it. */
-  thinkingKey: string
 }) {
   return (
     <box style={{ flexDirection: "column", width: "100%", gap: 1 }}>
@@ -129,22 +165,17 @@ export function Messages({
                 <Markdown text={item.text} theme={theme} streaming={streaming && last} />
               </Entry>
             )
-          case "reasoning": {
-            const shown = reasoningLines(item.text, thinking)
-            const hidden = item.text.split("\n").filter((line) => line.trim()).length - shown.length
+          case "reasoning":
             return (
-              <Entry key={index} motion={motion}>
-                <text fg={theme.dim}>
-                  {thinking ? "  ▾ thinking" : `  ▸ thinking${hidden > 0 ? ` · +${hidden} lines` : ""} · ${thinkingKey}`}
-                </text>
-                {shown.map((line, i) => (
-                  <text key={i} fg={theme.dim}>
-                    {`  ${line}`}
-                  </text>
-                ))}
-              </Entry>
+              <Reasoning
+                key={`${index}:${thinking}`}
+                item={item}
+                theme={theme}
+                motion={motion}
+                open={thinking}
+                live={streaming && last}
+              />
             )
-          }
           case "tool":
             return <ToolCard key={item.id} item={item} theme={theme} motion={motion} />
           default:

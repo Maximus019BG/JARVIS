@@ -1,10 +1,10 @@
 "use client";
 
-import { bbox, compose, rotate as rotateMat, scale as scaleMat, transform, translate } from "@blueprint/geom.ts";
+import { bbox } from "@blueprint/geom.ts";
 import type { Op } from "@blueprint/ops.ts";
 import { toSvg } from "@blueprint/render-svg.ts";
 import type { BlueprintDoc, Entity, Pt } from "@blueprint/schema.ts";
-import { DOMAINS, findSymbol, searchSymbols, type SymbolDomain } from "@blueprint/symbols/index.ts";
+import { DOMAINS, searchSymbols, type SymbolDomain } from "@blueprint/symbols/index.ts";
 import { RotateCw, Search } from "lucide-react";
 import React from "react";
 
@@ -19,26 +19,24 @@ const SHOWN = 60;
 export type SymbolPlacement = { name: string; rotate: number; scale: number };
 
 /**
- * Ops for one placement. Scale, then rotate, then translate — `compose(a, b)` applies `b`
- * first, so the symbol is shaped and turned about its own origin before it is moved into
- * place. Same order as `tui/src/blueprint/symbol-tool.ts`, which cannot be imported here
- * because it pulls in the Bun-only store.
+ * The op for one placement.
+ *
+ * A single `place` rather than the handful of `add`s it expands to, because the engine is
+ * what turns a placement into a remembered part — and a symbol dropped here without that
+ * record cannot be wired with `connect` and can collide with an id an agent allocated. The
+ * geometry, the id prefix and the part are then identical whether the resistor came from
+ * this palette, from the terminal or from the agent.
  */
-export function symbolOps(placement: SymbolPlacement, at: Pt, layer: string, index: number): Op[] | undefined {
-  const found = findSymbol(placement.name);
-  if (!found) return undefined;
-  const matrix = compose(
-    translate(at[0], at[1]),
-    compose(rotateMat(placement.rotate), scaleMat(placement.scale, placement.scale)),
-  );
-  // Ids may not start with `e<digit>`: `seqOf` parses that pattern to allocate the next
-  // free id, and a symbol called `e5-a` would poison the counter.
-  const base = placement.name.replace(/^[a-z]+\//, "").replace(/[^a-z0-9]+/g, "-");
-  const prefix = `${base.replace(/^e(?=\d)/, "x") || "sym"}-${index}`;
-  return found.symbol.entities.map((source, n) => ({
-    op: "add",
-    entity: { ...transform(source, matrix), id: `${prefix}-${n}`, layer },
-  }));
+export function symbolOp(placement: SymbolPlacement, at: Pt, layer: string, label?: string): Op {
+  return {
+    op: "place",
+    symbol: placement.name,
+    at,
+    rotate: placement.rotate,
+    scale: placement.scale,
+    layer,
+    ...(label ? { label } : {}),
+  };
 }
 
 /** Preview of one symbol, fitted to its own bounds so tiny and huge parts read the same. */
@@ -54,6 +52,7 @@ function Thumbnail({ entities }: { entities: Entity[] }) {
       viewBox: [box[0] - pad, box[1] - pad, box[2] - box[0] + pad * 2, box[3] - box[1] + pad * 2],
       layers: [{ id: "l0", name: "s", color: "currentColor", visible: true }],
       entities,
+      parts: [],
     };
     return toSvg(doc);
   }, [entities]);

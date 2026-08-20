@@ -21,8 +21,10 @@ export type Action =
   | "acceptSuggestion"
   /** Opens the tutorial overlay. Not ctrl+h: many terminals send that for backspace. */
   | "tutorial"
-  /** Expands every thinking block to its full text, or folds them back to the tail. */
+  /** Folds or unfolds every thinking block. A single block also opens on a click. */
   | "toggleReasoning"
+  /** Cycles the blueprint the agent is working on: hidden → side pane → fullscreen editor. */
+  | "blueprintView"
 
 export const DEFAULT_KEYBINDS: Record<Action, string> = {
   submit: "return",
@@ -38,9 +40,11 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   sessionPicker: "ctrl+r",
   filePicker: "ctrl+t",
   newSession: "ctrl+n",
-  // alt, not ctrl: ctrl+p and ctrl+o are already the palette and the model picker, and
-  // ctrl+a/ctrl+e belong to the textarea's line motion.
-  providerSetup: "alt+p",
+  // ctrl, not alt: macOS terminals send option+p as `π` rather than as meta, so an alt
+  // chord is simply unreachable there. ctrl is the one modifier every OS delivers, so the
+  // leftovers go to the rarer actions — ctrl+p/ctrl+o are the palette and the model picker,
+  // and ctrl+a/ctrl+e belong to the textarea's line motion.
+  providerSetup: "ctrl+y",
   scrollUp: "pageup",
   scrollDown: "pagedown",
   scrollHalfUp: "ctrl+u",
@@ -48,8 +52,12 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   scrollBottom: "end",
   acceptSuggestion: "tab",
   tutorial: "ctrl+g",
-  // alt, like providerSetup: every free ctrl chord is either bound above or the textarea's.
-  toggleReasoning: "alt+r",
+  // Not ctrl+b: that is tmux's prefix, so it never reaches an app running inside tmux.
+  toggleReasoning: "ctrl+f",
+  // One key for three states rather than two keys for two, because there are no free
+  // chords left worth spending: b for blueprint is the one anybody will remember. Inside
+  // tmux it is the prefix, so it needs pressing twice — rebind it if that grates.
+  blueprintView: "ctrl+b",
 }
 
 export type Chord = { name: string; ctrl: boolean; shift: boolean; meta: boolean }
@@ -88,7 +96,9 @@ export function matches(key: KeyLike, chord: Chord): boolean {
 export function describe(chord: Chord): string {
   const parts: string[] = []
   if (chord.ctrl) parts.push("ctrl")
-  if (chord.meta) parts.push("alt")
+  // Mac keyboards label the key "opt"; everywhere else it is "alt". Only reachable through
+  // a user override — no default binds it, because most macOS terminals cannot send it.
+  if (chord.meta) parts.push(process.platform === "darwin" ? "opt" : "alt")
   if (chord.shift) parts.push("shift")
   parts.push(chord.name === "return" ? "enter" : chord.name)
   return parts.join("+")

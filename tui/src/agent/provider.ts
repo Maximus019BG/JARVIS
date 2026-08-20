@@ -211,6 +211,6 @@ export function defaultModelID(config: Config): string {
   const first = listModels(config)[0]
   // Points at the flow rather than at the file: setting a provider up by hand still works, but
   // it is no longer the way anyone should be told to do it first.
-  if (!first) throw new ProviderError("no models configured — run `jarvis` and press alt+p, or `jarvis pair`")
+  if (!first) throw new ProviderError("no models configured — run `jarvis` and press ctrl+y, or `jarvis pair`")
   return first.id
 }

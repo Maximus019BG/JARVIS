@@ -76,6 +76,35 @@ export const LayerSchema = z.object({
 
 export type Layer = z.infer<typeof LayerSchema>
 
+/**
+ * A placed symbol, remembered.
+ *
+ * The entities a symbol produces are ordinary geometry once placed — nothing about them
+ * says "this arc and those two lines are one resistor", and the transformed port
+ * coordinates used to be printed to the caller and then thrown away. That made connecting
+ * two parts the caller's trigonometry problem and left the drawing with no record of what
+ * was wired to what. A part is that record: the handle `connect` addresses, and the ports
+ * it addresses them by.
+ *
+ * `ports` are stored already transformed into document space rather than recomputed from
+ * the library on demand, so routing needs no symbol lookup and a symbol later renamed or
+ * reshaped in the library cannot silently move the wires in a drawing already finished.
+ */
+export const PartSchema = z.object({
+  /** Reference designator, unique in the document: `R1`, `U3`. Case-insensitive on lookup. */
+  ref: z.string(),
+  symbol: z.string(),
+  at: point,
+  rotate: z.number().optional(),
+  scale: z.number().positive().optional(),
+  /** Id prefix of every entity this placement produced, so the two stay in step. */
+  prefix: z.string(),
+  /** Connection points in document coordinates, in the library's documented order. */
+  ports: z.array(point).default([]),
+})
+
+export type Part = z.infer<typeof PartSchema>
+
 export const BlueprintDocSchema = z.object({
   schema: z.literal(1),
   id: z.string(),
@@ -91,6 +120,8 @@ export const BlueprintDocSchema = z.object({
   viewBox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
   layers: z.array(LayerSchema).min(1),
   entities: z.array(EntitySchema).default([]),
+  /** Placed symbols. Additive and optional: a file written before parts existed loads fine. */
+  parts: z.array(PartSchema).default([]),
 })
 
 export type BlueprintDoc = z.infer<typeof BlueprintDocSchema>
@@ -110,6 +141,7 @@ export function emptyDoc(name: string, viewBox = DEFAULT_VIEW_BOX, units: (typeo
     viewBox,
     layers: [{ id: "l0", name: "outline", color: "#0f766e", visible: true }],
     entities: [],
+    parts: [],
   }
 }
 
@@ -221,6 +253,8 @@ function inline(record: Record<string, unknown>, order: readonly string[]): stri
 
 const LAYER_ORDER = ["id", "name", "color", "visible"]
 
+const PART_ORDER = ["ref", "symbol", "prefix", "at", "rotate", "scale", "ports"]
+
 /**
  * An entity's canonical form — the exact text `serialize` would write for it. Comparing
  * these is how diff and merge decide two entities are the same, so "changed" always means
@@ -244,7 +278,10 @@ export function serialize(doc: BlueprintDoc): string {
     `  "seq": ${seqOf(doc)},`,
     `  "viewBox": ${JSON.stringify(doc.viewBox.map(round))},`,
     `  "layers": ${block(doc.layers.map((layer) => inline(layer, LAYER_ORDER)))},`,
-    `  "entities": ${block(doc.entities.map((entity) => inline(entity, KEY_ORDER)))}`,
+    `  "entities": ${block(doc.entities.map((entity) => inline(entity, KEY_ORDER)))},`,
+    // Not conditional on there being any: an array that appears and disappears would make
+    // the first placement and the last deletion show up as structural diffs.
+    `  "parts": ${block((doc.parts ?? []).map((part) => inline(part, PART_ORDER)))}`,
     "}",
   ].join("\n")}\n`
 }

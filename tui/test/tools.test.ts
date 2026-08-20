@@ -82,6 +82,58 @@ describe("blueprint_symbol", () => {
     expect(out).toContain("circuit")
     expect(await call(tools.blueprint, { action: "list" })).toContain("circuit")
   })
+
+  test("the reply names the ports to connect by, not their coordinates", async () => {
+    const { tools } = setup()
+    const out = await call(tools.blueprint_symbol, {
+      action: "place",
+      name: "circuit",
+      placements: [{ symbol: "electrical/resistor", at: [10, 10], label: "R1" }],
+    })
+    expect(out).toContain("connect with R1.1..R1.2")
+  })
+})
+
+describe("connect end to end", () => {
+  // The whole point of the feature: two named ports in, a wire on disk, and at no stage
+  // does the caller work out where the wire goes.
+  test("a wire runs between the two ports the caller named", async () => {
+    const { tools } = setup()
+    await call(tools.blueprint_symbol, {
+      action: "place",
+      name: "circuit",
+      placements: [
+        { symbol: "electrical/resistor", at: [20, 20], label: "R1" },
+        { symbol: "electrical/lamp", at: [80, 60], label: "L1" },
+      ],
+    })
+    const out = await call(tools.blueprint_edit, {
+      name: "circuit",
+      ops: [{ op: "connect", from: "R1.2", to: "L1.1" }],
+    })
+    expect(out).toContain("connect")
+    const json = await call(tools.blueprint_view, { name: "circuit", format: "json" })
+    const doc = JSON.parse(json.slice(json.indexOf("{"))) as {
+      entities: { id: string; type: string; pts?: [number, number][] }[]
+      parts: { ref: string; ports: [number, number][] }[]
+    }
+    const wire = doc.entities.find((entity) => entity.id === "w1")
+    const r1 = doc.parts.find((part) => part.ref === "R1")!
+    const l1 = doc.parts.find((part) => part.ref === "L1")!
+    expect(wire?.pts?.[0]).toEqual(r1.ports[1]!)
+    expect(wire?.pts?.at(-1)).toEqual(l1.ports[0]!)
+  })
+
+  test("wiring a port that does not exist says which ones do", async () => {
+    const { tools } = setup()
+    await call(tools.blueprint_symbol, {
+      action: "place",
+      name: "circuit",
+      placements: [{ symbol: "electrical/resistor", at: [20, 20], label: "R1" }],
+    })
+    expect(call(tools.blueprint_edit, { name: "circuit", ops: [{ op: "connect", from: "R1.1", to: "Q7.1" }] }))
+      .rejects.toThrow(/R1/)
+  })
 })
 
 describe("ask", () => {

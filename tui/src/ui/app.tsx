@@ -16,9 +16,10 @@ import type { McpSession } from "../extend/mcp.ts"
 import { discoverModels, discoveryArgs } from "../agent/model-discovery.ts"
 import { testProvider, testWillInstall } from "../agent/provider-test.ts"
 import { credentialsPath, isPaired, readCredentials, writeCredentials } from "../blueprint/credentials.ts"
+import { blueprintRoot } from "../blueprint/store.ts"
 import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
 import { providerHealth } from "../config/provider-status.ts"
-import { globalConfigFile } from "../config/persist.ts"
+import { globalConfigFile, persistConfig } from "../config/persist.ts"
 import { KEY_HELP, runCommand } from "./builtin-commands.ts"
 import { testPanel, testPendingPanel } from "./provider-command.ts"
 import {
@@ -36,6 +37,8 @@ import {
 } from "./provider-setup.ts"
 import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
+import { BlueprintEditor } from "./components/blueprint-editor.tsx"
+import { BlueprintPane } from "./components/blueprint-view.tsx"
 import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
@@ -69,7 +72,7 @@ import { findPreset, HOSTED_PRESET_ID } from "./provider-presets.ts"
 import type { MotionLevel } from "./motion.ts"
 import { ADD_PROVIDER, listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
 import { completion, suggest, type Suggestion } from "./suggest.ts"
-import type { Item, Note } from "./transcript.ts"
+import { activeBlueprint, type Item, type Note } from "./transcript.ts"
 import { errorMessage } from "../agent/agent.ts"
 import { useTurn } from "./use-turn.ts"
 
@@ -117,9 +120,23 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const [model, setModel] = useState(
     // No providers configured is a valid first-run state; the note in the transcript
     // explains it, so show a placeholder instead of refusing to start.
-    () => initial.model ?? agents[initial.agent ?? DEFAULT_AGENT]?.model ?? listModels(config)[0]?.id ?? "no model",
+    () =>
+      initial.model ??
+      agents[initial.agent ?? DEFAULT_AGENT]?.model ??
+      // The last model switched to in the TUI, written back to the global config.
+      config.model ??
+      listModels(config)[0]?.id ??
+      "no model",
   )
   const [picker, setPicker] = useState<PickerKind | null>(null)
+  /**
+   * Built once per open, not per render: the component re-renders on every keystroke while
+   * you filter, and a listing that spawns git or walks the disk on each one is a visible stall.
+   */
+  const choices = useMemo(
+    () => (picker ? pickerChoices(picker, { config, cwd, agents, commands, files }) : []),
+    [agents, commands, config, cwd, files, picker],
+  )
   /** Read-only overlay content: the tutorial, or /provider output. */
   const [panel, setPanel] = useState<PanelContent | null>(null)
   /**
@@ -157,6 +174,14 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const [quitting, setQuitting] = useState(false)
   /** Whether thinking blocks are unfolded. One switch for all of them — the transcript has no cursor to expand just one. */
   const [thinking, setThinking] = useState(false)
+  /**
+   * How much of the blueprint the agent is working on is on screen. One tri-state rather
+   * than two switches: there are three things a reader wants — out of the way, beside the
+   * transcript, or filling the terminal — and they are steps along one axis.
+   */
+  const [blueprintView, setBlueprintView] = useState<"hidden" | "pane" | "full">("hidden")
+  /** Set once the pane has opened itself, so a reader who closed it is not reopened on. */
+  const offered = useRef(false)
   /** Whether the arming press also killed a turn, so the hint can say both things happened. */
   const [interrupted, setInterrupted] = useState(false)
   const { toasts, toast } = useToasts()
@@ -180,6 +205,29 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   // The config value is available before the first turn; the turn's value can also come
   // from the models.dev catalog, so it wins once a turn has actually resolved the model.
   const empty = turn.items.length === 0
+
+  /**
+   * The blueprint the agent is working on, and a token that changes whenever it may have
+   * changed on disk.
+   *
+   * See `activeBlueprint` for why it is read out of the transcript rather than plumbed
+   * through from the tools.
+   */
+  const blueprint = useMemo(() => activeBlueprint(turn.items), [turn.items])
+
+  const blueprints = useMemo(() => blueprintRoot(config), [config])
+  /** The pane needs about 40 columns of transcript left over to be worth showing. */
+  const paneWidth = Math.min(48, Math.floor(width * 0.4))
+  const paneFits = width - paneWidth > 52
+
+  // Opens itself the first time the agent touches a blueprint — the point of the pane is
+  // that a turn spent drawing is visible without being asked for. Once only: a reader who
+  // closed it has said what they want.
+  useEffect(() => {
+    if (!blueprint || offered.current) return
+    offered.current = true
+    setBlueprintView(paneFits ? "pane" : "full")
+  }, [blueprint, paneFits])
   const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
   // Re-reads the config files to recover the `{env:…}` names behind the keys, so it is memoized
   // rather than computed per render.
@@ -277,10 +325,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   }, [renderer])
 
   /** The one place a model is switched, so no caller can leave the ref behind the state. */
-  const selectModel = useCallback((value: string) => {
-    activeModel.current = value
-    setModel(value)
-  }, [])
+  const selectModel = useCallback(
+    (value: string) => {
+      activeModel.current = value
+      setModel(value)
+      // A switch is a preference, not a per-session whim: the next start opens on it.
+      try {
+        persistConfig(globalConfigFile(), ["model"], value)
+      } catch (error) {
+        toast(`could not save model: ${errorMessage(error)}`, "warn")
+      }
+    },
+    [toast],
+  )
 
   /**
    * Re-reads the config from disk after something in the app has written to it.
@@ -769,6 +826,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         case "provider":
           if (value === ADD_PROVIDER) return openSetup()
           return dispatch("provider", `view ${value}`)
+        case "blueprint":
+          return dispatch("blueprint", value)
         default:
           return
       }
@@ -794,7 +853,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     }
 
     // Otherwise the prompt and the overlays own the keyboard; each closes itself.
-    if (turn.permission || turn.question || picker || panel || setup) return
+    if (turn.permission || turn.question || picker || panel || setup || blueprintView === "full") return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -865,6 +924,12 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     else if (is("scrollHalfUp")) scroll.current?.scrollBy({ x: 0, y: -Math.floor(height / 2) })
     else if (is("scrollHalfDown")) scroll.current?.scrollBy({ x: 0, y: Math.floor(height / 2) })
     else if (is("toggleReasoning")) setThinking((shown) => !shown)
+    // hidden → pane → full → hidden, skipping the pane on a terminal too narrow to hold
+    // both it and a readable transcript.
+    else if (is("blueprintView"))
+      setBlueprintView((current) =>
+        current === "hidden" ? (paneFits ? "pane" : "full") : current === "pane" ? "full" : "hidden",
+      )
     else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
   })
 
@@ -886,6 +951,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       {/* An empty session has nothing to scroll, so it gets a plain flex box that can centre
           the wordmark. The scrollbox cannot: it is anchored to the bottom and its content box
           hugs its children, so there is no free space inside it to centre against. */}
+      {/* A row only so the pane can sit beside the transcript; everything below — the
+          activity line, the editor, the status bar — keeps the full width. */}
+      <box style={{ flexDirection: "row", flexGrow: 1 }}>
+      {blueprint && blueprintView === "pane" && paneFits && (
+        <BlueprintPane
+          root={blueprints}
+          name={blueprint.name}
+          revision={blueprint.revision}
+          theme={theme}
+          width={paneWidth}
+          height={height - 6}
+        />
+      )}
       {empty ? (
         <box style={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}>{welcome}</box>
       ) : (
@@ -908,10 +986,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
             motion={motion}
             streaming={turn.busy}
             thinking={thinking}
-            thinkingKey={describe(keymap.toggleReasoning)}
           />
         </scrollbox>
       )}
+      </box>
 
       {(turn.busy || turn.compacting) && (
         <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
@@ -1007,7 +1085,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       {picker && !turn.permission && !turn.question && !setup && (
         <Picker
           title={PICKER_TITLES[picker]}
-          choices={pickerChoices(picker, { config, cwd, agents, commands, files })}
+          choices={choices}
           theme={theme}
           motion={motion}
           onPick={pick}
@@ -1052,6 +1130,15 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       />
 
       {panel && <Panel content={panel} theme={theme} motion={motion} onClose={() => setPanel(null)} />}
+
+      {blueprint && blueprintView === "full" && !picker && !panel && !setup && !pairing && !turn.permission && !turn.question && (
+        <BlueprintEditor
+          root={blueprints}
+          name={blueprint.name}
+          theme={theme}
+          onClose={() => setBlueprintView("hidden")}
+        />
+      )}
 
       <Toasts toasts={toasts} theme={theme} motion={motion} />
     </box>

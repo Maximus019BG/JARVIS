@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { bbox, flatten, rotate, transform, translate } from "../src/blueprint/geom.ts"
 import { applyOps } from "../src/blueprint/ops.ts"
-import { autoView, renderBraille } from "../src/blueprint/render-braille.ts"
+import { autoView, renderBraille, renderCells } from "../src/blueprint/render-braille.ts"
 import { toSvg } from "../src/blueprint/render-svg.ts"
-import { BlueprintError, emptyDoc, parseDoc, seqOf, serialize, type BlueprintDoc } from "../src/blueprint/schema.ts"
+import {
+  BlueprintDocSchema,
+  BlueprintError,
+  emptyDoc,
+  parseDoc,
+  seqOf,
+  serialize,
+  type BlueprintDoc,
+} from "../src/blueprint/schema.ts"
 
 const doc = (): BlueprintDoc => emptyDoc("plate")
 
@@ -268,9 +276,55 @@ describe("renderers", () => {
     expect(lines).toHaveLength(4)
   })
 
-  test("braille lists text entities it cannot draw", () => {
+  test("braille writes a label into the picture, where the thing it names is", () => {
     const built = withEntities({ op: "add", entity: { type: "text", at: [5, 5], text: "M6" } })
-    expect(renderBraille(built, { cols: 20, rows: 4 }).join("\n")).toContain('"M6"')
+    const lines = renderBraille(built, { cols: 20, rows: 4 })
+    expect(lines.some((line) => line.includes("M6"))).toBe(true)
+  })
+
+  test("a label that will not fit is still listed underneath, never dropped in silence", () => {
+    // Two labels on the same spot: one wins the cells, the other has to be reported.
+    const built = withEntities(
+      { op: "add", entity: { type: "text", at: [5, 5], text: "M6" } },
+      { op: "add", entity: { type: "text", at: [5, 5], text: "M8" } },
+    )
+    const out = renderBraille(built, { cols: 20, rows: 4 }).join("\n")
+    expect(out).toContain("M6")
+    expect(out).toContain('"M8" at 5, 5')
+  })
+
+  test("cells carry the layer that drew them, so a pane can colour by layer", () => {
+    const built = applyOps(doc(), [
+      { op: "addLayer", layer: { name: "power", color: "#ff0000" } },
+      { op: "add", entity: { type: "line", a: [0, 0], b: [50, 0], layer: "l1" } },
+    ]).doc
+    const { cells } = renderCells(built, { cols: 20, rows: 4 })
+    const lit = cells.flat().filter((cell) => cell.ch !== "\u2800")
+    expect(lit.length).toBeGreaterThan(0)
+    expect(lit.every((cell) => cell.layer === "l1")).toBe(true)
+  })
+
+  test("a cell and a document point convert back and forth", () => {
+    const built = withEntities({ op: "add", entity: { type: "rect", at: [0, 0], w: 100, h: 100 } })
+    const rendered = renderCells(built, { cols: 40, rows: 20 })
+    const [col, row] = rendered.toCell([50, 50])
+    const [x, y] = rendered.toDoc(col, row)
+    // Round-trip lands within one cell, which is all a cursor needs.
+    expect(Math.abs(x - 50)).toBeLessThan(rendered.view[2] / 40 + 1)
+    expect(Math.abs(y - 50)).toBeLessThan(rendered.view[3] / 20 + 1)
+  })
+
+  test("the scale bar says how big the picture is", () => {
+    const built = withEntities({ op: "add", entity: { type: "rect", at: [0, 0], w: 100, h: 60 } })
+    const { cells } = renderCells(built, { cols: 40, rows: 10, scaleBar: true })
+    expect(cells.at(-1)!.map((cell) => cell.ch).join("")).toMatch(/^\u251c\u2500+ \d+(\.\d+)? mm \u2500+\u2524$/)
+  })
+
+  test("grid dots do not claim a cell the drawing wants", () => {
+    const built = withEntities({ op: "add", entity: { type: "line", a: [0, 0], b: [100, 0] } })
+    const { cells } = renderCells(built, { cols: 40, rows: 10, grid: 10 })
+    const drawn = cells.flat().filter((cell) => cell.layer === "l0")
+    expect(drawn.length).toBeGreaterThan(0)
   })
 
   test("autoView fits the drawing, not the empty sheet", () => {
@@ -315,5 +369,264 @@ describe("renderers", () => {
   test("svg normalises a negative-size rect", () => {
     const built = withEntities({ op: "add", entity: { type: "rect", at: [10, 10], w: -10, h: -4 } })
     expect(toSvg(built)).toContain('x="0" y="6" width="10" height="4"')
+  })
+})
+
+describe("parts", () => {
+  // A part is the record that makes `connect` possible: the entities a symbol produces are
+  // ordinary geometry, and without the record nothing knows which arc is a resistor or
+  // where its ports went. These are the tests that the record cannot drift from the
+  // geometry — every one of them is a way the drawing silently wires the wrong point.
+  const placed = () =>
+    applyOps(doc(), [
+      { op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" },
+      { op: "place", symbol: "electrical/resistor", at: [60, 20], label: "R2" },
+    ]).doc
+
+  test("a placement is remembered, with its ports in document space", () => {
+    const built = placed()
+    expect(built.parts.map((part) => part.ref)).toEqual(["R1", "R2"])
+    const r1 = built.parts[0]!
+    expect(r1.at).toEqual([20.32, 20.32]) // snapped to the 2.54 grid
+    expect(r1.ports.length).toBeGreaterThan(0)
+    for (const port of r1.ports) expect(Math.hypot(port[0] - r1.at[0], port[1] - r1.at[1])).toBeLessThan(20)
+  })
+
+  test("parts survive serialize and parse", () => {
+    const back = parseDoc(serialize(placed()))
+    expect(back.parts).toEqual(placed().parts)
+  })
+
+  test("a document written before parts existed still parses", () => {
+    const legacy = serialize(doc()).replace(/,\n  "parts": \[\]/, "")
+    expect(parseDoc(legacy).parts).toEqual([])
+  })
+
+  test("a duplicate reference is refused, because connect addresses by it", () => {
+    expect(() =>
+      applyOps(placed(), [{ op: "place", symbol: "electrical/resistor", at: [0, 0], label: "r1" }]),
+    ).toThrow(/already used/)
+  })
+
+  test("moving a symbol's entities moves its anchor and its ports with them", () => {
+    const built = placed()
+    const r1 = built.parts[0]!
+    const ids = built.entities.filter((entity) => entity.id!.startsWith(`${r1.prefix}-`)).map((entity) => entity.id!)
+    const after = applyOps(built, [{ op: "move", ids, by: [10, 5] }]).doc
+    const moved = after.parts[0]!
+    expect(moved.at).toEqual([r1.at[0] + 10, r1.at[1] + 5])
+    expect(moved.ports).toEqual(r1.ports.map((port) => [port[0] + 10, port[1] + 5]))
+    // The part left alone must not have drifted.
+    expect(after.parts[1]).toEqual(built.parts[1])
+  })
+
+  test("rotating a symbol rotates its ports, so a turned part still connects", () => {
+    const built = placed()
+    const r1 = built.parts[0]!
+    const ids = built.entities.filter((entity) => entity.id!.startsWith(`${r1.prefix}-`)).map((entity) => entity.id!)
+    const after = applyOps(built, [{ op: "rotate", ids, deg: 90, about: r1.at }]).doc
+    const spun = after.parts[0]!
+    expect(spun.ports).not.toEqual(r1.ports)
+    // A rotation about the anchor keeps every port the same distance from it.
+    for (let i = 0; i < r1.ports.length; i += 1) {
+      const was = Math.hypot(r1.ports[i]![0] - r1.at[0], r1.ports[i]![1] - r1.at[1])
+      const is = Math.hypot(spun.ports[i]![0] - spun.at[0], spun.ports[i]![1] - spun.at[1])
+      expect(is).toBeCloseTo(was, 6)
+    }
+  })
+
+  test("moving half a symbol leaves the record alone rather than guessing", () => {
+    const built = placed()
+    const first = built.entities.find((entity) => entity.id!.startsWith(`${built.parts[0]!.prefix}-`))!
+    const after = applyOps(built, [{ op: "move", ids: [first.id!], by: [10, 0] }]).doc
+    expect(after.parts[0]).toEqual(built.parts[0])
+  })
+
+  test("deleting a symbol's geometry drops the part, so nothing wires to a ghost", () => {
+    const built = placed()
+    const ids = built.entities
+      .filter((entity) => entity.id!.startsWith(`${built.parts[0]!.prefix}-`))
+      .map((entity) => entity.id!)
+    const after = applyOps(built, [{ op: "delete", ids }]).doc
+    expect(after.parts.map((part) => part.ref)).toEqual(["R2"])
+  })
+
+  test("a deleted reference is not reused by the next placement", () => {
+    const built = placed()
+    const ids = built.entities
+      .filter((entity) => entity.id!.startsWith(`${built.parts[0]!.prefix}-`))
+      .map((entity) => entity.id!)
+    const gone = applyOps(built, [{ op: "delete", ids }]).doc
+    const again = applyOps(gone, [{ op: "place", symbol: "electrical/resistor", at: [90, 20], label: "R3" }]).doc
+    expect(again.parts.map((part) => part.prefix)).toEqual([...new Set(again.parts.map((part) => part.prefix))])
+  })
+
+  test("an annotated label still gives a plain reference to wire by", () => {
+    // `REF | key=value` is the grammar `checkDoc` reads, so an annotated label is ordinary.
+    // If the whole string became the reference, annotating a drawing would be what stopped
+    // it being wireable — the two conventions have to compose.
+    const built = applyOps(doc(), [
+      { op: "place", symbol: "iot/esp32-devkit", at: [30, 50], label: "U1 | mA=240, V=3.3" },
+      { op: "place", symbol: "iot/led", at: [120, 50], label: "D1 | mA=20" },
+    ]).doc
+    expect(built.parts.map((part) => part.ref)).toEqual(["U1", "D1"])
+    // The full annotation is still drawn on the sheet, for the checker to read.
+    expect(built.entities.some((entity) => entity.type === "text" && entity.text === "U1 | mA=240, V=3.3")).toBe(true)
+    expect(() => applyOps(built, [{ op: "connect", from: "U1.5", to: "D1.1" }])).not.toThrow()
+  })
+
+  test("a web save round-trips parts, which is what makes the two editors one editor", () => {
+    // Exactly the web edit route's path: parse the stored metadata with the shared schema,
+    // apply ops, serialize. A `parts` array dropped anywhere along here would leave the
+    // drawing looking right and silently unwireable.
+    const written = serialize(
+      applyOps(doc(), [{ op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" }]).doc,
+    )
+    const asWebReadsIt = BlueprintDocSchema.parse(JSON.parse(written))
+    expect(asWebReadsIt.parts).toHaveLength(1)
+    const afterWebEdit = applyOps(asWebReadsIt, [
+      { op: "place", symbol: "electrical/lamp", at: [80, 20], label: "L1" },
+    ]).doc
+    const backInTheTui = parseDoc(serialize(afterWebEdit))
+    expect(backInTheTui.parts.map((part) => part.ref)).toEqual(["R1", "L1"])
+    expect(() => applyOps(backInTheTui, [{ op: "connect", from: "R1.2", to: "L1.1" }])).not.toThrow()
+  })
+
+  test("an unknown symbol names the way to find a real one", () => {
+    expect(() => applyOps(doc(), [{ op: "place", symbol: "flux-capacitor", at: [0, 0] }])).toThrow(/no such symbol/)
+  })
+})
+
+describe("connect", () => {
+  const two = () =>
+    applyOps(doc(), [
+      { op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" },
+      { op: "place", symbol: "electrical/resistor", at: [80, 60], label: "R2" },
+    ]).doc
+
+  test("a wire runs from one port to the other", () => {
+    const before = two()
+    const after = applyOps(before, [{ op: "connect", from: "R1.2", to: "R2.1" }]).doc
+    const wire = after.entities.find((entity) => entity.id === "w1")
+    expect(wire?.type).toBe("polyline")
+    if (wire?.type !== "polyline") throw new Error("no wire")
+    expect(wire.pts[0]).toEqual(before.parts[0]!.ports[1]!)
+    expect(wire.pts.at(-1)).toEqual(before.parts[1]!.ports[0]!)
+  })
+
+  test("the wire is orthogonal, which is what makes a schematic readable", () => {
+    const after = applyOps(two(), [{ op: "connect", from: "R1.2", to: "R2.1" }]).doc
+    const wire = after.entities.find((entity) => entity.id === "w1")
+    if (wire?.type !== "polyline") throw new Error("no wire")
+    for (let i = 1; i < wire.pts.length; i += 1) {
+      const a = wire.pts[i - 1]!
+      const b = wire.pts[i]!
+      expect(a[0] === b[0] || a[1] === b[1]).toBe(true)
+    }
+  })
+
+  test("a case-insensitive ref and a label both work", () => {
+    const after = applyOps(two(), [{ op: "connect", from: "r1.1", to: "R2.2", label: "W1 | mm2=2.5, A=16" }]).doc
+    expect(after.entities.some((entity) => entity.type === "text" && entity.text.startsWith("W1 |"))).toBe(true)
+  })
+
+  test("an unknown ref lists the refs that do exist", () => {
+    expect(() => applyOps(two(), [{ op: "connect", from: "R9.1", to: "R2.1" }])).toThrow(/R1, R2/)
+  })
+
+  test("a port out of range says what the range is", () => {
+    expect(() => applyOps(two(), [{ op: "connect", from: "R1.9", to: "R2.1" }])).toThrow(/ports 1\.\./)
+  })
+
+  test("an address without a port explains the form", () => {
+    expect(() => applyOps(two(), [{ op: "connect", from: "R1", to: "R2.1" }])).toThrow(/REF\.PORT/)
+  })
+
+  test("wire ids are their own series, so a hand-drawn entity never collides", () => {
+    const after = applyOps(two(), [
+      { op: "connect", from: "R1.1", to: "R2.1" },
+      { op: "connect", from: "R1.2", to: "R2.2" },
+    ]).doc
+    expect(after.entities.filter((entity) => /^w\d+$/.test(entity.id ?? "")).map((entity) => entity.id)).toEqual([
+      "w1",
+      "w2",
+    ])
+  })
+
+  test("a wire that has to cross a part is drawn anyway, and reported", () => {
+    // Three parts in a row: wiring the outer two has to pass the middle one whichever way
+    // it goes. Refusing would leave an empty schematic; the warning is the honest answer.
+    const crowded = applyOps(doc(), [
+      { op: "place", symbol: "electrical/resistor", at: [0, 20], label: "R1" },
+      { op: "place", symbol: "electrical/resistor", at: [30, 20], label: "R2" },
+      { op: "place", symbol: "electrical/resistor", at: [60, 20], label: "R3" },
+    ]).doc
+    const result = applyOps(crowded, [{ op: "connect", from: "R1.2", to: "R3.1", layer: "l0" }])
+    expect(result.doc.entities.some((entity) => entity.id === "w1")).toBe(true)
+    expect(result.warnings.join(" ")).toMatch(/R1\.2→R3\.1/)
+  })
+
+  test("a wire ending on another wire's interior gets a junction dot", () => {
+    const three = applyOps(doc(), [
+      { op: "place", symbol: "electrical/resistor", at: [0, 0], label: "R1" },
+      { op: "place", symbol: "electrical/resistor", at: [0, 40], label: "R2" },
+      { op: "place", symbol: "electrical/resistor", at: [40, 20], label: "R3" },
+    ]).doc
+    const wired = applyOps(three, [{ op: "connect", from: "R1.2", to: "R2.2" }]).doc
+    const first = wired.entities.find((entity) => entity.id === "w1")
+    if (first?.type !== "polyline") throw new Error("no wire")
+    // Tap the middle of that wire's first segment — a vertex would be an end, not an
+    // interior, and two wires meeting end to end need no dot.
+    const midpoint: [number, number] = [
+      (first.pts[0]![0] + first.pts[1]![0]) / 2,
+      (first.pts[0]![1] + first.pts[1]![1]) / 2,
+    ]
+    const r3 = wired.parts[2]!
+    const ids = wired.entities.filter((entity) => entity.id!.startsWith(`${r3.prefix}-`)).map((entity) => entity.id!)
+    const aligned = applyOps(wired, [
+      { op: "move", ids, by: [midpoint[0] - r3.ports[0]![0], midpoint[1] - r3.ports[0]![1]] },
+    ]).doc
+    const tapped = applyOps(aligned, [{ op: "connect", from: "R3.1", to: "R1.1" }]).doc
+    expect(tapped.parts.some((part) => part.symbol.endsWith("junction-dot"))).toBe(true)
+  })
+})
+
+describe("arrange", () => {
+  test("a schematic part off the grid is snapped onto it", () => {
+    const built = applyOps(doc(), [{ op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" }]).doc
+    // `place` already snaps, so shift it off by hand to have something to arrange.
+    const ids = built.entities.map((entity) => entity.id!)
+    const askew = applyOps(built, [{ op: "move", ids, by: [0.7, -0.4] }]).doc
+    const tidy = applyOps(askew, [{ op: "arrange" }]).doc
+    for (const value of tidy.parts[0]!.at) expect(Math.abs(value / 2.54 - Math.round(value / 2.54))).toBeLessThan(1e-9)
+  })
+
+  test("two overlapping parts are pushed apart", () => {
+    const stacked = applyOps(doc(), [
+      { op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" },
+      { op: "place", symbol: "electrical/resistor", at: [21, 20], label: "R2" },
+    ]).doc
+    const tidy = applyOps(stacked, [{ op: "arrange" }]).doc
+    const gap = Math.abs(tidy.parts[0]!.at[0] - tidy.parts[1]!.at[0]) + Math.abs(tidy.parts[0]!.at[1] - tidy.parts[1]!.at[1])
+    expect(gap).toBeGreaterThan(
+      Math.abs(stacked.parts[0]!.at[0] - stacked.parts[1]!.at[0]) +
+        Math.abs(stacked.parts[0]!.at[1] - stacked.parts[1]!.at[1]),
+    )
+  })
+
+  test("a building symbol is left where it was — a door belongs to the wall, not the grid", () => {
+    const plan = applyOps(doc(), [{ op: "place", symbol: "building/door-single-left", at: [1000.3, 500.7], label: "D1" }]).doc
+    expect(plan.parts[0]!.at).toEqual([1000.3, 500.7])
+    const tidy = applyOps(plan, [{ op: "arrange" }]).doc
+    expect(tidy.parts[0]!.at).toEqual([1000.3, 500.7])
+  })
+
+  test("arranging a tidy drawing changes nothing, so it commits nothing", () => {
+    const built = applyOps(doc(), [
+      { op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" },
+      { op: "place", symbol: "electrical/resistor", at: [80, 20], label: "R2" },
+    ]).doc
+    const again = applyOps(built, [{ op: "arrange" }]).doc
+    expect(serialize(again)).toBe(serialize(built))
   })
 })

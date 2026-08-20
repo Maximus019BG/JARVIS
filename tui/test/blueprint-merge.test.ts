@@ -53,6 +53,42 @@ describe("diffDocs", () => {
   })
 })
 
+describe("merge3 carries parts", () => {
+  // Without this a cloud sync drops every part, and the drawing comes back looking right
+  // while `connect` no longer knows anything is in it.
+  const placed = (label: string, at: [number, number]): Op => ({
+    op: "place",
+    symbol: "electrical/resistor",
+    at,
+    label,
+  })
+
+  test("keeps a part added on either side", () => {
+    const start = base()
+    const ours = edit(start, placed("R1", [20, 20]))
+    const theirs = edit(start, placed("R2", [80, 20]))
+    const { doc } = merge3(start, ours, theirs)
+    expect(doc.parts.map((part) => part.ref).sort()).toEqual(["R1", "R2"])
+  })
+
+  test("drops a part whose geometry did not survive the merge", () => {
+    const start = edit(base(), placed("R1", [20, 20]))
+    const ids = start.entities.filter((entity) => entity.id!.startsWith(start.parts[0]!.prefix)).map((e) => e.id!)
+    const ours = edit(start, { op: "delete", ids })
+    const { doc } = merge3(start, ours, start)
+    expect(doc.parts).toEqual([])
+  })
+
+  test("ours wins a reference used on both sides", () => {
+    const start = base()
+    const ours = edit(start, placed("R1", [20, 20]))
+    const theirs = edit(start, placed("R1", [90, 90]))
+    const { doc } = merge3(start, ours, theirs)
+    expect(doc.parts).toHaveLength(1)
+    expect(doc.parts[0]!.at).toEqual(ours.parts[0]!.at)
+  })
+})
+
 describe("merge3", () => {
   test("takes a change made on only one side", () => {
     const start = base()

@@ -8,7 +8,7 @@ import { ensureRepo, readDoc, writeDoc } from "../src/blueprint/store.ts"
 import { blueprintSymbolTool } from "../src/blueprint/symbol-tool.ts"
 import { DOMAINS, findSymbol, LIBRARIES, searchSymbols } from "../src/blueprint/symbols/index.ts"
 import { constantAsker, PermissionGate } from "../src/permission.ts"
-import { ToolError, type ToolContext } from "../src/tools/context.ts"
+import type { ToolContext } from "../src/tools/context.ts"
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), "jarvis-symbols-"))
@@ -87,14 +87,23 @@ describe("blueprint_symbol", () => {
       name: "sheet",
       placements: [{ symbol: "electrical/resistor", at: [100, 50], label: "R1" }],
     })
-    expect(output).toContain("R1 electrical/resistor")
-    // A resistor's ports are ±10.16 along its own X, so at [100, 50] unrotated they land here.
-    expect(output).toContain("1:[89.84, 50]")
-    expect(output).toContain("2:[110.16, 50]")
+    // Reported by reference, not by coordinate: `connect` takes the names, and nobody has
+    // to copy a port position back out of the transcript any more.
+    expect(output).toContain("R1  electrical/resistor")
+    expect(output).toContain("connect with R1.1..R1.2")
 
     const doc = readDoc(root, "sheet")
     expect(doc.entities.every((entity) => entity.id!.startsWith("r1-"))).toBe(true)
     expect(doc.entities.some((entity) => entity.type === "text" && entity.text === "R1")).toBe(true)
+
+    // The part is remembered, snapped to the 2.54 grid, with its ports in document space.
+    const part = doc.parts.find((candidate) => candidate.ref === "R1")!
+    expect(part.at).toEqual([99.06, 50.8])
+    // A resistor's ports are ±10.16 along its own X.
+    expect(part.ports).toEqual([
+      [88.9, 50.8],
+      [109.22, 50.8],
+    ])
   })
 
   test("accepts a single symbol flattened to top-level fields", async () => {
@@ -106,8 +115,8 @@ describe("blueprint_symbol", () => {
       at: [100, 50],
       label: "R1",
     })
-    expect(output).toContain("R1 electrical/resistor")
-    expect(output).toContain("1:[89.84, 50]")
+    expect(output).toContain("R1  electrical/resistor")
+    expect(output).toContain("connect with R1.1..R1.2")
 
     const doc = readDoc(root, "sheet")
     expect(doc.entities.every((entity) => entity.id!.startsWith("r1-"))).toBe(true)
@@ -115,15 +124,20 @@ describe("blueprint_symbol", () => {
   })
 
   test("rotation lands the ports where the matrix says", async () => {
-    const { tool } = setup()
-    const at: Pt = [40, 60]
-    const output = await call(tool, {
+    const { root, tool } = setup()
+    // Already on the 2.54 grid, so snapping leaves it alone and the matrix is the only
+    // thing moving the ports.
+    const at: Pt = [40.64, 60.96]
+    await call(tool, {
       action: "place",
       name: "sheet",
-      placements: [{ symbol: "electrical/resistor", at, rotate: 90 }],
+      placements: [{ symbol: "electrical/resistor", at, rotate: 90, label: "R9" }],
     })
+    const part = readDoc(root, "sheet").parts.find((candidate) => candidate.ref === "R9")!
+    expect(part.at).toEqual(at)
     const expected = apply(compose(translate(at[0], at[1]), rotate(90)), [10.16, 0])
-    expect(output).toContain(`2:[${Math.round(expected[0] * 100) / 100}, ${Math.round(expected[1] * 100) / 100}]`)
+    expect(part.ports[1]![0]).toBeCloseTo(expected[0], 6)
+    expect(part.ports[1]![1]).toBeCloseTo(expected[1], 6)
     // 90° clockwise with Y down sends +X to +Y: the far port ends up below the origin.
     expect(expected[1]).toBeGreaterThan(at[1])
   })
@@ -154,9 +168,12 @@ describe("blueprint_symbol", () => {
   test("an unknown symbol is an error, and nothing is written", async () => {
     const { root, tool } = setup()
     const before = readDoc(root, "sheet").entities.length
+    // Asserted on the message, not the class: the throw comes from `applyOps` as a
+    // `BlueprintError` now that placement is an op, and what matters to the model is that
+    // it is told how to find a real symbol name.
     expect(
       call(tool, { action: "place", name: "sheet", placements: [{ symbol: "flux-capacitor", at: [0, 0] }] }),
-    ).rejects.toThrow(ToolError)
+    ).rejects.toThrow(/no such symbol: flux-capacitor/)
     expect(readDoc(root, "sheet").entities).toHaveLength(before)
   })
 })
