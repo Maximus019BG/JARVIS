@@ -131,12 +131,18 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
       'A blueprint that does not exist yet is created by the first edit; `blueprint` action:"create" is only needed to set non-default units or sheet size.',
       "Coordinates are in the drawing's units with Y pointing DOWN, like SVG.",
       "Entity ids are assigned automatically on `add` — read them back from the preview or `blueprint` action:\"info\".",
-      // The three ops that exist so nobody has to do trigonometry. Stated as the method
-      // rather than as an option, because a model given the choice draws wires by hand.
+      // Stated as the method rather than as an option, because a model given the choice
+      // draws wires by hand — and now genuinely does not need to, since wire geometry,
+      // junction dots and label positions are all derived after every edit.
       'For anything made of standard parts use op:"place" to drop a symbol roughly where it belongs with a `label`,',
-      'then op:"connect" with from:"R1.2" and to:"U1.5" to wire two ports — the route is found for you, around the',
-      'other parts. Do NOT work out wire coordinates yourself. op:"arrange" snaps parts to the grid and separates',
-      "any that overlap, so rough placement is enough.",
+      'then op:"connect" with from:"R1.2" and to:"U1.5" to name the two ports you want joined.',
+      "Do NOT work out wire coordinates, junction dots or label positions yourself — all three are derived for you,",
+      "orthogonally, around the other parts, to the named pin, and they are re-derived whenever a part moves.",
+      "Placing parts also wires the connections that are unambiguous on their own — a pin called 3V3 or GND beside a",
+      "supply, a port dropped onto an existing wire, two lone components that are each other's nearest neighbour —",
+      "and the reply says which; delete a wire you did not want.",
+      'op:"arrange" snaps parts to the grid and separates any that overlap, so rough placement is enough.',
+      'The `nets` list in action:"json" is the connectivity: which ports each wire actually joins.',
       "Returns a braille rendering of the result, so check it and fix what looks wrong.",
       "Batch a whole figure into one call rather than one op per call.",
     ].join(" "),

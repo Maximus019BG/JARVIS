@@ -116,10 +116,14 @@ describe("connect end to end", () => {
     const doc = JSON.parse(json.slice(json.indexOf("{"))) as {
       entities: { id: string; type: string; pts?: [number, number][] }[]
       parts: { ref: string; ports: [number, number][] }[]
+      nets: { from: string; to: string; wire: string }[]
     }
-    const wire = doc.entities.find((entity) => entity.id === "w1")
     const r1 = doc.parts.find((part) => part.ref === "R1")!
     const l1 = doc.parts.find((part) => part.ref === "L1")!
+    // Placing a lone resistor beside a lone lamp already wires them, so this connect is not
+    // the first net in the drawing. Find it by the ports it names, not by wire id.
+    const net = doc.nets.find((candidate) => candidate.from === "R1.2" && candidate.to === "L1.1")!
+    const wire = doc.entities.find((entity) => entity.id === net.wire)
     expect(wire?.pts?.[0]).toEqual(r1.ports[1]!)
     expect(wire?.pts?.at(-1)).toEqual(l1.ports[0]!)
   })

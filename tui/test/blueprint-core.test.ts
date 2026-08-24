@@ -163,9 +163,20 @@ describe("geom", () => {
     expect(box[3]).toBeCloseTo(10, 3)
   })
 
-  test("text contributes its anchor to the bounds but no geometry", () => {
+  test("text contributes its glyph box to the bounds but no geometry", () => {
     expect(flatten({ type: "text", id: "e1", at: [4, 4], text: "hi" })).toEqual([])
-    expect(bbox([{ type: "text", id: "e1", at: [4, 4], text: "hi" }])).toEqual([4, 4, 4, 4])
+    // Baseline-left anchor, default size 4: two chars of 0.6 em advance run right from x=4,
+    // and the box straddles the baseline by the ascent and descent. A zero-area point here
+    // is what let labels collide with impunity.
+    expect(bbox([{ type: "text", id: "e1", at: [4, 4], text: "hi" }])).toEqual([4, 1, 8.8, 5])
+  })
+
+  test("a rotated text box turns about its anchor", () => {
+    const box = bbox([{ type: "text", id: "e1", at: [0, 0], text: "hi", size: 4, angle: 90 }])!
+    // Upright it spans x 0..4.8 and y -3..1; turned a quarter turn those swap sign-wise.
+    // `+ 0` folds the -0 that cos(90°) leaves behind: it compares unequal to 0 under toEqual,
+    // the same trap `serialize` normalises away.
+    expect(box.map((value) => Math.round(value * 100) / 100 + 0)).toEqual([-1, 0, 3, 4.8])
   })
 })
 
@@ -498,26 +509,36 @@ describe("parts", () => {
 })
 
 describe("connect", () => {
+  // Two lone two-terminal parts, which `autowire` pairs into a loop on sight — so this
+  // fixture arrives with w1 and w2 already drawn, and an explicit `connect` on top of it
+  // gets the next id in the series. Tests here name the wire through the net that the
+  // connect created rather than by guessing an id.
   const two = () =>
     applyOps(doc(), [
       { op: "place", symbol: "electrical/resistor", at: [20, 20], label: "R1" },
       { op: "place", symbol: "electrical/resistor", at: [80, 60], label: "R2" },
     ]).doc
 
+  /** The polyline drawn for the net joining these two addresses. */
+  const wireFor = (built: ReturnType<typeof doc>, from: string, to: string) => {
+    const net = built.nets!.find((candidate) => candidate.from === from && candidate.to === to)
+    if (!net) throw new Error(`no net ${from}->${to} in ${JSON.stringify(built.nets)}`)
+    const wire = built.entities.find((entity) => entity.id === net.wire)
+    if (wire?.type !== "polyline") throw new Error("net has no polyline")
+    return wire
+  }
+
   test("a wire runs from one port to the other", () => {
     const before = two()
     const after = applyOps(before, [{ op: "connect", from: "R1.2", to: "R2.1" }]).doc
-    const wire = after.entities.find((entity) => entity.id === "w1")
-    expect(wire?.type).toBe("polyline")
-    if (wire?.type !== "polyline") throw new Error("no wire")
+    const wire = wireFor(after, "R1.2", "R2.1")
     expect(wire.pts[0]).toEqual(before.parts[0]!.ports[1]!)
     expect(wire.pts.at(-1)).toEqual(before.parts[1]!.ports[0]!)
   })
 
   test("the wire is orthogonal, which is what makes a schematic readable", () => {
     const after = applyOps(two(), [{ op: "connect", from: "R1.2", to: "R2.1" }]).doc
-    const wire = after.entities.find((entity) => entity.id === "w1")
-    if (wire?.type !== "polyline") throw new Error("no wire")
+    const wire = wireFor(after, "R1.2", "R2.1")
     for (let i = 1; i < wire.pts.length; i += 1) {
       const a = wire.pts[i - 1]!
       const b = wire.pts[i]!
@@ -547,23 +568,36 @@ describe("connect", () => {
       { op: "connect", from: "R1.1", to: "R2.1" },
       { op: "connect", from: "R1.2", to: "R2.2" },
     ]).doc
+    // w1 and w2 are the pair `autowire` drew when the parts were placed; w3 and w4 are these
+    // two explicit connects. All four in one series, none colliding with an `e<n>`.
     expect(after.entities.filter((entity) => /^w\d+$/.test(entity.id ?? "")).map((entity) => entity.id)).toEqual([
       "w1",
       "w2",
+      "w3",
+      "w4",
     ])
+    expect(after.nets).toHaveLength(4)
   })
 
-  test("a wire that has to cross a part is drawn anyway, and reported", () => {
-    // Three parts in a row: wiring the outer two has to pass the middle one whichever way
-    // it goes. Refusing would leave an empty schematic; the warning is the honest answer.
+  test("a wire past a part in the way goes around it rather than through it", () => {
+    // Three parts in a row, wiring the outer two. This used to be reported as unavoidable,
+    // because the router only ever tried five shapes and every one of them ran along the
+    // parts' shared axis. It now also tries the lanes just clear of each part's edges, which
+    // is where a person would have drawn it — so there is a clean route and no warning.
     const crowded = applyOps(doc(), [
       { op: "place", symbol: "electrical/resistor", at: [0, 20], label: "R1" },
       { op: "place", symbol: "electrical/resistor", at: [30, 20], label: "R2" },
       { op: "place", symbol: "electrical/resistor", at: [60, 20], label: "R3" },
     ]).doc
     const result = applyOps(crowded, [{ op: "connect", from: "R1.2", to: "R3.1", layer: "l0" }])
-    expect(result.doc.entities.some((entity) => entity.id === "w1")).toBe(true)
-    expect(result.warnings.join(" ")).toMatch(/R1\.2→R3\.1/)
+    const wire = wireFor(result.doc, "R1.2", "R3.1")
+    expect(result.warnings).toEqual([])
+    // The middle resistor's own box, and nothing of the wire inside it.
+    const r2 = result.doc.parts.find((part) => part.ref === "R2")!
+    const box = bbox(result.doc.entities.filter((entity) => entity.id?.startsWith(`${r2.prefix}-`)))!
+    for (const [x, y] of wire.pts) {
+      expect(x > box[0] && x < box[2] && y > box[1] && y < box[3]).toBe(false)
+    }
   })
 
   test("a wire ending on another wire's interior gets a junction dot", () => {

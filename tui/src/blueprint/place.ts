@@ -2,7 +2,7 @@ import { apply, compose, rotate, scale, transform, type Mat } from "./geom.ts"
 import type { Op } from "./ops.ts"
 import { translate } from "./geom.ts"
 import type { Entity, Part, Pt } from "./schema.ts"
-import { findSymbol, GRID } from "./symbols/index.ts"
+import { findSymbol, GRID, portDirs } from "./symbols/index.ts"
 
 /**
  * Placing a symbol, once, for everybody: the agent's `blueprint_symbol`, the web symbol
@@ -59,6 +59,37 @@ export function snapAt(at: Pt, domain: string): Pt {
 }
 
 /**
+ * A direction through a matrix: the linear part only, since a direction has no position,
+ * then snapped back to the nearest axis.
+ *
+ * Snapping is not a rounding convenience — wires here are orthogonal by rule, so "escape
+ * along this pin" has to mean one of four ways out even when the part sits at 30°. The
+ * dominant component is the one that survives.
+ */
+export function applyDir(m: Mat, [dx, dy]: Pt): Pt {
+  const x = m[0] * dx + m[2] * dy
+  const y = m[1] * dx + m[3] * dy
+  if (x === 0 && y === 0) return [0, 0]
+  return Math.abs(x) >= Math.abs(y) ? [Math.sign(x), 0] : [0, Math.sign(y)]
+}
+
+/**
+ * A part's pin directions, from the record if it has them and from the library if it does
+ * not.
+ *
+ * The fallback is what lets a drawing saved before pins existed keep working: it had no
+ * `dirs` field, and recomputing from the symbol plus the part's own transform gets the same
+ * answer a fresh placement would.
+ */
+export function dirsOf(part: Part): Pt[] {
+  if (part.dirs && part.dirs.length === part.ports.length) return part.dirs
+  const found = findSymbol(part.symbol)
+  if (!found) return part.ports.map(() => [0, 0] as Pt)
+  const m = compose(rotate(part.rotate ?? 0), scale(part.scale ?? 1, part.scale ?? 1))
+  return portDirs(found.symbol).map((dir) => applyDir(m, dir))
+}
+
+/**
  * The ops for one placement plus the part record to remember it by, or undefined when the
  * symbol name matches nothing. `index` only disambiguates the id prefix within a batch.
  */
@@ -105,6 +136,10 @@ export function placeSymbol(placement: Placement, index: number): Placed | undef
     ...(size !== 1 ? { scale: size } : {}),
     prefix,
     ports: (symbol.ports ?? []).map((port) => apply(matrix, port)),
+    // Stored transformed, for the same reason `ports` are: a symbol later reshaped in the
+    // library must not silently re-aim the wires in a drawing already finished.
+    ...(symbol.pins ? { pins: symbol.pins } : {}),
+    ...(symbol.ports?.length ? { dirs: portDirs(symbol).map((dir) => applyDir(matrix, dir)) } : {}),
   }
 
   return { ops, part }

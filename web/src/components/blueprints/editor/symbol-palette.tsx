@@ -53,6 +53,7 @@ function Thumbnail({ entities }: { entities: Entity[] }) {
       layers: [{ id: "l0", name: "s", color: "currentColor", visible: true }],
       entities,
       parts: [],
+      nets: [],
     };
     return toSvg(doc);
   }, [entities]);

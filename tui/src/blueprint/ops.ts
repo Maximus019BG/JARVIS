@@ -2,7 +2,9 @@ import { z } from "zod"
 import { apply, bbox, compose, rotate, scale, transform, translate, type Mat } from "./geom.ts"
 import { arrangeParts } from "./arrange.ts"
 import { placeSymbol, prefixFor, refIn } from "./place.ts"
-import { junctionsAt, obstaclesFor, portAt, refOf, routeWire } from "./route.ts"
+import { autowireOps, wiredPairs } from "./autowire.ts"
+import { placeLabelOps } from "./labels.ts"
+import { dirAt, junctionOps, obstaclesFor, portAt, refOf, rerouteOps, routeWire, wireSegments } from "./route.ts"
 import { findSymbol } from "./symbols/index.ts"
 import {
   BlueprintError,
@@ -186,8 +188,10 @@ export type OpResult = {
  * failure halfway through leaves the caller's copy intact and nothing partial reaches
  * disk. An unknown entity or layer id is an error, not a silent no-op: a drawing that
  * quietly ignored half its instructions is worse than one that refused them.
+ *
+ * The literal ops only. `applyOps` wraps this with the derived ones — see `settle`.
  */
-export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
+function runOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
   let next: BlueprintDoc = { ...doc, layers: [...doc.layers], entities: [...doc.entities] }
   const counts = new Map<string, number>()
   const bump = (what: string, n = 1) => counts.set(what, (counts.get(what) ?? 0) + n)
@@ -197,6 +201,11 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
   /** Wire ids are their own series so a route never collides with a hand-drawn entity. */
   let wires = next.entities.reduce((highest, entity) => {
     const match = /^w(\d+)$/.exec(entity.id ?? "")
+    return match ? Math.max(highest, Number(match[1])) : highest
+  }, 0)
+  /** Net ids are their own series too, for the same reason wire ids are. */
+  let nets = (next.nets ?? []).reduce((highest, net) => {
+    const match = /^n(\d+)$/.exec(net.id)
     return match ? Math.max(highest, Number(match[1])) : highest
   }, 0)
   const blocked: string[] = []
@@ -252,6 +261,16 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
         // A part whose geometry has all been deleted is not a part any more. Leaving the
         // record behind would let `connect` wire to ports nothing draws.
         next.parts = next.parts.filter((part) => kept.some((entity) => entity.id?.startsWith(`${part.prefix}-`)))
+        // A net whose wire has been rubbed out, or whose part has, is not a connection any
+        // more. Keeping the record would have `settle` faithfully redraw a wire the user
+        // just deleted.
+        const refs = new Set(next.parts.map((part) => part.ref.toLowerCase()))
+        next.nets = (next.nets ?? []).filter(
+          (net) =>
+            kept.some((entity) => entity.id === net.wire) &&
+            refs.has(refOf(net.from).toLowerCase()) &&
+            refs.has(refOf(net.to).toLowerCase()),
+        )
         bump("delete", removed)
         break
       }
@@ -323,10 +342,10 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
         if (next.parts.some((part) => part.ref.toLowerCase() === placed.part.ref.toLowerCase())) {
           throw new BlueprintError(`reference ${placed.part.ref} is already used — give this one a different label`)
         }
-        // Recurse through applyOps so the symbol's entities go through exactly the same
+        // Recurse through runOps so the symbol's entities go through exactly the same
         // validation, id allocation and layer checks as anything else added by hand.
-        const inner = applyOps({ ...next, parts: [] }, placed.ops)
-        next = { ...inner.doc, parts: [...next.parts, placed.part] }
+        const inner = runOps({ ...next, parts: [], nets: [] }, placed.ops)
+        next = { ...inner.doc, parts: [...next.parts, placed.part], nets: next.nets ?? [] }
         seq = Math.max(seq, seqOf(next))
         bump(`place ${op.symbol}`)
         break
@@ -334,7 +353,17 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
       case "connect": {
         const from = portAt(next, op.from)
         const to = portAt(next, op.to)
-        const route = routeWire(from, to, obstaclesFor(next, [refOf(op.from), refOf(op.to)]))
+        const route = routeWire({
+          from,
+          to,
+          // The pins decide which way the wire leaves, and the wires already drawn decide
+          // which of the remaining shapes is legible. Neither was consulted before, which is
+          // how two conductors ended up drawn as one line.
+          fromDir: dirAt(next, op.from),
+          toDir: dirAt(next, op.to),
+          obstacles: obstaclesFor(next),
+          wires: wireSegments(next),
+        })
         const layer = op.layer ?? next.layers[0]!.id
         if (!next.layers.some((existing) => existing.id === layer)) {
           throw new BlueprintError(`no such layer: ${layer}`)
@@ -352,21 +381,17 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
             entity: { type: "text", at: [mid[0], mid[1] - 1.5], text: op.label, size: 2, layer, id: `w${wires}-label` },
           })
         }
-        // Junctions are read against the drawing as it stands: once the new wire is in,
-        // both its own endpoints lie on it and everything looks like a T.
-        const junctions = junctionsAt(next, [from, to]).filter(
-          (at) => !next.parts.some((part) => part.symbol.endsWith("junction-dot") && part.at[0] === at[0] && part.at[1] === at[1]),
-        )
-        const inner = applyOps({ ...next, parts: [] }, wire)
-        next = { ...inner.doc, parts: next.parts }
-        if (junctions.length > 0) {
-          // Qualified by the domain of what is being wired: both the electrical and the iot
-          // library have a `junction-dot`, so a bare name would take whichever comes first.
-          const domain = findSymbol(next.parts.find((part) => part.ref.toLowerCase() === refOf(op.from).toLowerCase())?.symbol ?? "")?.domain
-          next = applyOps(
-            next,
-            junctions.map((at) => ({ op: "place" as const, symbol: `${domain ?? "electrical"}/junction-dot`, at, layer })),
-          ).doc
+        const inner = runOps({ ...next, parts: [], nets: [] }, wire)
+        // The net is the connection; the polyline is only its current drawing. Recording it
+        // is what lets the wire be redrawn when the parts move, instead of being left behind
+        // pointing at where a port used to be.
+        next = {
+          ...inner.doc,
+          parts: next.parts,
+          nets: [
+            ...(next.nets ?? []),
+            { id: `n${++nets}`, from: op.from, to: op.to, wire: `w${wires}`, ...(op.label ? { label: op.label } : {}) },
+          ],
         }
         seq = Math.max(seq, seqOf(next))
         if (route.blocked) blocked.push(`${op.from}→${op.to}`)
@@ -376,7 +401,7 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
       case "arrange": {
         const moves = arrangeParts(next, op.refs)
         if (moves.size === 0) break
-        const inner = applyOps(
+        const inner = runOps(
           next,
           [...moves].map(([ref, by]) => {
             const part = next.parts.find((candidate) => candidate.ref === ref)!
@@ -398,6 +423,52 @@ export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
     ? [`no clear route for ${blocked.join(", ")} — the wire crosses a part; move it or route it by hand`]
     : []
   return { doc: { ...next, seq: Math.max(seq, seqOf(next)) }, summary: describe(counts), warnings }
+}
+
+/**
+ * The passes that turn a placed part into a wired one, in order.
+ *
+ * Each is a pure `doc -> Op[]`, which is what keeps them out of the op loop and keeps the op
+ * loop out of them: no pass can see half-applied state, and every pass runs against a
+ * document that is already valid.
+ *
+ * The order is not arbitrary. Existing nets are put back on their ports before anything reads
+ * the wires, so `autowire` and the junction pass see the drawing as it will be rather than as
+ * it was. Junctions come after both, since only then are all the wires final. Labels come
+ * last because they dodge the wires, and the wires do not dodge them.
+ */
+const PASSES: readonly ((doc: BlueprintDoc) => Op[])[] = [rerouteOps, autowireOps, junctionOps, placeLabelOps]
+
+/**
+ * Applies ops, then everything that follows from them.
+ *
+ * This is the whole of "the system draws the wires, not the caller". Wire geometry, junction
+ * dots and label positions are derived, every time, from where the parts are — so the agent,
+ * the web editor and the terminal editor all get the same drawing for the same placements,
+ * and none of them can produce a wrong one by supplying coordinates, because none of them
+ * supplies coordinates.
+ *
+ * Every pass must be idempotent: the web editor journals ops on the client and the server
+ * re-applies the same list to the stored document, so a pass that changed its mind on a
+ * second run would have the saved drawing differ from the one the user approved.
+ */
+export function applyOps(doc: BlueprintDoc, ops: readonly Op[]): OpResult {
+  const first = runOps(doc, ops)
+  let next = first.doc
+  const warnings = [...first.warnings]
+  const summary = [first.summary]
+  for (const pass of PASSES) {
+    const derived = pass(next)
+    if (derived.length === 0) continue
+    const run = runOps(next, derived)
+    next = run.doc
+    // Auto-wiring is never silent. A connection the user did not ask for is harder to notice
+    // than a missing one, so every pair this drew is named.
+    const pairs = wiredPairs(derived)
+    if (pairs.length > 0) summary.push(`auto-wired ${pairs.join(", ")}`)
+    warnings.push(...run.warnings)
+  }
+  return { doc: next, summary: summary.filter(Boolean).join("; "), warnings }
 }
 
 /** `compose` re-exported so callers building their own matrices need one import. */

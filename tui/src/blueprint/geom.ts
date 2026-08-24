@@ -191,6 +191,45 @@ export function flatten(entity: Entity, tol = 0.2): Pt[][] {
   }
 }
 
+/**
+ * The four corners of a text entity's box.
+ *
+ * Both renderers anchor `at` the same way — SVG `<text x y>` is `text-anchor: start` with an
+ * alphabetic baseline, and the canvas uses `fillText`'s defaults — so the box runs rightwards
+ * from the anchor and straddles it vertically by the font's ascent and descent.
+ *
+ * The 0.6 em average advance is a stand-in for measuring glyphs, which needs font metrics
+ * neither renderer target can supply here. It is close for the mixed-case refs and pin names
+ * this is used on, and being approximately right is the entire point: text used to be treated
+ * as a zero-area point, so a label could overlap anything and nothing in the codebase could
+ * tell. Callers wanting a hard guarantee should keep a grid step of margin.
+ *
+ * ponytail: fixed 0.6 em advance. If label collisions start turning on the difference between
+ * an `l` and a `W`, the upgrade is a per-glyph width table, not a font engine.
+ */
+export function textCorners(entity: Extract<Entity, { type: "text" }>): Pt[] {
+  const size = entity.size ?? 4
+  const [x, y] = entity.at
+  const w = entity.text.length * size * 0.6
+  const corners: Pt[] = [
+    [x, y - size * 0.75],
+    [x + w, y - size * 0.75],
+    [x + w, y + size * 0.25],
+    [x, y + size * 0.25],
+  ]
+  if (!entity.angle) return corners
+  // Glyphs turn about the anchor, matching the `rotate()` both renderers emit.
+  return corners.map((corner) => apply(rotate(entity.angle!, entity.at), corner))
+}
+
+/** [minX, minY, maxX, maxY] for one text entity. */
+export function textBox(entity: Extract<Entity, { type: "text" }>): [number, number, number, number] {
+  const corners = textCorners(entity)
+  const xs = corners.map((corner) => corner[0])
+  const ys = corners.map((corner) => corner[1])
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+}
+
 /** [minX, minY, maxX, maxY], or undefined when nothing has geometry. */
 export function bbox(entities: readonly Entity[], tol = 0.2): [number, number, number, number] | undefined {
   let minX = Infinity
@@ -198,10 +237,11 @@ export function bbox(entities: readonly Entity[], tol = 0.2): [number, number, n
   let maxX = -Infinity
   let maxY = -Infinity
   for (const entity of entities) {
-    // Text has no flattened geometry but still occupies the sheet; its anchor is the
-    // best cheap approximation, and leaving it out entirely would let a label sit
-    // outside a fitted view.
-    const pts = entity.type === "text" ? [entity.at] : flatten(entity, tol).flat()
+    // Text contributes no flattened geometry but still occupies the sheet, so it reports its
+    // glyph box. Using the bare anchor instead — which is what this did — made a label a
+    // zero-area point, and a point cannot collide with anything: `arrange` would happily
+    // shove two parts until their labels sat on top of each other and call it tidy.
+    const pts = entity.type === "text" ? textCorners(entity) : flatten(entity, tol).flat()
     for (const [x, y] of pts) {
       if (x < minX) minX = x
       if (y < minY) minY = y

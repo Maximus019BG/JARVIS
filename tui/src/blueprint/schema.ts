@@ -101,9 +101,47 @@ export const PartSchema = z.object({
   prefix: z.string(),
   /** Connection points in document coordinates, in the library's documented order. */
   ports: z.array(point).default([]),
+  /**
+   * Pin names, positionally matched to `ports`. Absent when the symbol declares none, and
+   * `""` for an individual unnamed pin in an otherwise named part.
+   *
+   * This is what makes "wire it to the +" a thing the code can do rather than a thing the
+   * drawing merely looks like. Before it, a pin's meaning existed only as a glyph drawn on
+   * the sheet and a sentence of English in the symbol's `describe` — readable by a person,
+   * and by a language model guessing, and by nothing else.
+   */
+  pins: z.array(z.string()).optional(),
+  /**
+   * The outward unit direction of each pin, positionally matched to `ports` — the way a
+   * wire has to leave that pin to look drawn rather than computed. Stored transformed, so a
+   * rotated part's pins point where the rotated part's pins point.
+   */
+  dirs: z.array(point).optional(),
 })
 
 export type Part = z.infer<typeof PartSchema>
+
+/**
+ * One conductor: the two ports it joins, and the polyline that draws it.
+ *
+ * The geometry alone was never enough. A wire used to be an anonymous `w3` polyline, and
+ * nothing anywhere recorded that it was the thing joining `BT1.1` to `L1.1` — so moving a
+ * part slid its ports out from under wires that stayed put, and neither the checker nor the
+ * renderer could tell the difference between a connected circuit and a picture of one. The
+ * net is the fact; the polyline is only its current rendering, and can be thrown away and
+ * redrawn whenever the parts move.
+ */
+export const NetSchema = z.object({
+  id: z.string(),
+  /** Port addresses, `"REF.PORT"`, 1-based on the port — the same form `connect` takes. */
+  from: z.string(),
+  to: z.string(),
+  /** Id of the polyline that currently draws this net. */
+  wire: z.string(),
+  label: z.string().optional(),
+})
+
+export type Net = z.infer<typeof NetSchema>
 
 export const BlueprintDocSchema = z.object({
   schema: z.literal(1),
@@ -122,6 +160,8 @@ export const BlueprintDocSchema = z.object({
   entities: z.array(EntitySchema).default([]),
   /** Placed symbols. Additive and optional: a file written before parts existed loads fine. */
   parts: z.array(PartSchema).default([]),
+  /** Conductors between ports. Additive and optional, on the same terms as `parts`. */
+  nets: z.array(NetSchema).default([]),
 })
 
 export type BlueprintDoc = z.infer<typeof BlueprintDocSchema>
@@ -142,6 +182,7 @@ export function emptyDoc(name: string, viewBox = DEFAULT_VIEW_BOX, units: (typeo
     layers: [{ id: "l0", name: "outline", color: "#0f766e", visible: true }],
     entities: [],
     parts: [],
+    nets: [],
   }
 }
 
@@ -253,7 +294,9 @@ function inline(record: Record<string, unknown>, order: readonly string[]): stri
 
 const LAYER_ORDER = ["id", "name", "color", "visible"]
 
-const PART_ORDER = ["ref", "symbol", "prefix", "at", "rotate", "scale", "ports"]
+const PART_ORDER = ["ref", "symbol", "prefix", "at", "rotate", "scale", "ports", "pins", "dirs"]
+
+const NET_ORDER = ["id", "from", "to", "wire", "label"]
 
 /**
  * An entity's canonical form — the exact text `serialize` would write for it. Comparing
@@ -281,7 +324,8 @@ export function serialize(doc: BlueprintDoc): string {
     `  "entities": ${block(doc.entities.map((entity) => inline(entity, KEY_ORDER)))},`,
     // Not conditional on there being any: an array that appears and disappears would make
     // the first placement and the last deletion show up as structural diffs.
-    `  "parts": ${block((doc.parts ?? []).map((part) => inline(part, PART_ORDER)))}`,
+    `  "parts": ${block((doc.parts ?? []).map((part) => inline(part, PART_ORDER)))},`,
+    `  "nets": ${block((doc.nets ?? []).map((net) => inline(net, NET_ORDER)))}`,
     "}",
   ].join("\n")}\n`
 }
