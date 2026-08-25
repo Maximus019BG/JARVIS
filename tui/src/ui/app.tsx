@@ -39,7 +39,7 @@ import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { BlueprintEditor } from "./components/blueprint-editor.tsx"
 import { BlueprintPane } from "./components/blueprint-view.tsx"
-import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
+import { PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
 import {
@@ -101,6 +101,37 @@ const QUIT_WINDOW_MS = 2000
 const STEER_POLL_MS = 5000
 /** How long the status line acknowledges an auto-copied selection. */
 const COPIED_MS = 1500
+/**
+ * Columns the transcript keeps whatever the terminal's size — narrow enough that a quarter of
+ * an ordinary 120-column terminal clears it, wide enough that prose still wraps into
+ * sentences rather than one word a line.
+ */
+const MIN_CHAT = 30
+/** Below this there is not enough resolution left for the drawing to be worth the columns. */
+const MIN_PANE = 24
+/** The drawing's share of the width when there is enough of it to go round. */
+const PANE_SHARE = 0.75
+
+/**
+ * How the terminal's width is divided between the drawing and the transcript.
+ *
+ * The drawing takes three quarters. It is the thing being worked on, and it is the thing a
+ * terminal is worst at showing — braille packs two dots into every column, so a column taken
+ * from the picture is resolution genuinely lost, while the transcript only wraps. An earlier
+ * version capped the pane at 48 columns, which meant a wide terminal spent all its extra room
+ * on the chat and the drawing stayed as cramped at 200 columns as at 80.
+ *
+ * The floor is on the transcript rather than on the share: a quarter of a narrow terminal is
+ * not readable, so the chat keeps `MIN_CHAT` and the pane takes what is left. Below both
+ * minimums together there is no split worth making and the caller shows the drawing
+ * fullscreen instead.
+ */
+export function splitWidth(width: number): { paneWidth: number; paneFits: boolean } {
+  return {
+    paneWidth: Math.max(MIN_PANE, Math.min(Math.floor(width * PANE_SHARE), width - MIN_CHAT)),
+    paneFits: width >= MIN_PANE + MIN_CHAT,
+  }
+}
 
 export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }: AppProps) {
   const { width, height } = useTerminalDimensions()
@@ -216,9 +247,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const blueprint = useMemo(() => activeBlueprint(turn.items), [turn.items])
 
   const blueprints = useMemo(() => blueprintRoot(config), [config])
-  /** The pane needs about 40 columns of transcript left over to be worth showing. */
-  const paneWidth = Math.min(48, Math.floor(width * 0.4))
-  const paneFits = width - paneWidth > 52
+  const { paneWidth, paneFits } = splitWidth(width)
 
   // Opens itself the first time the agent touches a blueprint — the point of the pane is
   // that a turn spent drawing is visible without being asked for. Once only: a reader who
@@ -1033,13 +1062,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         </box>
       )}
 
-      {/* The `ask` tool's question. Same picker as everything else — a question with a
-          known set of answers is a list to choose from, and escape means "stop asking",
-          which the tool turns into an error telling the model to assume and say so. The
-          title is clipped because an over-wide box title is dropped silently. */}
+      {/* The `ask` tool's question. Same picker as everything else — its answers are a list
+          to choose from — but the sentence goes in the body rather than the title, which an
+          over-wide title would have dropped silently, and `Other…` is offered because the
+          model's options are the likely answers, not the only ones. Escape still means "stop
+          asking", which the tool turns into an error telling the model to assume and say so. */}
       {turn.question && !turn.permission && (
         <Picker
-          title={clip(turn.question.question, 60)}
+          title="question"
+          prompt={turn.question.question}
+          allowOther
           choices={turn.question.options.map((option) => ({ value: option, label: option }))}
           theme={theme}
           motion={motion}

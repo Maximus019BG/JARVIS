@@ -143,6 +143,9 @@ export function PairWizard({
             ref={list}
             focused
             options={options}
+            // Two lines an entry whenever it is on, empty description or not, while the
+            // height above counts one — off unless a choice actually carries a hint.
+            showDescription={perRow === 2}
             showScrollIndicator
             wrapSelection
             backgroundColor={theme.panel}
