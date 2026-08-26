@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act, useRef } from "react"
-import { Editor, type EditorHandle } from "../src/ui/components/editor.tsx"
+import { Editor, MIC, type EditorHandle } from "../src/ui/components/editor.tsx"
 import { loadKeymap } from "../src/config/keybinds.ts"
 import { loadTheme } from "../src/config/theme.ts"
 
@@ -33,14 +33,14 @@ describe("push-to-talk button", () => {
       height: 5,
     })
     await flush()
-    expect(captureCharFrame()).toContain("⚲ ctrl+s")
+    expect(captureCharFrame()).toContain(`${MIC} ctrl+s`)
     // The prompt keeps its own column: text must never run under the button.
     expect(captureCharFrame()).toContain("ask jarvis, or / for commands")
     renderer.destroy()
 
     const live = await testRender(<Harness recording onVoice={() => {}} />, { width: 64, height: 5 })
     await live.flush()
-    expect(live.captureCharFrame()).toContain("⚲ recording")
+    expect(live.captureCharFrame()).toContain(`${MIC} recording`)
     live.renderer.destroy()
   })
 
@@ -49,7 +49,7 @@ describe("push-to-talk button", () => {
     const { renderer, captureCharFrame, flush } = await testRender(<Harness />, { width: 64, height: 5 })
     await flush()
     expect(captureCharFrame()).not.toContain("ctrl+s")
-    expect(captureCharFrame()).not.toContain("⚲")
+    expect(captureCharFrame()).not.toContain(MIC)
     renderer.destroy()
   })
 
@@ -60,9 +60,29 @@ describe("push-to-talk button", () => {
       height: 5,
     })
     await flush()
-    expect(captureCharFrame()).toContain("⚲")
+    expect(captureCharFrame()).toContain(MIC)
     expect(captureCharFrame()).not.toContain("ctrl+s")
     renderer.destroy()
+  })
+
+  // The check that actually matters. Every string assertion above passes just as well with a
+  // miscounted glyph, and so does the bottom border, which spans the box whatever its children
+  // do. What shows is the icon's own row running a codepoint longer than every other row.
+  // U+FE0E is invisible and easy to drop or double in a paste, and doubled is the broken form:
+  // opentui gives the second selector a cell of its own and the button leaves the frame.
+  test.each([64, 40])("the icon does not push its row past the frame at %i columns", async (width) => {
+    for (const recording of [false, true]) {
+      const { renderer, captureCharFrame, flush } = await testRender(
+        <Harness recording={recording} onVoice={() => {}} />,
+        { width, height: 4 },
+      )
+      await flush()
+      const rows = captureCharFrame().split("\n").filter((row) => row.length > 0)
+      const icon = rows.find((row) => row.includes(MIC))!
+      const border = rows.find((row) => row.includes("─"))!
+      expect([...icon]).toHaveLength([...border].length)
+      renderer.destroy()
+    }
   })
 
   test("clicking it toggles recording, the same as the key", async () => {

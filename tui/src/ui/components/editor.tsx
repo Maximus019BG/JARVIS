@@ -16,16 +16,26 @@ const BREATH_MS = 1400
 const VOICE_LABEL_AT = 60
 
 /**
- * The mic button's icon: a capsule on a stand, which is the microphone silhouette drawn
- * with the geometric vocabulary the rest of the interface uses (`⑂ ▸ ▾ ● ✓`) rather than
- * with an emoji. Single-width and measured as one cell, so the button stays aligned.
+ * The mic button's icon: the real MICROPHONE codepoint, followed by U+FE0E VARIATION
+ * SELECTOR-15 asking for the monochrome text glyph rather than the colour emoji — every
+ * codepoint Unicode names "microphone" is an emoji, so this is the only way to name one
+ * while asking to look like the geometry the rest of the app is drawn in (`⑂ ▸ ▾ ● ✓`).
  *
- * Every actual MICROPHONE codepoint in Unicode is an emoji: U+1F3A4 is double-width, and
- * U+1F399 — the one that looks least out of place here — is ambiguous-width, counted as one
- * cell by opentui and drawn as two by most terminals, which puts the button a column out of
- * line. If a terminal's font lacks this glyph, `◉` is the fallback worth reaching for.
+ * Escapes rather than a literal on purpose. The selector is invisible, so a paste that drops
+ * or doubles it changes how this renders with nothing in the diff to show it — and the
+ * doubled form is exactly the case that breaks. Measured through the opentui harness:
+ *
+ *   U+1F3A4                  aligned (two cells, measured correctly)
+ *   U+1F3A4 U+FE0E           aligned            <- this one
+ *   U+1F3A4 U+FE0E U+FE0E    one cell too wide, the second selector counted as its own cell
+ *   U+1F399 U+FE0E           one cell too wide  <- the tempting studio-mic alternative
+ *
+ * VS15 is a request, not a guarantee: a terminal may ignore it for a character with
+ * Emoji_Presentation=Yes and draw the colour glyph anyway. What it reliably buys is the
+ * correct character and correct width. If the colour emoji is unwanted, `⏺` (U+23FA, named
+ * BLACK CIRCLE FOR RECORD) is the fallback — geometric and neutral-width, but a record dot.
  */
-const MIC = "⚲"
+export const MIC = "\u{1F3A4}\u{FE0E}"
 
 export type EditorHandle = {
   /** Current text, for submitting or for computing completions. */
