@@ -469,6 +469,17 @@
         }
       }
     },
+    "voice": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "recorder": {
+          "type": "string"
+        }
+      }
+    },
     "maxSteps": {
       "default": 200,
       "type": "number"

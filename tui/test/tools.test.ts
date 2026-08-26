@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, utimesSync, writeFileSync } from "node:fs"
+import { mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { constantAsker, PermissionGate, resolvePermission } from "../src/permission.ts"
+import { constantAsker, PermissionGate, resolvePermission, type PermissionRequest } from "../src/permission.ts"
 import { builtinTools, filterTools, resolvePath, ToolError, type ToolContext } from "../src/tools/index.ts"
 import { textFromHtml } from "../src/tools/webfetch.ts"
 
@@ -64,6 +64,29 @@ describe("blueprint_edit", () => {
       ops: [{ op: "add", entity: { type: "circle", c: [10, 0], r: 5 } }],
     })
     expect(out).toContain("2 entities")
+  })
+
+  // The re-render is the same 22 rows whether one entity moved or twenty were replaced, so
+  // the result has to say what the edit did in words.
+  test("says what changed, not just what the drawing now looks like", async () => {
+    const { tools } = setup()
+    const first = await call(tools.blueprint_edit, {
+      name: "plate",
+      ops: [{ op: "add", entity: { type: "circle", c: [0, 0], r: 5 } }],
+    })
+    expect(first).toContain("1 added")
+
+    const moved = await call(tools.blueprint_edit, {
+      name: "plate",
+      ops: [{ op: "move", ids: ["e1"], by: [20, 0] }],
+    })
+    // A move is a modification of an existing id, not a delete plus an add.
+    expect(moved).toContain("1 modified")
+    expect(moved).not.toContain("added")
+
+    const removed = await call(tools.blueprint_edit, { name: "plate", ops: [{ op: "delete", ids: ["e1"] }] })
+    expect(removed).toContain("1 removed")
+    expect(removed).toContain("-e1")
   })
 
   test("an entity that is invalid for its type is still refused", async () => {
@@ -410,6 +433,38 @@ describe("resolvePermission", () => {
   test("unmatched tools fall through to the default", () => {
     expect(resolvePermission(rules, { tool: "read", title: "" })).toBe("allow")
     expect(resolvePermission({ "*": "deny" }, { tool: "read", title: "" })).toBe("deny")
+  })
+})
+
+describe("permission observe", () => {
+  // The whole point of observing rather than watching the prompt: `edit` set to "allow"
+  // never reaches the asker, and the transcript would then show a diff only for the edits
+  // you had not yet trusted.
+  test("sees an auto-allowed request, with the diff and the call id", async () => {
+    const seen: PermissionRequest[] = []
+    const cwd = mkdtempSync(join(tmpdir(), "jarvis-observe-"))
+    const file = join(cwd, "a.ts")
+    writeFileSync(file, "old\n")
+    const ctx: ToolContext = {
+      cwd,
+      worktree: cwd,
+      blueprints: join(cwd, "blueprints"),
+      gate: new PermissionGate({ edit: "allow" }, constantAsker(false), undefined, undefined, undefined, (request) =>
+        seen.push(request),
+      ),
+      read: new Map([[file, statSync(file).mtimeMs]]),
+      depth: 0,
+      agent: "build",
+      sessionID: "test",
+    }
+    const tools = builtinTools(ctx)
+    const execute = (tools.edit as { execute: (i: unknown, o: unknown) => Promise<string> }).execute
+    await execute({ filePath: "a.ts", oldString: "old", newString: "new" }, { toolCallId: "call-1" })
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.detailKind).toBe("diff")
+    expect(seen[0]!.callID).toBe("call-1")
+    expect(seen[0]!.detail).toContain("+new")
   })
 })
 

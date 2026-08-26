@@ -25,6 +25,8 @@ export type Action =
   | "toggleReasoning"
   /** Cycles the blueprint the agent is working on: hidden → side pane → fullscreen editor. */
   | "blueprintView"
+  /** Starts push-to-talk, and stops it on the second press. Inert unless `voice` is configured. */
+  | "voice"
 
 export const DEFAULT_KEYBINDS: Record<Action, string> = {
   submit: "return",
@@ -58,6 +60,11 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   // chords left worth spending: b for blueprint is the one anybody will remember. Inside
   // tmux it is the prefix, so it needs pressing twice — rebind it if that grates.
   blueprintView: "ctrl+b",
+  // Press to start, press again to stop, rather than hold-to-talk: a terminal does not
+  // reliably deliver key release, so "while held" is not a thing this can know. ctrl+s is
+  // XOFF under terminal flow control, which raw mode turns off — if a terminal insists on
+  // keeping it, rebind rather than fight it.
+  voice: "ctrl+s",
 }
 
 export type Chord = { name: string; ctrl: boolean; shift: boolean; meta: boolean }

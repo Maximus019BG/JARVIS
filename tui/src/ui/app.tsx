@@ -39,7 +39,7 @@ import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { BlueprintEditor } from "./components/blueprint-editor.tsx"
 import { BlueprintPane } from "./components/blueprint-view.tsx"
-import { PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
+import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
 import {
@@ -62,6 +62,7 @@ import {
 import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
+import { listen, type Recording } from "./voice.ts"
 import { Suggestions } from "./components/suggestions.tsx"
 import { Toasts, useToasts } from "./components/toast.tsx"
 import { Panel, panelBody, type PanelContent } from "./components/panel.tsx"
@@ -215,6 +216,20 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const offered = useRef(false)
   /** Whether the arming press also killed a turn, so the hint can say both things happened. */
   const [interrupted, setInterrupted] = useState(false)
+  /**
+   * Prompts typed while a turn was running, in the order they were sent. Kept here rather
+   * than in `useTurn` so nothing in the agent loop, the cost guard or the compaction path
+   * has to learn that a queue exists.
+   */
+  const [queued, setQueued] = useState<string[]>([])
+  /** Whether the mic is live, for the status line. */
+  const [recording, setRecording] = useState(false)
+  /**
+   * The live recording, or `"starting"` while the recorder and the transcription model are
+   * still being resolved. Resolving can install a provider package, which takes tens of
+   * seconds, and a second press in that window must not open a second microphone.
+   */
+  const voice = useRef<Recording | "starting" | null>(null)
   const { toasts, toast } = useToasts()
   // The agent checks out branches and edits files, so a value read once at startup goes stale
   // mid-session. Refreshed between turns instead: one spawn per turn, never during one.
@@ -268,6 +283,17 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     if (turn.busy) return
     setGit(readGit(cwd))
   }, [turn.busy, cwd])
+
+  /**
+   * Sends the next type-ahead prompt once the turn that was running finishes. One per pass:
+   * sending sets `busy` again, so the effect re-runs when that turn ends and takes the next.
+   */
+  useEffect(() => {
+    if (turn.busy || turn.compacting || queued.length === 0) return
+    const [next, ...rest] = queued
+    setQueued(rest)
+    turn.send(next!)
+  }, [turn.busy, turn.compacting, queued, turn.send])
 
   /**
    * Prompts typed into the paired web app, run here.
@@ -730,11 +756,60 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       // small checks — git status, a test run — that do not need the model at all.
       if (text.startsWith("!")) return shell(text.slice(1).trim())
       const parsed = parseCommandLine(text)
-      if (parsed) dispatch(parsed.name, parsed.args)
-      else turn.send(text)
+      // Commands and `!cmd` run now: neither needs a turn, so neither has to wait for one.
+      if (parsed) return dispatch(parsed.name, parsed.args)
+      if (turn.busy) {
+        setQueued((current) => [...current, text])
+        return turn.note(`⏎ queued: ${clip(text.split("\n")[0] ?? text, 60)}`)
+      }
+      turn.send(text)
     },
     [dispatch, shell, turn],
   )
+
+  /**
+   * Push-to-talk: first press starts recording, second press transcribes into the prompt.
+   *
+   * The text lands in the buffer rather than being submitted. Transcription mishears things,
+   * and a misheard prompt that has already started a turn costs money to take back.
+   */
+  const toggleVoice = useCallback(() => {
+    const active = voice.current
+    if (active === "starting") return
+    if (active) {
+      voice.current = null
+      setRecording(false)
+      void active
+        .stop()
+        .then((text) => (text ? editor.current?.insert(text) : turn.note("heard nothing")))
+        .catch((error) => turn.note(errorMessage(error), "error"))
+      return
+    }
+    voice.current = "starting"
+    setRecording(true)
+    void listen(config)
+      .then((session) => {
+        // Stopped or cancelled while the model was still resolving: nobody is waiting for
+        // this recorder, so shut it down rather than leaving the mic open.
+        if (voice.current !== "starting") return void session.cancel()
+        voice.current = session
+      })
+      .catch((error) => {
+        voice.current = null
+        setRecording(false)
+        turn.note(errorMessage(error), "error")
+      })
+  }, [config, turn])
+
+  /** Drops a recording without transcribing it. Escape means stop, here as everywhere. */
+  const cancelVoice = useCallback(() => {
+    const active = voice.current
+    if (!active) return false
+    voice.current = null
+    setRecording(false)
+    if (active !== "starting") void active.cancel()
+    return true
+  }, [])
 
   const change = useCallback(
     (text: string) => {
@@ -875,6 +950,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     // out are the ones where nothing was listening.
     if (is("exit")) {
       if (quitting) process.exit(0)
+      cancelVoice()
+      setQueued([])
       setInterrupted(turn.interrupt())
       setQuitting(true)
       setTimeout(() => setQuitting(false), QUIT_WINDOW_MS)
@@ -938,7 +1015,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       return key.stopPropagation()
     }
 
-    if (is("interrupt")) turn.interrupt()
+    // Clearing the queue is the point: stop has to mean stop, not "stop this one and
+    // immediately start the next thing I typed".
+    if (is("interrupt")) {
+      // A live recording is the nearest thing to stop, and dropping it must not also kill
+      // the turn that happens to be running behind it.
+      if (!cancelVoice()) {
+        setQueued([])
+        turn.interrupt()
+      }
+    } else if (is("voice")) toggleVoice()
     else if (is("clear")) turn.clear()
     else if (is("palette")) setPicker("command")
     else if (is("tutorial")) setPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
@@ -1021,7 +1107,14 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       </box>
 
       {(turn.busy || turn.compacting) && (
-        <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
+        <Activity
+          items={turn.items}
+          theme={theme}
+          motion={motion}
+          keymap={keymap}
+          compacting={turn.compacting}
+          queued={queued.length}
+        />
       )}
 
       {suggestion && !turn.permission && !turn.question && !picker && !setup && (
@@ -1047,6 +1140,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           handle={editor}
           onSubmit={submit}
           onChange={change}
+          recording={recording}
+          // Only when voice is actually configured: the button is the affordance, so
+          // showing one that can only report "voice is off" would be a lie about the app.
+          onVoice={config.voice?.model ? toggleVoice : undefined}
         />
       )}
 
@@ -1147,13 +1244,15 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         width={width}
         warn={health.warning}
         hint={
-          copied
-            ? "copied to clipboard"
-            : quitting
-              ? // Two things can have just happened, and conflating them reads as if the
-                // turn is still running.
-                `${interrupted ? "interrupted · " : ""}${describe(keymap.exit)} again to exit`
-              : `${describe(keymap.palette)} commands`
+          recording
+            ? `● recording · ${describe(keymap.voice)} to transcribe`
+            : copied
+              ? "copied to clipboard"
+              : quitting
+                ? // Two things can have just happened, and conflating them reads as if the
+                  // turn is still running.
+                  `${interrupted ? "interrupted · " : ""}${describe(keymap.exit)} again to exit`
+                : `${describe(keymap.palette)} commands`
         }
       />
 

@@ -4,6 +4,7 @@ import type { ToolContext } from "../tools/context.ts"
 import { checkDoc, formatReport } from "./check.ts"
 import { applyOps, OpSchema } from "./ops.ts"
 import { blueprintSymbolTool } from "./symbol-tool.ts"
+import { diffDocs, summarise } from "./diff.ts"
 import { autoView, renderBraille } from "./render-braille.ts"
 import { toSvg } from "./render-svg.ts"
 import { DEFAULT_VIEW_BOX, emptyDoc, serialize, UNITS, type BlueprintDoc } from "./schema.ts"
@@ -167,10 +168,17 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
       })
 
       const sha = writeDoc(root, safe, next, message ?? summary)
+      // What the edit actually did to the drawing, which the re-render below does not say:
+      // the same picture comes back whether one entity moved or twenty were replaced.
+      const changed = diffDocs(doc, next)
+      const touched = changed.entities
+        .filter((change) => change.kind === "added" || change.kind === "removed")
+        .map((change) => `${change.kind === "added" ? "+" : "-"}${change.id}`)
       // Warnings first: a wire that had to cross a part is the one thing in the result the
       // model must act on, and the preview below is 22 rows tall.
       const notes = warnings.map((warning) => `warning: ${warning}`).join("\n")
-      return `${safe} ${sha} — ${summary}\n${notes ? `${notes}\n` : ""}\n${preview(next, { view: region })}`
+      const change = `${summarise(changed)}${touched.length > 0 ? ` (${touched.join(" ")})` : ""}`
+      return `${safe} ${sha} — ${summary}\n${change}\n${notes ? `${notes}\n` : ""}\n${preview(next, { view: region })}`
     },
   })
 

@@ -14,6 +14,12 @@ export type Item =
       agent?: string
       startedAt: number
       endedAt?: number
+      /**
+       * The unified patch the call showed the permission gate, kept so the transcript can
+       * still say what changed after the prompt is gone. Never sent to the model — the tool
+       * already told it what it edited, and a second copy is a second copy of the file.
+       */
+      patch?: string
     }
   | Note
 
@@ -38,6 +44,17 @@ export function activeBlueprint(items: readonly Item[]): { name: string; revisio
     if (typeof named === "string" && named) return { name: named, revision: `${item.id}:${item.endedAt ?? 0}` }
   }
   return undefined
+}
+
+/**
+ * Puts the diff a tool showed the approval prompt onto that tool's card.
+ *
+ * Keyed on the call id, not on "the last call still running": a step that batches three
+ * edits emits all three `tool-start` events before any of them executes, so at gate time
+ * every one of those cards is equally unfinished.
+ */
+export function attachPatch(items: readonly Item[], callID: string, patch: string): Item[] {
+  return items.map((item) => (item.kind === "tool" && item.id === callID ? { ...item, patch } : item))
 }
 
 /**

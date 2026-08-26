@@ -35,6 +35,7 @@ export const KEY_HELP: [keyof Keymap, string][] = [
   ["scrollBottom", "jump to newest"],
   ["toggleReasoning", "expand thinking"],
   ["blueprintView", "blueprint pane / fullscreen"],
+  ["voice", "talk instead of typing"],
 ]
 
 export function help(keymap: Keymap): string {

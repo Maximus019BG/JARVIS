@@ -1,4 +1,5 @@
 import type { BoxRenderable, TextareaRenderable } from "@opentui/core"
+import { useTerminalDimensions } from "@opentui/react"
 import { useImperativeHandle, useRef, type Ref } from "react"
 import type { Keymap } from "../../config/keybinds.ts"
 import { describe } from "../../config/keybinds.ts"
@@ -7,6 +8,12 @@ import { lerpHex, useOscillator, type MotionLevel } from "../motion.ts"
 
 /** One breath of the busy border, slow enough to read as waiting rather than blinking. */
 const BREATH_MS = 1400
+
+/**
+ * Below this the mic button drops its `ctrl+s` label and keeps only the glyph. Ten columns
+ * of key hint is a fair trade at 80, and a tenth of the prompt in a narrow tmux pane.
+ */
+const VOICE_LABEL_AT = 60
 
 export type EditorHandle = {
   /** Current text, for submitting or for computing completions. */
@@ -33,6 +40,8 @@ export function Editor({
   handle,
   onSubmit,
   onChange,
+  recording = false,
+  onVoice,
 }: {
   theme: Theme
   keymap: Keymap
@@ -43,9 +52,18 @@ export function Editor({
   handle: Ref<EditorHandle>
   onSubmit: (text: string) => void
   onChange: (text: string) => void
+  /** Whether the mic is live, so the button can say so rather than just offering. */
+  recording?: boolean
+  /**
+   * Starts or stops push-to-talk. Absent when `voice` is not configured, which is also what
+   * hides the button: advertising a key that can only answer "voice is off" is worse than
+   * not mentioning it.
+   */
+  onVoice?: () => void
 }) {
   const ref = useRef<TextareaRenderable>(null)
   const box = useRef<BoxRenderable>(null)
+  const { width } = useTerminalDimensions()
 
   useImperativeHandle(handle, () => ({
     text: () => ref.current?.plainText ?? "",
@@ -100,11 +118,16 @@ export function Editor({
         paddingTop: 1,
         paddingBottom: 1,
         width: "100%",
+        // The prompt and the mic button sit side by side; the button is the only thing to
+        // the right of the text, so a row is the whole layout.
+        flexDirection: "row",
       }}
     >
       <textarea
         ref={ref}
-        focused={focused && !busy}
+        // Not `focused && !busy`: locking the prompt for the length of a turn is the single
+        // thing that makes a TUI feel slow. What you type while it runs is queued, not lost.
+        focused={focused}
         placeholder={busy ? `working… ${describe(keymap.interrupt)} to stop` : "ask jarvis, or / for commands"}
         placeholderColor={theme.muted}
         textColor={theme.fg}
@@ -126,6 +149,24 @@ export function Editor({
         }}
         style={{ flexGrow: 1 }}
       />
+      {onVoice && (
+        // Top-aligned rather than centred: the prompt grows downwards as you type, and a
+        // button that slides down the rail with it reads as if it moved on its own.
+        <box
+          onMouseDown={onVoice}
+          style={{ flexShrink: 0, alignSelf: "flex-start", paddingLeft: 1 }}
+        >
+          <text fg={recording ? theme.warning : theme.dim}>
+            {width >= VOICE_LABEL_AT
+              ? recording
+                ? "● recording"
+                : `◎ ${describe(keymap.voice)}`
+              : recording
+                ? "●"
+                : "◎"}
+          </text>
+        </box>
+      )}
     </box>
   )
 }

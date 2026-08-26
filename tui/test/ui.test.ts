@@ -6,14 +6,15 @@ import { expand, loadCommands, parseCommandLine, type Command } from "../src/ext
 import { describe as describeChord, loadKeymap, matches, parseChord } from "../src/config/keybinds.ts"
 import { loadTheme, THEMES } from "../src/config/theme.ts"
 import type { Session } from "../src/agent/session.ts"
-import { outputBudget, reasoningLines } from "../src/ui/components/messages.tsx"
+import { outputBudget, patchStat, reasoningLines } from "../src/ui/components/messages.tsx"
 import { segments, type Part } from "../src/ui/components/status.tsx"
 import { parseGit } from "../src/ui/git.ts"
 import { lerpHex, resolveMotion } from "../src/ui/motion.ts"
 import { completion, suggest } from "../src/ui/suggest.ts"
-import { activeBlueprint, applyEvent, summarize, type Item } from "../src/ui/transcript.ts"
+import { activeBlueprint, applyEvent, attachPatch, summarize, type Item } from "../src/ui/transcript.ts"
 import { restore } from "../src/ui/use-turn.ts"
 import { pickerChoices } from "../src/ui/pickers.ts"
+import { pickRecorder } from "../src/ui/voice.ts"
 import { runCommand } from "../src/ui/builtin-commands.ts"
 import { ensureRepo, writeDoc } from "../src/blueprint/store.ts"
 import { emptyDoc } from "../src/blueprint/schema.ts"
@@ -103,6 +104,43 @@ describe("applyEvent", () => {
     items = applyEvent(items, { type: "tool-start", id: "c1", name: "read", input: {} }, undefined, 1000)
     items = applyEvent(items, { type: "tool-end", id: "c1", name: "read", output: "ok", failed: false }, undefined, 1400)
     expect(items[0]).toMatchObject({ startedAt: 1000, endedAt: 1400 })
+  })
+})
+
+describe("attachPatch", () => {
+  const patch = ["--- a/a.ts", "+++ b/a.ts", "@@ -1 +1 @@", "-old", "+new", "+extra"].join("\n")
+  const running = (id: string): Item => ({ kind: "tool", id, name: "edit", input: {}, startedAt: 0 })
+
+  test("lands on the card with the matching call id", () => {
+    const items: Item[] = [{ kind: "user", text: "go" }, running("a"), running("b")]
+    const next = attachPatch(items, "b", patch)
+    expect(next.map((item) => (item.kind === "tool" ? item.patch : undefined))).toEqual([undefined, undefined, patch])
+  })
+
+  // The failure this guards: keying on "the last unfinished tool card" instead. A step that
+  // batches three edits starts all three before any executes, so every card matches and the
+  // last diff to arrive wins on all of them.
+  test("batched edits each keep their own diff", () => {
+    const items: Item[] = [running("a"), running("b"), running("c")]
+    const next = attachPatch(attachPatch(items, "a", "one"), "c", "three")
+    expect(next.map((item) => (item.kind === "tool" ? item.patch : undefined))).toEqual(["one", undefined, "three"])
+  })
+
+  test("an unknown call id changes nothing", () => {
+    const items: Item[] = [running("a")]
+    expect(attachPatch(items, "gone", patch)).toEqual(items)
+  })
+})
+
+describe("patchStat", () => {
+  test("counts changed lines, not the patch preamble", () => {
+    const preamble = ["Index: a.ts", "===================", "--- a.ts", "+++ a.ts", "@@ -1,2 +1,3 @@"]
+    const patch = [...preamble, " keep", "-gone", "+one", "+two"].join("\n")
+    expect(patchStat(patch)).toBe("+2 −1")
+  })
+
+  test("an empty patch is +0 −0 rather than a crash", () => {
+    expect(patchStat("")).toBe("+0 −0")
   })
 })
 
@@ -368,6 +406,27 @@ describe("summarize", () => {
     expect(summarize("read", { filePath: "src/a.ts" })).toBe("read src/a.ts")
     expect(summarize("bash", { command: "ls\nrm" })).toBe("bash ls")
     expect(summarize("glob", {})).toBe("glob")
+  })
+})
+
+describe("pickRecorder", () => {
+  const has = (...installed: string[]) => (bin: string) => installed.includes(bin)
+
+  test("prefers sox, and falls back to what is actually installed", () => {
+    expect(pickRecorder(has("sox", "ffmpeg"))?.[0]).toBe("sox")
+    expect(pickRecorder(has("arecord", "ffmpeg"))?.[0]).toBe("arecord")
+    expect(pickRecorder(has("ffmpeg"))).toEqual(["ffmpeg", "-loglevel", "quiet", "-f", "avfoundation", "-i", ":0"])
+  })
+
+  test("nothing installed is undefined, not a command that cannot run", () => {
+    expect(pickRecorder(has())).toBeUndefined()
+  })
+
+  // Someone who set this knows something the probe does not — usually which of three input
+  // devices is the microphone — so falling back past it would pick the wrong one silently.
+  test("an override wins even when the probe would have found something", () => {
+    expect(pickRecorder(has("sox"), "arecord -D plughw:1 -f cd")).toEqual(["arecord", "-D", "plughw:1", "-f", "cd"])
+    expect(pickRecorder(has("sox"), "   ")?.[0]).toBe("sox")
   })
 })
 

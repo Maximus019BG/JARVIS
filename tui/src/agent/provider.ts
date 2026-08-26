@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { wrapLanguageModel, type LanguageModel } from "ai"
+import { wrapLanguageModel, type LanguageModel, type TranscriptionModel } from "ai"
 import type { Config, ModelConfig, ProviderConfig } from "../config/config.ts"
 import { dataDir } from "../config/paths.ts"
 import { catalogKey, modelInfo } from "./catalog.ts"
@@ -97,7 +97,11 @@ function pickFactory(mod: Record<string, unknown>, name: string | undefined, npm
 }
 
 /** AI SDK ProviderV2, or a bare callable provider from older packages. */
-type Provider = ((modelID: string) => LanguageModel) & { languageModel?: (modelID: string) => LanguageModel }
+type Provider = ((modelID: string) => LanguageModel) & {
+  languageModel?: (modelID: string) => LanguageModel
+  /** Only some providers speak audio; `resolveTranscription` is what says so out loud. */
+  transcription?: (modelID: string) => TranscriptionModel
+}
 
 const loaded = new Map<string, Promise<Provider>>()
 
@@ -213,4 +217,26 @@ export function defaultModelID(config: Config): string {
   // it is no longer the way anyone should be told to do it first.
   if (!first) throw new ProviderError("no models configured — run `jarvis` and press ctrl+y, or `jarvis pair`")
   return first.id
+}
+
+/**
+ * The transcription model behind `"provider/model"`, for voice input.
+ *
+ * Separate from `resolveModel` because it is a different capability, not a different model:
+ * a provider that chats perfectly well may have no audio endpoint at all. Only
+ * `@ai-sdk/openai` and `@ai-sdk/gateway` expose one today, so the error here is the whole
+ * user experience of "your provider cannot do this" — it names the provider on purpose.
+ */
+export async function resolveTranscription(config: Config, id: string): Promise<TranscriptionModel> {
+  const { providerID, modelID } = parseModelID(id)
+  const providerConfig = config.provider[providerID]
+  if (!providerConfig) throw new ProviderError(`no provider "${providerID}" in the config`)
+  const provider = await loadProvider(providerID, providerConfig)
+  if (typeof provider.transcription !== "function") {
+    throw new ProviderError(
+      `${providerID} (${providerConfig.npm}) has no transcription model — set voice.model to an ` +
+        `openai provider, e.g. "openai/whisper-1" or "openai/gpt-4o-transcribe"`,
+    )
+  }
+  return provider.transcription(modelID)
 }

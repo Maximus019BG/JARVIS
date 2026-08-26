@@ -248,7 +248,7 @@ export function Picker({
 export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /** Preamble lines of a unified patch, which the diff view does not render. */
-const PATCH_HEADER = /^(Index: |={10,}$|--- |\+\+\+ |@@ )/
+export const PATCH_HEADER = /^(Index: |={10,}$|--- |\+\+\+ |@@ )/
 
 /**
  * The approval prompt. Rendered whenever a tool asks the permission gate. The detail

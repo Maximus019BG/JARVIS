@@ -23,7 +23,7 @@ import { persistPermission } from "../config/persist.ts"
 import { PermissionGate, type PermissionAnswer, type PermissionRequest } from "../permission.ts"
 import type { ToolSet } from "../tools/index.ts"
 import { beginGroup, endGroup, redo, undo } from "../tools/snapshot.ts"
-import { applyEvent, type Item } from "./transcript.ts"
+import { applyEvent, attachPatch, type Item } from "./transcript.ts"
 
 export type PendingPermission = { request: PermissionRequest; answer: (answer: PermissionAnswer) => void }
 
@@ -188,6 +188,17 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
     [],
   )
 
+  /**
+   * Keeps the diff a tool built for the approval prompt, so the transcript can still show
+   * what changed once the prompt is gone. Matched on `callID` rather than "the last call
+   * still running", because a step that batches three edits has three of those at once.
+   */
+  const observe = useCallback((request: PermissionRequest) => {
+    if (request.detailKind !== "diff" || !request.detail || !request.callID) return
+    const { callID, detail } = request
+    setItems((current) => attachPatch(current, callID, detail))
+  }, [])
+
   const gate = useMemo(
     () =>
       new PermissionGate(config.permission, ask, undefined, undefined, (request) => {
@@ -200,8 +211,8 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         } catch (error) {
           note(`could not save the permission: ${errorMessage(error)}`, "error")
         }
-      }),
-    [ask, config.permission, config.persistGrants, cwd, note],
+      }, observe),
+    [ask, config.permission, config.persistGrants, cwd, note, observe],
   )
 
   /**

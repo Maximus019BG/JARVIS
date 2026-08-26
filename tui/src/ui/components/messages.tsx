@@ -1,7 +1,9 @@
 import type { BoxRenderable, TextRenderable } from "@opentui/core"
+import type { BoxProps } from "@opentui/react"
 import { useRef, useState, type ReactNode } from "react"
 import type { Theme } from "../../config/theme.ts"
 import { lerpHex, useEnter, useFlash, type MotionLevel } from "../motion.ts"
+import { PATCH_HEADER } from "./dialog.tsx"
 import { Markdown } from "./markdown.tsx"
 import { summarize, type Item } from "../transcript.ts"
 
@@ -14,6 +16,21 @@ const FLASH_MS = 200
 const DRAWS = new Set(["blueprint_edit", "blueprint_view", "blueprint_symbol", "blueprint_check"])
 /** Lines a drawing keeps: the 22-row braille render plus its caption, with room to spare. */
 const DRAWN_LINES = 30
+
+/**
+ * `+12 −3` for a unified patch. The preamble is skipped by the same regex the approval
+ * prompt filters with, so `+++ b/foo.ts` is not counted as an added line.
+ */
+export function patchStat(patch: string): string {
+  let added = 0
+  let removed = 0
+  for (const line of patch.split("\n")) {
+    if (PATCH_HEADER.test(line)) continue
+    if (line.startsWith("+")) added += 1
+    else if (line.startsWith("-")) removed += 1
+  }
+  return `+${added} −${removed}`
+}
 
 /**
  * How many lines of a tool's output the transcript keeps. A call that worked is normally
@@ -33,6 +50,9 @@ export const reasoningLines = (text: string, expanded: boolean, live = false): s
   const lines = text.split("\n").filter((line) => line.trim())
   return expanded ? lines : live ? lines.slice(-REASONING_LINES) : []
 }
+
+/** Left rail marking who is speaking: grey for the user, accent for the answer. */
+const RAIL = { border: ["left"], flexDirection: "column", paddingLeft: 1, width: "100%" } satisfies BoxProps["style"]
 
 /** One transcript entry, fading itself in the first time it appears. */
 function Entry({ motion, children }: { motion: MotionLevel; children: ReactNode }) {
@@ -55,6 +75,8 @@ function ToolCard({
   motion: MotionLevel
 }) {
   const glyph = useRef<TextRenderable>(null)
+  // Folded by default: an unfolded diff buries the answer the same way reasoning does.
+  const [open, setOpen] = useState(false)
   const done = item.output !== undefined
   const color = item.failed ? theme.error : theme.tool
 
@@ -69,24 +91,33 @@ function ToolCard({
   const hidden = lines.length - preview.length
 
   const tail = [
-    done && !item.failed && lines.length > 1 ? `${lines.length} lines` : undefined,
+    // The patch is the interesting number, and `3 lines` beside `+12 −3` reads as a
+    // contradiction: that count is of `edited foo.ts (1 change)`, not of the diff.
+    item.patch ? patchStat(item.patch) : done && !item.failed && lines.length > 1 ? `${lines.length} lines` : undefined,
     seconds !== undefined && seconds >= 0.1 ? `${seconds.toFixed(1)}s` : undefined,
   ].filter(Boolean)
 
   return (
     <Entry motion={motion}>
-      <text ref={glyph} fg={color}>
-        <span fg={theme.muted}>{item.agent ? `  ${item.agent} ` : ""}</span>
-        {item.output === undefined ? "⋯ " : item.failed ? "✗ " : "✓ "}
-        {summarize(item.name, item.input)}
-        <span fg={theme.muted}>{tail.length > 0 ? ` · ${tail.join(" · ")}` : ""}</span>
-      </text>
-      {preview.map((line, index) => (
-        <text key={index} fg={theme.muted}>
-          {`    ${line}`}
+      <box
+        onMouseDown={item.patch ? () => setOpen((shown) => !shown) : undefined}
+        style={{ flexDirection: "column", width: "100%" }}
+      >
+        <text ref={glyph} fg={color}>
+          <span fg={theme.muted}>{item.agent ? `  ${item.agent} ` : ""}</span>
+          {item.output === undefined ? "⋯ " : item.failed ? "✗ " : "✓ "}
+          {summarize(item.name, item.input)}
+          <span fg={theme.muted}>{tail.length > 0 ? ` · ${tail.join(" · ")}` : ""}</span>
+          <span fg={theme.dim}>{item.patch ? ` ${open ? "▾" : "▸"}` : ""}</span>
         </text>
-      ))}
-      {preview.length > 0 && hidden > 0 && <text fg={theme.muted}>{`    …${hidden} more lines`}</text>}
+        {item.patch && open && <diff diff={item.patch} fg={theme.fg} style={{ width: "100%", paddingLeft: 4 }} />}
+        {preview.map((line, index) => (
+          <text key={index} fg={theme.muted}>
+            {`    ${line}`}
+          </text>
+        ))}
+        {preview.length > 0 && hidden > 0 && <text fg={theme.muted}>{`    …${hidden} more lines`}</text>}
+      </box>
     </Entry>
   )
 }
@@ -151,18 +182,22 @@ export function Messages({
           case "user":
             return (
               <Entry key={index} motion={motion}>
-                {item.text.split("\n").map((line, i) => (
-                  <text key={i} fg={theme.user}>
-                    {i === 0 ? `› ${line}` : `  ${line}`}
-                  </text>
-                ))}
+                <box style={{ ...RAIL, borderColor: theme.border, backgroundColor: theme.panel, paddingRight: 1 }}>
+                  {item.text.split("\n").map((line, i) => (
+                    <text key={i} fg={theme.user}>
+                      {line}
+                    </text>
+                  ))}
+                </box>
               </Entry>
             )
           case "assistant":
             return (
               <Entry key={index} motion={motion}>
-                {item.agent && <text fg={theme.muted}>{`  ${item.agent}`}</text>}
-                <Markdown text={item.text} theme={theme} streaming={streaming && last} />
+                <box style={{ ...RAIL, borderColor: theme.accent }}>
+                  {item.agent && <text fg={theme.muted}>{item.agent}</text>}
+                  <Markdown text={item.text} theme={theme} streaming={streaming && last} />
+                </box>
               </Entry>
             )
           case "reasoning":
