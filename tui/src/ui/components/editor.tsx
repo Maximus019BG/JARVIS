@@ -10,10 +10,19 @@ import { lerpHex, useOscillator, type MotionLevel } from "../motion.ts"
 const BREATH_MS = 1400
 
 /**
- * Below this the mic button drops its `ctrl+s` label and keeps only the glyph. Ten columns
- * of key hint is a fair trade at 80, and a tenth of the prompt in a narrow tmux pane.
+ * Below this the mic button drops its label and keeps only the icon. Ten columns of key
+ * hint is a fair trade at 80, and a tenth of the prompt in a narrow tmux pane.
  */
 const VOICE_LABEL_AT = 60
+
+/**
+ * The mic button's icon. A record dot rather than a microphone: every microphone codepoint
+ * in Unicode is an emoji, and an emoji here would be the only one in the app — the rest of
+ * the interface is geometric (`⑂ ▸ ▾ ● ✓`) and single-width. U+1F3A4 does at least measure
+ * correctly; U+1F399, the tidier-looking one, does not — opentui counts one cell and most
+ * terminals draw two, which puts the button a column out of line.
+ */
+const MIC = "◉"
 
 export type EditorHandle = {
   /** Current text, for submitting or for computing completions. */
@@ -156,14 +165,11 @@ export function Editor({
           onMouseDown={onVoice}
           style={{ flexShrink: 0, alignSelf: "flex-start", paddingLeft: 1 }}
         >
+          {/* The icon never changes shape, only colour: it is how the eye finds the button
+              again, and a control that becomes a different symbol has moved as far as the
+              reader is concerned. The label beside it carries the state. */}
           <text fg={recording ? theme.warning : theme.dim}>
-            {width >= VOICE_LABEL_AT
-              ? recording
-                ? "● recording"
-                : `◎ ${describe(keymap.voice)}`
-              : recording
-                ? "●"
-                : "◎"}
+            {width >= VOICE_LABEL_AT ? `${MIC} ${recording ? "recording" : describe(keymap.voice)}` : MIC}
           </text>
         </box>
       )}
