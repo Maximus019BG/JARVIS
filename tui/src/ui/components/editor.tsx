@@ -87,11 +87,11 @@ export function Editor({
         // A single rail on the left instead of a box: the prompt is the one thing that is
         // always there, and four sides of frame around it is four sides of noise. The busy
         // oscillator still owns this color, so the rail is what breathes during a turn.
-        border: ["left"],
+        border: ["bottom"],
         borderColor: busy && motion !== "full" ? theme.warning : theme.border,
         backgroundColor: theme.panel,
         minHeight: 1,
-        // One more than before, so the new padding does not cost two lines of visible prompt.
+        // Two more than the text cap, so the vertical padding does not eat visible prompt lines.
         maxHeight: 12,
         paddingLeft: 1,
         paddingRight: 1,

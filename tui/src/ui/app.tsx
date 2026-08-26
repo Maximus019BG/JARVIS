@@ -1132,10 +1132,6 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         />
       )}
 
-      {/* The status line is panel-coloured and the editor no longer has a bottom border to
-          end on, so without this row the input and the status run together as one block. */}
-      <box style={{ height: 1 }} />
-
       <Status
         theme={theme}
         motion={motion}
