@@ -33,14 +33,14 @@ describe("push-to-talk button", () => {
       height: 5,
     })
     await flush()
-    expect(captureCharFrame()).toContain("◉ ctrl+s")
+    expect(captureCharFrame()).toContain("⚲ ctrl+s")
     // The prompt keeps its own column: text must never run under the button.
     expect(captureCharFrame()).toContain("ask jarvis, or / for commands")
     renderer.destroy()
 
     const live = await testRender(<Harness recording onVoice={() => {}} />, { width: 64, height: 5 })
     await live.flush()
-    expect(live.captureCharFrame()).toContain("◉ recording")
+    expect(live.captureCharFrame()).toContain("⚲ recording")
     live.renderer.destroy()
   })
 
@@ -49,7 +49,7 @@ describe("push-to-talk button", () => {
     const { renderer, captureCharFrame, flush } = await testRender(<Harness />, { width: 64, height: 5 })
     await flush()
     expect(captureCharFrame()).not.toContain("ctrl+s")
-    expect(captureCharFrame()).not.toContain("◉")
+    expect(captureCharFrame()).not.toContain("⚲")
     renderer.destroy()
   })
 
@@ -60,7 +60,7 @@ describe("push-to-talk button", () => {
       height: 5,
     })
     await flush()
-    expect(captureCharFrame()).toContain("◉")
+    expect(captureCharFrame()).toContain("⚲")
     expect(captureCharFrame()).not.toContain("ctrl+s")
     renderer.destroy()
   })

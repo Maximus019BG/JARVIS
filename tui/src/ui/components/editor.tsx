@@ -16,13 +16,16 @@ const BREATH_MS = 1400
 const VOICE_LABEL_AT = 60
 
 /**
- * The mic button's icon. A record dot rather than a microphone: every microphone codepoint
- * in Unicode is an emoji, and an emoji here would be the only one in the app — the rest of
- * the interface is geometric (`⑂ ▸ ▾ ● ✓`) and single-width. U+1F3A4 does at least measure
- * correctly; U+1F399, the tidier-looking one, does not — opentui counts one cell and most
- * terminals draw two, which puts the button a column out of line.
+ * The mic button's icon: a capsule on a stand, which is the microphone silhouette drawn
+ * with the geometric vocabulary the rest of the interface uses (`⑂ ▸ ▾ ● ✓`) rather than
+ * with an emoji. Single-width and measured as one cell, so the button stays aligned.
+ *
+ * Every actual MICROPHONE codepoint in Unicode is an emoji: U+1F3A4 is double-width, and
+ * U+1F399 — the one that looks least out of place here — is ambiguous-width, counted as one
+ * cell by opentui and drawn as two by most terminals, which puts the button a column out of
+ * line. If a terminal's font lacks this glyph, `◉` is the fallback worth reaching for.
  */
-const MIC = "◉"
+const MIC = "⚲"
 
 export type EditorHandle = {
   /** Current text, for submitting or for computing completions. */
