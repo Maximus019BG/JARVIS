@@ -187,7 +187,7 @@ export default function HeroSection() {
         <div
           className="absolute top-1/2 right-10 w-16 h-16 rounded-full border transition-all duration-600 delay-450"
           style={{
-            borderColor: "var(--bp-accent)",
+            borderColor: "#ffffff40",
             animation: mounted ? "float 10s ease-in-out infinite 2s" : "none",
             opacity: mounted ? 1 : 0,
             transform: mounted ? "scale(1)" : "scale(0.5)",
