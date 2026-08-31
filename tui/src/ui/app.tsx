@@ -448,6 +448,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     [config.provider],
   )
 
+  /**
+   * The same flow, seeded for transcription. Opened by the mic rather than by a command: voice
+   * needs a provider that speaks audio and a key for it, and asking for those the moment
+   * someone reaches for the microphone beats an error note pointing at a config file.
+   */
+  const openVoiceSetup = useCallback(() => {
+    setPicker(null)
+    setPanel(null)
+    setDiscovered({ loading: false, models: [] })
+    setTested(null)
+    setSetup(beginSetup({ existing: Object.keys(config.provider), paired: isPaired() }, { voice: true }))
+  }, [config.provider])
+
   const openPair = useCallback(() => {
     setPicker(null)
     setPanel(null)
@@ -653,17 +666,23 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       // Checked before anything is written, so a bad draft costs a message rather than a config
       // that fails to parse on the next launch.
       if (!checked.ok) return toast(`cannot save: ${checked.problems.join("; ")}`, "error")
-      const model = listModels(config).length === 0 && draft.models[0] ? `${id}/${draft.models[0]}` : undefined
+      // A voice draft never touches the chat default, so there is no `model` to cross-check.
+      const model =
+        !draft.voice && listModels(config).length === 0 && draft.models[0] ? `${id}/${draft.models[0]}` : undefined
       const merged = checkMerged(config, id, checked.entry, model)
       if (!merged.ok) return toast(`cannot save: ${merged.problems.join("; ")}`, "error")
 
       applyWrites(planWrites(draft, { setDefaultModel: model !== undefined }), globalConfigFile())
       setSetup(null)
       setTested(null)
+      if (draft.voice) {
+        reloadConfig(id)
+        return toast(`voice is ready — ${describe(keymap.voice)} to talk`, "info")
+      }
       if (reloadConfig(id) && draft.models[0]) selectModel(`${id}/${draft.models[0]}`)
       toast(`${id} is ready`, "info")
     },
-    [config, reloadConfig, selectModel, toast],
+    [config, keymap.voice, reloadConfig, selectModel, toast],
   )
 
   /** One answer from the flow. Every rule about what it means lives in the reducer. */
@@ -692,7 +711,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         }
         return saveSetup(setup.draft)
       }
-      setSetup(submitStep(setup, setup.step === "models" ? setup.draft.models : value, setupCtx))
+      const next = submitStep(setup, setup.step === "models" ? setup.draft.models : value, setupCtx)
+      // A flow that skips the check step — voice does — has nowhere else to save from.
+      if (next.step === "done") return saveSetup(next.draft)
+      setSetup(next)
     },
     [openPair, saveSetup, setup, setupCtx],
   )
@@ -776,6 +798,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const toggleVoice = useCallback(() => {
     const active = voice.current
     if (active === "starting") return
+    // Nothing configured yet: the mic asks for what it needs instead of reporting "voice is off".
+    if (!active && !config.voice?.model) return openVoiceSetup()
     if (active) {
       voice.current = null
       setRecording(false)
@@ -799,7 +823,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         setRecording(false)
         turn.note(errorMessage(error), "error")
       })
-  }, [config, turn])
+  }, [config, openVoiceSetup, turn])
 
   /** Drops a recording without transcribing it. Escape means stop, here as everywhere. */
   const cancelVoice = useCallback(() => {
@@ -1141,9 +1165,9 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           onSubmit={submit}
           onChange={change}
           recording={recording}
-          // Only when voice is actually configured: the button is the affordance, so
-          // showing one that can only report "voice is off" would be a lie about the app.
-          onVoice={config.voice?.model ? toggleVoice : undefined}
+          // Always offered: the button is the affordance, and pressing it with nothing
+          // configured now opens the flow that configures it.
+          onVoice={toggleVoice}
         />
       )}
 

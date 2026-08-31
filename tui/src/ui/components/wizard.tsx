@@ -139,6 +139,8 @@ export function Wizard({
     }
   })
 
+  const heading = setup.draft.voice ? "voice input" : "add a provider"
+
   const { width: columns, height: rows } = useTerminalDimensions()
   const width = Math.max(34, Math.min(76, columns - 8))
 
@@ -170,8 +172,8 @@ export function Wizard({
         ref={box}
         title={
           spec.position.total > 0
-            ? `add a provider — ${spec.title} (${spec.position.index}/${spec.position.total})`
-            : `add a provider — ${spec.title}`
+            ? `${heading} — ${spec.title} (${spec.position.index}/${spec.position.total})`
+            : `${heading} — ${spec.title}`
         }
         titleColor={theme.accent}
         // A bottom title wider than the box is dropped silently rather than clipped, so it has
