@@ -149,7 +149,40 @@ export const PRESETS: readonly Preset[] = [
   },
 ]
 
-export const findPreset = (id: string): Preset | undefined => PRESETS.find((preset) => preset.id === id)
+/**
+ * Presets that can transcribe, kept apart from `PRESETS` because the overlap is empty: only
+ * `@ai-sdk/openai` exposes `.transcription()` — `@ai-sdk/openai-compatible` has none — so the
+ * Groq entry here talks to Groq's OpenAI-shaped endpoint through the OpenAI package rather than
+ * reusing the chat preset above, which cannot transcribe at all.
+ */
+export const VOICE_PRESETS: readonly Preset[] = [
+  {
+    id: "groq-voice",
+    label: "Groq",
+    hint: "fast, free tier — console.groq.com/keys",
+    npm: "@ai-sdk/openai",
+    baseURL: "https://api.groq.com/openai/v1",
+    askBaseURL: false,
+    askNpm: false,
+    auth: "key",
+    discovery: { kind: "none" },
+    models: ["whisper-large-v3-turbo"],
+  },
+  {
+    id: "openai-voice",
+    label: "OpenAI",
+    hint: "whisper-1 — platform.openai.com",
+    npm: "@ai-sdk/openai",
+    askBaseURL: false,
+    askNpm: false,
+    auth: "key",
+    discovery: { kind: "none" },
+    models: ["whisper-1"],
+  },
+]
+
+export const findPreset = (id: string): Preset | undefined =>
+  [...PRESETS, ...VOICE_PRESETS].find((preset) => preset.id === id)
 
 /** The hosted provider, named once so the first-run hand-off does not hardcode the string. */
 export const HOSTED_PRESET_ID = "jarvis"
@@ -169,4 +202,9 @@ export function presetChoices({ paired }: { paired: boolean }): Choice[] {
     label: preset.label,
     hint: !paired && preset.requiresPairing ? `${preset.hint} · pairs this device first` : preset.hint,
   }))
+}
+
+/** The transcription providers offered on first use of the mic. */
+export function voicePresetChoices(): Choice[] {
+  return VOICE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))
 }

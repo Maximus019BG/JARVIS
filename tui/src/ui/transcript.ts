@@ -14,11 +14,48 @@ export type Item =
       agent?: string
       startedAt: number
       endedAt?: number
+      /**
+       * The unified patch the call showed the permission gate, kept so the transcript can
+       * still say what changed after the prompt is gone. Never sent to the model — the tool
+       * already told it what it edited, and a second copy is a second copy of the file.
+       */
+      patch?: string
     }
   | Note
 
 /** A one-line remark in the transcript: startup warnings, tool-call counts, failures. */
 export type Note = { kind: "note"; text: string; level: "info" | "error" }
+
+/**
+ * Which blueprint the transcript is about, and a token that changes when it may have
+ * changed on disk.
+ *
+ * Derived from the tool calls already in the transcript rather than plumbed through from
+ * the tools: every call carries its raw input, and the last blueprint one names the
+ * drawing. Nothing in the blueprint store has to know a UI exists, and there is no watcher
+ * to leak. `revision` folds in `endedAt`, so a finished edit is a new token and a call
+ * still running is not.
+ */
+export function activeBlueprint(items: readonly Item[]): { name: string; revision: string } | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]!
+    if (item.kind !== "tool" || !item.name.startsWith("blueprint")) continue
+    const named = (item.input as { name?: unknown } | null)?.name
+    if (typeof named === "string" && named) return { name: named, revision: `${item.id}:${item.endedAt ?? 0}` }
+  }
+  return undefined
+}
+
+/**
+ * Puts the diff a tool showed the approval prompt onto that tool's card.
+ *
+ * Keyed on the call id, not on "the last call still running": a step that batches three
+ * edits emits all three `tool-start` events before any of them executes, so at gate time
+ * every one of those cards is equally unfinished.
+ */
+export function attachPatch(items: readonly Item[], callID: string, patch: string): Item[] {
+  return items.map((item) => (item.kind === "tool" && item.id === callID ? { ...item, patch } : item))
+}
 
 /**
  * Folds a stream of agent events into the list the UI renders. Text deltas append

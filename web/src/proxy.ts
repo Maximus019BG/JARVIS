@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 //rate limit constants
 const rateLimitMap = new Map<string, number[]>();
-const LIMIT = 15; //requests
+const LIMIT = 35; //requests
 const WINDOW = 30000; //30 seconds
 
 export function proxy(request: NextRequest) {

@@ -19,6 +19,12 @@ export type PermissionRequest = {
    * `"bash:git "` in the config can allow a family of commands.
    */
   subject?: string
+  /**
+   * The tool call this request belongs to. Only the UI uses it: a model that batches three
+   * edits into one step has three calls in flight at once, so "the running one" is not a
+   * thing an observer can work out on its own.
+   */
+  callID?: string
 }
 
 export type PermissionAnswer = "once" | "always" | "reject"
@@ -84,21 +90,30 @@ export class PermissionGate {
     private readonly override?: PermissionOverride,
     /** Called when the user answers "always", for callers that want to persist it. */
     private readonly onGrant?: (request: PermissionRequest) => void,
+    /**
+     * Every request that reaches the gate, decided or not. The UI uses it to keep the diff
+     * a tool built for the prompt; nothing here may depend on it, and it must not throw.
+     */
+    private readonly observe?: (request: PermissionRequest) => void,
   ) {
     this.rules = { ...DEFAULT_RULES, ...rules }
   }
 
   /** Agent-level overrides layered on top of the config rules. */
   withRules(overrides: Record<string, Permission>) {
-    return new PermissionGate({ ...this.rules, ...overrides }, this.asker, this.granted, this.override, this.onGrant)
+    const rules = { ...this.rules, ...overrides }
+    return new PermissionGate(rules, this.asker, this.granted, this.override, this.onGrant, this.observe)
   }
 
   /** Attaches a plugin decider; keeps the same rules, asker and grants. */
   withOverride(override: PermissionOverride) {
-    return new PermissionGate(this.rules, this.asker, this.granted, override, this.onGrant)
+    return new PermissionGate(this.rules, this.asker, this.granted, override, this.onGrant, this.observe)
   }
 
   async check(request: PermissionRequest): Promise<void> {
+    // Before any decision: an allowed tool returns below without ever reaching the asker,
+    // and an observer that only saw prompts would show nothing once you allow `edit`.
+    this.observe?.(request)
     const permission = (await this.override?.(request)) ?? resolvePermission(this.rules, request)
     if (permission === "deny") throw new PermissionDenied(request.tool)
     if (permission === "allow") return

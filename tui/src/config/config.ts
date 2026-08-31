@@ -198,6 +198,22 @@ export const ConfigSchema = z
           fit: { tolerance: 1.2, smoothing: 0.35, snapGrid: 0, snapRadius: 3 },
         },
       }),
+    /**
+     * Push-to-talk voice input. Absent means off: recording needs a binary on PATH and
+     * transcription needs a provider that has an audio endpoint, and neither is worth
+     * probing for on every launch of a terminal nobody will speak into.
+     */
+    voice: z
+      .object({
+        /** `"provider/model"`, e.g. `"openai/whisper-1"`. Required for voice to do anything. */
+        model: z.string().optional(),
+        /**
+         * Recording command, with the output wav path appended as the last argument.
+         * Overrides the PATH probe — set it when the probe picks the wrong input device.
+         */
+        recorder: z.string().optional(),
+      })
+      .optional(),
     /** Max tool-call steps in one turn before the loop stops. */
     maxSteps: z.number().default(200),
     /**

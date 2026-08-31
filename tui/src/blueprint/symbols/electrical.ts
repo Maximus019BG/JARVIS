@@ -39,7 +39,11 @@ function head(tip: Pt, deg: number, size = 1.8): Entity {
 }
 
 /** A two-terminal part: body entities, leads, and the two ports the wires attach to. */
-const twoPin = (describe: string, body: Entity[], options: { standard?: string; half?: number } = {}): BlueprintSymbol => ({
+const twoPin = (
+  describe: string,
+  body: Entity[],
+  options: { standard?: string; half?: number; pins?: string[] } = {},
+): BlueprintSymbol => ({
   describe,
   standard: options.standard,
   entities: [...body, ...leads(options.half ?? BODY)],
@@ -47,6 +51,10 @@ const twoPin = (describe: string, body: Entity[], options: { standard?: string; 
     [-SPAN, 0],
     [SPAN, 0],
   ],
+  // Only the parts where which-end-is-which changes what a wire should do. A resistor is
+  // symmetrical and has nothing to declare; naming its ends "1" and "2" would just invite
+  // the automatic wiring to treat two interchangeable leads as if the order mattered.
+  ...(options.pins ? { pins: options.pins } : {}),
 })
 
 /** The zig-zag alternative resistor body, kept for schematics drawn in the US style. */
@@ -122,7 +130,7 @@ const passives: SymbolLibrary = {
   "capacitor-polarised": twoPin(
     "Electrolytic capacitor: straight plate positive, curved plate negative",
     [line([-0.9, -3.5], [-0.9, 3.5]), arc([-3.4, 0], 4.3, -55, 55), text("+", [-4.2, -4], 2.4)],
-    { standard: "IEC 60617-4 S00253", half: 0.9 },
+    { standard: "IEC 60617-4 S00253", half: 0.9, pins: ["+", "-"] },
   ),
   "capacitor-variable": twoPin(
     "Variable capacitor / trimmer",
@@ -162,7 +170,11 @@ const passives: SymbolLibrary = {
 const diodeBody: Entity[] = [poly([[-2.2, -2.6], [2.2, 0], [-2.2, 2.6]], true), line([2.2, -2.8], [2.2, 2.8])]
 
 const semiconductors: SymbolLibrary = {
-  diode: twoPin("Diode. Port 1 anode, port 2 cathode", diodeBody, { standard: "IEC 60617-5 S00550", half: 2.2 }),
+  diode: twoPin("Diode. Port 1 anode, port 2 cathode", diodeBody, {
+    standard: "IEC 60617-5 S00550",
+    half: 2.2,
+    pins: ["anode", "cathode"],
+  }),
   "diode-zener": twoPin(
     "Zener diode",
     [poly([[-2.2, -2.6], [2.2, 0], [-2.2, 2.6]], true), poly([[1.2, -2.8], [2.2, -2.8], [2.2, 2.8], [3.2, 2.8]])],
@@ -184,7 +196,7 @@ const semiconductors: SymbolLibrary = {
   led: twoPin(
     "Light-emitting diode",
     [...diodeBody, line([0, -4], [2.4, -6.8]), head([2.4, -6.8], -49), line([2.6, -3.4], [5, -6.2]), head([5, -6.2], -49)],
-    { standard: "IEC 60617-5 S00554", half: 2.2 },
+    { standard: "IEC 60617-5 S00554", half: 2.2, pins: ["anode", "cathode"] },
   ),
   photodiode: twoPin(
     "Photodiode",
@@ -193,6 +205,7 @@ const semiconductors: SymbolLibrary = {
   ),
   "bridge-rectifier": {
     describe: "Bridge rectifier. Ports: 1 AC, 2 AC, 3 +, 4 −",
+    pins: ["AC", "AC", "+", "-"],
     entities: [
       box(2 * SPAN, 2 * SPAN),
       poly([[-3, 0], [0, -3], [3, 0], [0, 3]], true),
@@ -321,6 +334,7 @@ const semiconductors: SymbolLibrary = {
       [SPAN, 0],
       [5.2, SPAN + 2],
     ],
+    pins: ["anode", "cathode", "gate"],
   },
   triac: {
     describe: "Triac. Ports: 1 MT1, 2 MT2, 3 gate",
@@ -366,6 +380,7 @@ const semiconductors: SymbolLibrary = {
       [SPAN + 6.16, -4.5],
       [SPAN + 6.16, 4.5],
     ],
+    pins: ["anode", "cathode", "collector", "emitter"],
   },
 }
 
@@ -375,7 +390,7 @@ const sources: SymbolLibrary = {
   cell: twoPin(
     "Single cell. Long plate positive",
     [line([-1.2, -4], [-1.2, 4]), line([1.2, -2], [1.2, 2])],
-    { standard: "IEC 60617-2 S00050", half: 1.2 },
+    { standard: "IEC 60617-2 S00050", half: 1.2, pins: ["+", "-"] },
   ),
   battery: twoPin(
     "Battery, multiple cells",
@@ -386,7 +401,9 @@ const sources: SymbolLibrary = {
       line([2.8, -2], [2.8, 2]),
       text("+", [-6.4, -4.6], 2.2),
     ],
-    { standard: "IEC 60617-2 S00051", half: 4.4 },
+    // Port 1 is the long plate the "+" glyph is drawn against — the polarity was always in
+    // the picture, and is now also in the data.
+    { standard: "IEC 60617-2 S00051", half: 4.4, pins: ["+", "-"] },
   ),
   "source-dc": twoPin(
     "DC source",
@@ -408,33 +425,39 @@ const sources: SymbolLibrary = {
     standard: "IEC 60617-2 S00200",
     entities: [line([0, 0], [0, 3]), line([-4, 3], [4, 3]), line([-2.5, 4.8], [2.5, 4.8]), line([-1, 6.6], [1, 6.6])],
     ports: [[0, 0]],
+    pins: ["GND"],
   },
   "earth-protective": {
     describe: "Protective earth (PE)",
     standard: "IEC 60617-2 S00201",
     entities: [line([0, 0], [0, 2.4]), ring([0, 5.2], 2.8), line([-2.8, 5.2], [2.8, 5.2]), line([-1.6, 3.4], [1.6, 3.4]), line([-1.6, 7], [1.6, 7])],
     ports: [[0, 0]],
+    pins: ["GND"],
   },
   "ground-chassis": {
     describe: "Chassis / frame ground",
     standard: "IEC 60617-2 S00202",
     entities: [line([0, 0], [0, 3]), line([-4, 3], [4, 3]), line([-4, 3], [-6, 6]), line([0, 3], [-2, 6]), line([4, 3], [2, 6])],
     ports: [[0, 0]],
+    pins: ["GND"],
   },
   "ground-clean": {
     describe: "Clean / functional earth, for instrumentation returns",
     entities: [line([0, 0], [0, 3]), ring([0, 3], 0.9), line([-4, 3], [4, 3]), line([-2.5, 4.8], [2.5, 4.8]), line([-1, 6.6], [1, 6.6])],
     ports: [[0, 0]],
+    pins: ["GND"],
   },
   "supply-plus": {
     describe: "Positive supply rail marker. Label it with the voltage",
     entities: [line([0, 0], [0, -4]), line([-3, -4], [3, -4]), text("+V", [-3, -5.4], 2.5)],
     ports: [[0, 0]],
+    pins: ["+"],
   },
   "supply-minus": {
     describe: "Negative supply rail marker",
     entities: [line([0, 0], [0, 4]), line([-3, 4], [3, 4]), text("−V", [-3, 7.6], 2.5)],
     ports: [[0, 0]],
+    pins: ["-"],
   },
   "supply-line": {
     describe: "Live / line conductor marker (L)",

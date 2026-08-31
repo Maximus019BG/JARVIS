@@ -16,9 +16,10 @@ import type { McpSession } from "../extend/mcp.ts"
 import { discoverModels, discoveryArgs } from "../agent/model-discovery.ts"
 import { testProvider, testWillInstall } from "../agent/provider-test.ts"
 import { credentialsPath, isPaired, readCredentials, writeCredentials } from "../blueprint/credentials.ts"
+import { blueprintRoot } from "../blueprint/store.ts"
 import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
 import { providerHealth } from "../config/provider-status.ts"
-import { globalConfigFile } from "../config/persist.ts"
+import { globalConfigFile, persistConfig } from "../config/persist.ts"
 import { KEY_HELP, runCommand } from "./builtin-commands.ts"
 import { testPanel, testPendingPanel } from "./provider-command.ts"
 import {
@@ -36,6 +37,8 @@ import {
 } from "./provider-setup.ts"
 import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
+import { BlueprintEditor } from "./components/blueprint-editor.tsx"
+import { BlueprintPane } from "./components/blueprint-view.tsx"
 import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
@@ -59,6 +62,7 @@ import {
 import { Editor, type EditorHandle } from "./components/editor.tsx"
 import { Messages } from "./components/messages.tsx"
 import { Status } from "./components/status.tsx"
+import { listen, type Recording } from "./voice.ts"
 import { Suggestions } from "./components/suggestions.tsx"
 import { Toasts, useToasts } from "./components/toast.tsx"
 import { Panel, panelBody, type PanelContent } from "./components/panel.tsx"
@@ -69,7 +73,7 @@ import { findPreset, HOSTED_PRESET_ID } from "./provider-presets.ts"
 import type { MotionLevel } from "./motion.ts"
 import { ADD_PROVIDER, listFiles, pickerChoices, PICKER_TITLES, type PickerKind } from "./pickers.ts"
 import { completion, suggest, type Suggestion } from "./suggest.ts"
-import type { Item, Note } from "./transcript.ts"
+import { activeBlueprint, type Item, type Note } from "./transcript.ts"
 import { errorMessage } from "../agent/agent.ts"
 import { useTurn } from "./use-turn.ts"
 
@@ -98,6 +102,37 @@ const QUIT_WINDOW_MS = 2000
 const STEER_POLL_MS = 5000
 /** How long the status line acknowledges an auto-copied selection. */
 const COPIED_MS = 1500
+/**
+ * Columns the transcript keeps whatever the terminal's size — narrow enough that a quarter of
+ * an ordinary 120-column terminal clears it, wide enough that prose still wraps into
+ * sentences rather than one word a line.
+ */
+const MIN_CHAT = 30
+/** Below this there is not enough resolution left for the drawing to be worth the columns. */
+const MIN_PANE = 24
+/** The drawing's share of the width when there is enough of it to go round. */
+const PANE_SHARE = 0.75
+
+/**
+ * How the terminal's width is divided between the drawing and the transcript.
+ *
+ * The drawing takes three quarters. It is the thing being worked on, and it is the thing a
+ * terminal is worst at showing — braille packs two dots into every column, so a column taken
+ * from the picture is resolution genuinely lost, while the transcript only wraps. An earlier
+ * version capped the pane at 48 columns, which meant a wide terminal spent all its extra room
+ * on the chat and the drawing stayed as cramped at 200 columns as at 80.
+ *
+ * The floor is on the transcript rather than on the share: a quarter of a narrow terminal is
+ * not readable, so the chat keeps `MIN_CHAT` and the pane takes what is left. Below both
+ * minimums together there is no split worth making and the caller shows the drawing
+ * fullscreen instead.
+ */
+export function splitWidth(width: number): { paneWidth: number; paneFits: boolean } {
+  return {
+    paneWidth: Math.max(MIN_PANE, Math.min(Math.floor(width * PANE_SHARE), width - MIN_CHAT)),
+    paneFits: width >= MIN_PANE + MIN_CHAT,
+  }
+}
 
 export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }: AppProps) {
   const { width, height } = useTerminalDimensions()
@@ -117,9 +152,23 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const [model, setModel] = useState(
     // No providers configured is a valid first-run state; the note in the transcript
     // explains it, so show a placeholder instead of refusing to start.
-    () => initial.model ?? agents[initial.agent ?? DEFAULT_AGENT]?.model ?? listModels(config)[0]?.id ?? "no model",
+    () =>
+      initial.model ??
+      agents[initial.agent ?? DEFAULT_AGENT]?.model ??
+      // The last model switched to in the TUI, written back to the global config.
+      config.model ??
+      listModels(config)[0]?.id ??
+      "no model",
   )
   const [picker, setPicker] = useState<PickerKind | null>(null)
+  /**
+   * Built once per open, not per render: the component re-renders on every keystroke while
+   * you filter, and a listing that spawns git or walks the disk on each one is a visible stall.
+   */
+  const choices = useMemo(
+    () => (picker ? pickerChoices(picker, { config, cwd, agents, commands, files }) : []),
+    [agents, commands, config, cwd, files, picker],
+  )
   /** Read-only overlay content: the tutorial, or /provider output. */
   const [panel, setPanel] = useState<PanelContent | null>(null)
   /**
@@ -155,8 +204,32 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [selected, setSelected] = useState(0)
   const [quitting, setQuitting] = useState(false)
+  /** Whether thinking blocks are unfolded. One switch for all of them — the transcript has no cursor to expand just one. */
+  const [thinking, setThinking] = useState(false)
+  /**
+   * How much of the blueprint the agent is working on is on screen. One tri-state rather
+   * than two switches: there are three things a reader wants — out of the way, beside the
+   * transcript, or filling the terminal — and they are steps along one axis.
+   */
+  const [blueprintView, setBlueprintView] = useState<"hidden" | "pane" | "full">("hidden")
+  /** Set once the pane has opened itself, so a reader who closed it is not reopened on. */
+  const offered = useRef(false)
   /** Whether the arming press also killed a turn, so the hint can say both things happened. */
   const [interrupted, setInterrupted] = useState(false)
+  /**
+   * Prompts typed while a turn was running, in the order they were sent. Kept here rather
+   * than in `useTurn` so nothing in the agent loop, the cost guard or the compaction path
+   * has to learn that a queue exists.
+   */
+  const [queued, setQueued] = useState<string[]>([])
+  /** Whether the mic is live, for the status line. */
+  const [recording, setRecording] = useState(false)
+  /**
+   * The live recording, or `"starting"` while the recorder and the transcription model are
+   * still being resolved. Resolving can install a provider package, which takes tens of
+   * seconds, and a second press in that window must not open a second microphone.
+   */
+  const voice = useRef<Recording | "starting" | null>(null)
   const { toasts, toast } = useToasts()
   // The agent checks out branches and edits files, so a value read once at startup goes stale
   // mid-session. Refreshed between turns instead: one spawn per turn, never during one.
@@ -178,6 +251,27 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   // The config value is available before the first turn; the turn's value can also come
   // from the models.dev catalog, so it wins once a turn has actually resolved the model.
   const empty = turn.items.length === 0
+
+  /**
+   * The blueprint the agent is working on, and a token that changes whenever it may have
+   * changed on disk.
+   *
+   * See `activeBlueprint` for why it is read out of the transcript rather than plumbed
+   * through from the tools.
+   */
+  const blueprint = useMemo(() => activeBlueprint(turn.items), [turn.items])
+
+  const blueprints = useMemo(() => blueprintRoot(config), [config])
+  const { paneWidth, paneFits } = splitWidth(width)
+
+  // Opens itself the first time the agent touches a blueprint — the point of the pane is
+  // that a turn spent drawing is visible without being asked for. Once only: a reader who
+  // closed it has said what they want.
+  useEffect(() => {
+    if (!blueprint || offered.current) return
+    offered.current = true
+    setBlueprintView(paneFits ? "pane" : "full")
+  }, [blueprint, paneFits])
   const configured = useMemo(() => listModels(config).find((m) => m.id === model)?.contextLimit, [config, model])
   // Re-reads the config files to recover the `{env:…}` names behind the keys, so it is memoized
   // rather than computed per render.
@@ -189,6 +283,17 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     if (turn.busy) return
     setGit(readGit(cwd))
   }, [turn.busy, cwd])
+
+  /**
+   * Sends the next type-ahead prompt once the turn that was running finishes. One per pass:
+   * sending sets `busy` again, so the effect re-runs when that turn ends and takes the next.
+   */
+  useEffect(() => {
+    if (turn.busy || turn.compacting || queued.length === 0) return
+    const [next, ...rest] = queued
+    setQueued(rest)
+    turn.send(next!)
+  }, [turn.busy, turn.compacting, queued, turn.send])
 
   /**
    * Prompts typed into the paired web app, run here.
@@ -275,10 +380,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   }, [renderer])
 
   /** The one place a model is switched, so no caller can leave the ref behind the state. */
-  const selectModel = useCallback((value: string) => {
-    activeModel.current = value
-    setModel(value)
-  }, [])
+  const selectModel = useCallback(
+    (value: string) => {
+      activeModel.current = value
+      setModel(value)
+      // A switch is a preference, not a per-session whim: the next start opens on it.
+      try {
+        persistConfig(globalConfigFile(), ["model"], value)
+      } catch (error) {
+        toast(`could not save model: ${errorMessage(error)}`, "warn")
+      }
+    },
+    [toast],
+  )
 
   /**
    * Re-reads the config from disk after something in the app has written to it.
@@ -333,6 +447,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     },
     [config.provider],
   )
+
+  /**
+   * The same flow, seeded for transcription. Opened by the mic rather than by a command: voice
+   * needs a provider that speaks audio and a key for it, and asking for those the moment
+   * someone reaches for the microphone beats an error note pointing at a config file.
+   */
+  const openVoiceSetup = useCallback(() => {
+    setPicker(null)
+    setPanel(null)
+    setDiscovered({ loading: false, models: [] })
+    setTested(null)
+    setSetup(beginSetup({ existing: Object.keys(config.provider), paired: isPaired() }, { voice: true }))
+  }, [config.provider])
 
   const openPair = useCallback(() => {
     setPicker(null)
@@ -539,17 +666,23 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       // Checked before anything is written, so a bad draft costs a message rather than a config
       // that fails to parse on the next launch.
       if (!checked.ok) return toast(`cannot save: ${checked.problems.join("; ")}`, "error")
-      const model = listModels(config).length === 0 && draft.models[0] ? `${id}/${draft.models[0]}` : undefined
+      // A voice draft never touches the chat default, so there is no `model` to cross-check.
+      const model =
+        !draft.voice && listModels(config).length === 0 && draft.models[0] ? `${id}/${draft.models[0]}` : undefined
       const merged = checkMerged(config, id, checked.entry, model)
       if (!merged.ok) return toast(`cannot save: ${merged.problems.join("; ")}`, "error")
 
       applyWrites(planWrites(draft, { setDefaultModel: model !== undefined }), globalConfigFile())
       setSetup(null)
       setTested(null)
+      if (draft.voice) {
+        reloadConfig(id)
+        return toast(`voice is ready — ${describe(keymap.voice)} to talk`, "info")
+      }
       if (reloadConfig(id) && draft.models[0]) selectModel(`${id}/${draft.models[0]}`)
       toast(`${id} is ready`, "info")
     },
-    [config, reloadConfig, selectModel, toast],
+    [config, keymap.voice, reloadConfig, selectModel, toast],
   )
 
   /** One answer from the flow. Every rule about what it means lives in the reducer. */
@@ -578,7 +711,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         }
         return saveSetup(setup.draft)
       }
-      setSetup(submitStep(setup, setup.step === "models" ? setup.draft.models : value, setupCtx))
+      const next = submitStep(setup, setup.step === "models" ? setup.draft.models : value, setupCtx)
+      // A flow that skips the check step — voice does — has nowhere else to save from.
+      if (next.step === "done") return saveSetup(next.draft)
+      setSetup(next)
     },
     [openPair, saveSetup, setup, setupCtx],
   )
@@ -642,11 +778,62 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       // small checks — git status, a test run — that do not need the model at all.
       if (text.startsWith("!")) return shell(text.slice(1).trim())
       const parsed = parseCommandLine(text)
-      if (parsed) dispatch(parsed.name, parsed.args)
-      else turn.send(text)
+      // Commands and `!cmd` run now: neither needs a turn, so neither has to wait for one.
+      if (parsed) return dispatch(parsed.name, parsed.args)
+      if (turn.busy) {
+        setQueued((current) => [...current, text])
+        return turn.note(`⏎ queued: ${clip(text.split("\n")[0] ?? text, 60)}`)
+      }
+      turn.send(text)
     },
     [dispatch, shell, turn],
   )
+
+  /**
+   * Push-to-talk: first press starts recording, second press transcribes into the prompt.
+   *
+   * The text lands in the buffer rather than being submitted. Transcription mishears things,
+   * and a misheard prompt that has already started a turn costs money to take back.
+   */
+  const toggleVoice = useCallback(() => {
+    const active = voice.current
+    if (active === "starting") return
+    // Nothing configured yet: the mic asks for what it needs instead of reporting "voice is off".
+    if (!active && !config.voice?.model) return openVoiceSetup()
+    if (active) {
+      voice.current = null
+      setRecording(false)
+      void active
+        .stop()
+        .then((text) => (text ? editor.current?.insert(text) : turn.note("heard nothing")))
+        .catch((error) => turn.note(errorMessage(error), "error"))
+      return
+    }
+    voice.current = "starting"
+    setRecording(true)
+    void listen(config)
+      .then((session) => {
+        // Stopped or cancelled while the model was still resolving: nobody is waiting for
+        // this recorder, so shut it down rather than leaving the mic open.
+        if (voice.current !== "starting") return void session.cancel()
+        voice.current = session
+      })
+      .catch((error) => {
+        voice.current = null
+        setRecording(false)
+        turn.note(errorMessage(error), "error")
+      })
+  }, [config, openVoiceSetup, turn])
+
+  /** Drops a recording without transcribing it. Escape means stop, here as everywhere. */
+  const cancelVoice = useCallback(() => {
+    const active = voice.current
+    if (!active) return false
+    voice.current = null
+    setRecording(false)
+    if (active !== "starting") void active.cancel()
+    return true
+  }, [])
 
   const change = useCallback(
     (text: string) => {
@@ -767,6 +954,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         case "provider":
           if (value === ADD_PROVIDER) return openSetup()
           return dispatch("provider", `view ${value}`)
+        case "blueprint":
+          return dispatch("blueprint", value)
         default:
           return
       }
@@ -785,6 +974,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     // out are the ones where nothing was listening.
     if (is("exit")) {
       if (quitting) process.exit(0)
+      cancelVoice()
+      setQueued([])
       setInterrupted(turn.interrupt())
       setQuitting(true)
       setTimeout(() => setQuitting(false), QUIT_WINDOW_MS)
@@ -792,7 +983,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     }
 
     // Otherwise the prompt and the overlays own the keyboard; each closes itself.
-    if (turn.permission || turn.question || picker || panel || setup) return
+    if (turn.permission || turn.question || picker || panel || setup || blueprintView === "full") return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -848,7 +1039,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       return key.stopPropagation()
     }
 
-    if (is("interrupt")) turn.interrupt()
+    // Clearing the queue is the point: stop has to mean stop, not "stop this one and
+    // immediately start the next thing I typed".
+    if (is("interrupt")) {
+      // A live recording is the nearest thing to stop, and dropping it must not also kill
+      // the turn that happens to be running behind it.
+      if (!cancelVoice()) {
+        setQueued([])
+        turn.interrupt()
+      }
+    } else if (is("voice")) toggleVoice()
     else if (is("clear")) turn.clear()
     else if (is("palette")) setPicker("command")
     else if (is("tutorial")) setPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
@@ -862,6 +1062,13 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     else if (is("scrollDown")) scroll.current?.scrollBy({ x: 0, y: SCROLL_LINES })
     else if (is("scrollHalfUp")) scroll.current?.scrollBy({ x: 0, y: -Math.floor(height / 2) })
     else if (is("scrollHalfDown")) scroll.current?.scrollBy({ x: 0, y: Math.floor(height / 2) })
+    else if (is("toggleReasoning")) setThinking((shown) => !shown)
+    // hidden → pane → full → hidden, skipping the pane on a terminal too narrow to hold
+    // both it and a readable transcript.
+    else if (is("blueprintView"))
+      setBlueprintView((current) =>
+        current === "hidden" ? (paneFits ? "pane" : "full") : current === "pane" ? "full" : "hidden",
+      )
     else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
   })
 
@@ -883,6 +1090,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       {/* An empty session has nothing to scroll, so it gets a plain flex box that can centre
           the wordmark. The scrollbox cannot: it is anchored to the bottom and its content box
           hugs its children, so there is no free space inside it to centre against. */}
+      {/* A row only so the pane can sit beside the transcript; everything below — the
+          activity line, the editor, the status bar — keeps the full width. */}
+      <box style={{ flexDirection: "row", flexGrow: 1 }}>
+      {blueprint && blueprintView === "pane" && paneFits && (
+        <BlueprintPane
+          root={blueprints}
+          name={blueprint.name}
+          revision={blueprint.revision}
+          theme={theme}
+          width={paneWidth}
+          height={height - 6}
+        />
+      )}
       {empty ? (
         <box style={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}>{welcome}</box>
       ) : (
@@ -899,12 +1119,26 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           }}
         >
           {welcome}
-          <Messages items={turn.items} theme={theme} motion={motion} streaming={turn.busy} />
+          <Messages
+            items={turn.items}
+            theme={theme}
+            motion={motion}
+            streaming={turn.busy}
+            thinking={thinking}
+          />
         </scrollbox>
       )}
+      </box>
 
       {(turn.busy || turn.compacting) && (
-        <Activity items={turn.items} theme={theme} motion={motion} keymap={keymap} compacting={turn.compacting} />
+        <Activity
+          items={turn.items}
+          theme={theme}
+          motion={motion}
+          keymap={keymap}
+          compacting={turn.compacting}
+          queued={queued.length}
+        />
       )}
 
       {suggestion && !turn.permission && !turn.question && !picker && !setup && (
@@ -930,6 +1164,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           handle={editor}
           onSubmit={submit}
           onChange={change}
+          recording={recording}
+          // Always offered: the button is the affordance, and pressing it with nothing
+          // configured now opens the flow that configures it.
+          onVoice={toggleVoice}
         />
       )}
 
@@ -945,13 +1183,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         </box>
       )}
 
-      {/* The `ask` tool's question. Same picker as everything else — a question with a
-          known set of answers is a list to choose from, and escape means "stop asking",
-          which the tool turns into an error telling the model to assume and say so. The
-          title is clipped because an over-wide box title is dropped silently. */}
+      {/* The `ask` tool's question. Same picker as everything else — its answers are a list
+          to choose from — but the sentence goes in the body rather than the title, which an
+          over-wide title would have dropped silently, and `Other…` is offered because the
+          model's options are the likely answers, not the only ones. Escape still means "stop
+          asking", which the tool turns into an error telling the model to assume and say so. */}
       {turn.question && !turn.permission && (
         <Picker
-          title={clip(turn.question.question, 60)}
+          title="question"
+          prompt={turn.question.question}
+          allowOther
           choices={turn.question.options.map((option) => ({ value: option, label: option }))}
           theme={theme}
           motion={motion}
@@ -997,7 +1238,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       {picker && !turn.permission && !turn.question && !setup && (
         <Picker
           title={PICKER_TITLES[picker]}
-          choices={pickerChoices(picker, { config, cwd, agents, commands, files })}
+          choices={choices}
           theme={theme}
           motion={motion}
           onPick={pick}
@@ -1011,10 +1252,6 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           onCancel={() => setPicker(null)}
         />
       )}
-
-      {/* The status line is panel-coloured and the editor no longer has a bottom border to
-          end on, so without this row the input and the status run together as one block. */}
-      <box style={{ height: 1 }} />
 
       <Status
         theme={theme}
@@ -1031,17 +1268,28 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         width={width}
         warn={health.warning}
         hint={
-          copied
-            ? "copied to clipboard"
-            : quitting
-              ? // Two things can have just happened, and conflating them reads as if the
-                // turn is still running.
-                `${interrupted ? "interrupted · " : ""}${describe(keymap.exit)} again to exit`
-              : `${describe(keymap.palette)} commands`
+          recording
+            ? `● recording · ${describe(keymap.voice)} to transcribe`
+            : copied
+              ? "copied to clipboard"
+              : quitting
+                ? // Two things can have just happened, and conflating them reads as if the
+                  // turn is still running.
+                  `${interrupted ? "interrupted · " : ""}${describe(keymap.exit)} again to exit`
+                : `${describe(keymap.palette)} commands`
         }
       />
 
       {panel && <Panel content={panel} theme={theme} motion={motion} onClose={() => setPanel(null)} />}
+
+      {blueprint && blueprintView === "full" && !picker && !panel && !setup && !pairing && !turn.permission && !turn.question && (
+        <BlueprintEditor
+          root={blueprints}
+          name={blueprint.name}
+          theme={theme}
+          onClose={() => setBlueprintView("hidden")}
+        />
+      )}
 
       <Toasts toasts={toasts} theme={theme} motion={motion} />
     </box>

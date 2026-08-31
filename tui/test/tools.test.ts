@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, utimesSync, writeFileSync } from "node:fs"
+import { mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { constantAsker, PermissionGate, resolvePermission } from "../src/permission.ts"
+import { constantAsker, PermissionGate, resolvePermission, type PermissionRequest } from "../src/permission.ts"
 import { builtinTools, filterTools, resolvePath, ToolError, type ToolContext } from "../src/tools/index.ts"
 import { textFromHtml } from "../src/tools/webfetch.ts"
 
@@ -31,6 +31,135 @@ describe("resolvePath", () => {
     expect(() => resolvePath(ctx, "../../etc/passwd")).toThrow(ToolError)
     expect(() => resolvePath(ctx, "/etc/passwd")).toThrow(ToolError)
     expect(resolvePath(ctx, "a/b.ts")).toBe(join(ctx.cwd, "a/b.ts"))
+  })
+})
+
+describe("blueprint_edit", () => {
+  // The failure this replaces: a model called blueprint_edit with `simple_electrical`, was
+  // refused for the underscore, retried with a valid name, and got "no blueprint named …"
+  // because it never worked out it had to call `blueprint` action:"create" first. One call
+  // has to be enough, and the name it sends has to be the name it gets.
+  test("one call draws, with no create call and a name a model would really send", async () => {
+    const { ctx, tools } = setup()
+    const out = await call(tools.blueprint_edit, {
+      name: "simple_electrical",
+      ops: [
+        { op: "add", entity: { type: "circle", c: [20, 20], r: 6 } },
+        { op: "add", entity: { type: "line", a: [0, 20], b: [14, 20] } },
+      ],
+    })
+    expect(out).toContain("simple-electrical")
+    expect(out).toContain("2 entities")
+    const listed = await call(tools.blueprint, { action: "list" })
+    expect(listed).toContain("simple-electrical")
+    // Committed, not just written: the store is a git repo and history is the point of it.
+    expect(await call(tools.blueprint, { action: "history", name: "simple_electrical" })).toContain("add circle")
+  })
+
+  test("a second call edits the same blueprint rather than starting a new one", async () => {
+    const { tools } = setup()
+    await call(tools.blueprint_edit, { name: "plate", ops: [{ op: "add", entity: { type: "circle", c: [0, 0], r: 5 } }] })
+    const out = await call(tools.blueprint_edit, {
+      name: "plate",
+      ops: [{ op: "add", entity: { type: "circle", c: [10, 0], r: 5 } }],
+    })
+    expect(out).toContain("2 entities")
+  })
+
+  // The re-render is the same 22 rows whether one entity moved or twenty were replaced, so
+  // the result has to say what the edit did in words.
+  test("says what changed, not just what the drawing now looks like", async () => {
+    const { tools } = setup()
+    const first = await call(tools.blueprint_edit, {
+      name: "plate",
+      ops: [{ op: "add", entity: { type: "circle", c: [0, 0], r: 5 } }],
+    })
+    expect(first).toContain("1 added")
+
+    const moved = await call(tools.blueprint_edit, {
+      name: "plate",
+      ops: [{ op: "move", ids: ["e1"], by: [20, 0] }],
+    })
+    // A move is a modification of an existing id, not a delete plus an add.
+    expect(moved).toContain("1 modified")
+    expect(moved).not.toContain("added")
+
+    const removed = await call(tools.blueprint_edit, { name: "plate", ops: [{ op: "delete", ids: ["e1"] }] })
+    expect(removed).toContain("1 removed")
+    expect(removed).toContain("-e1")
+  })
+
+  test("an entity that is invalid for its type is still refused", async () => {
+    const { tools } = setup()
+    // The flat payload is looser on the wire, not in what reaches disk.
+    expect(call(tools.blueprint_edit, { name: "plate", ops: [{ op: "add", entity: { type: "circle", c: [0, 0] } }] }))
+      .rejects.toThrow(/circle/)
+    expect(await call(tools.blueprint, { action: "list" })).toContain("no blueprints yet")
+  })
+})
+
+describe("blueprint_symbol", () => {
+  test("places on a blueprint that does not exist yet", async () => {
+    const { tools } = setup()
+    const out = await call(tools.blueprint_symbol, { action: "place", name: "circuit", symbol: "resistor", at: [10, 10] })
+    expect(out).toContain("circuit")
+    expect(await call(tools.blueprint, { action: "list" })).toContain("circuit")
+  })
+
+  test("the reply names the ports to connect by, not their coordinates", async () => {
+    const { tools } = setup()
+    const out = await call(tools.blueprint_symbol, {
+      action: "place",
+      name: "circuit",
+      placements: [{ symbol: "electrical/resistor", at: [10, 10], label: "R1" }],
+    })
+    expect(out).toContain("connect with R1.1..R1.2")
+  })
+})
+
+describe("connect end to end", () => {
+  // The whole point of the feature: two named ports in, a wire on disk, and at no stage
+  // does the caller work out where the wire goes.
+  test("a wire runs between the two ports the caller named", async () => {
+    const { tools } = setup()
+    await call(tools.blueprint_symbol, {
+      action: "place",
+      name: "circuit",
+      placements: [
+        { symbol: "electrical/resistor", at: [20, 20], label: "R1" },
+        { symbol: "electrical/lamp", at: [80, 60], label: "L1" },
+      ],
+    })
+    const out = await call(tools.blueprint_edit, {
+      name: "circuit",
+      ops: [{ op: "connect", from: "R1.2", to: "L1.1" }],
+    })
+    expect(out).toContain("connect")
+    const json = await call(tools.blueprint_view, { name: "circuit", format: "json" })
+    const doc = JSON.parse(json.slice(json.indexOf("{"))) as {
+      entities: { id: string; type: string; pts?: [number, number][] }[]
+      parts: { ref: string; ports: [number, number][] }[]
+      nets: { from: string; to: string; wire: string }[]
+    }
+    const r1 = doc.parts.find((part) => part.ref === "R1")!
+    const l1 = doc.parts.find((part) => part.ref === "L1")!
+    // Placing a lone resistor beside a lone lamp already wires them, so this connect is not
+    // the first net in the drawing. Find it by the ports it names, not by wire id.
+    const net = doc.nets.find((candidate) => candidate.from === "R1.2" && candidate.to === "L1.1")!
+    const wire = doc.entities.find((entity) => entity.id === net.wire)
+    expect(wire?.pts?.[0]).toEqual(r1.ports[1]!)
+    expect(wire?.pts?.at(-1)).toEqual(l1.ports[0]!)
+  })
+
+  test("wiring a port that does not exist says which ones do", async () => {
+    const { tools } = setup()
+    await call(tools.blueprint_symbol, {
+      action: "place",
+      name: "circuit",
+      placements: [{ symbol: "electrical/resistor", at: [20, 20], label: "R1" }],
+    })
+    expect(call(tools.blueprint_edit, { name: "circuit", ops: [{ op: "connect", from: "R1.1", to: "Q7.1" }] }))
+      .rejects.toThrow(/R1/)
   })
 })
 
@@ -304,6 +433,38 @@ describe("resolvePermission", () => {
   test("unmatched tools fall through to the default", () => {
     expect(resolvePermission(rules, { tool: "read", title: "" })).toBe("allow")
     expect(resolvePermission({ "*": "deny" }, { tool: "read", title: "" })).toBe("deny")
+  })
+})
+
+describe("permission observe", () => {
+  // The whole point of observing rather than watching the prompt: `edit` set to "allow"
+  // never reaches the asker, and the transcript would then show a diff only for the edits
+  // you had not yet trusted.
+  test("sees an auto-allowed request, with the diff and the call id", async () => {
+    const seen: PermissionRequest[] = []
+    const cwd = mkdtempSync(join(tmpdir(), "jarvis-observe-"))
+    const file = join(cwd, "a.ts")
+    writeFileSync(file, "old\n")
+    const ctx: ToolContext = {
+      cwd,
+      worktree: cwd,
+      blueprints: join(cwd, "blueprints"),
+      gate: new PermissionGate({ edit: "allow" }, constantAsker(false), undefined, undefined, undefined, (request) =>
+        seen.push(request),
+      ),
+      read: new Map([[file, statSync(file).mtimeMs]]),
+      depth: 0,
+      agent: "build",
+      sessionID: "test",
+    }
+    const tools = builtinTools(ctx)
+    const execute = (tools.edit as { execute: (i: unknown, o: unknown) => Promise<string> }).execute
+    await execute({ filePath: "a.ts", oldString: "old", newString: "new" }, { toolCallId: "call-1" })
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.detailKind).toBe("diff")
+    expect(seen[0]!.callID).toBe("call-1")
+    expect(seen[0]!.detail).toContain("+new")
   })
 })
 

@@ -38,7 +38,7 @@ export const editTool = (ctx: ToolContext) =>
         edits: z.array(ReplacementSchema).optional().describe("Several replacements, applied in order"),
       })
       .extend(ReplacementSchema.partial().shape),
-    execute: async ({ filePath, edits, oldString, newString, replaceAll }) => {
+    execute: async ({ filePath, edits, oldString, newString, replaceAll }, { toolCallId }) => {
       const absolute = resolvePath(ctx, filePath)
       const name = displayPath(ctx, absolute)
       const file = Bun.file(absolute)
@@ -73,6 +73,9 @@ export const editTool = (ctx: ToolContext) =>
         detail: createPatch(name, before, after, "", "", { context: 3 }),
         detailKind: "diff",
         subject: name,
+        // Lets the transcript keep this diff on the right card when the model batches
+        // several edits into one step and they are all in flight together.
+        callID: toolCallId,
       })
 
       record(ctx.sessionID, absolute)

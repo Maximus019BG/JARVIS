@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { LanguageModel } from "ai"
+import { wrapLanguageModel, type LanguageModel, type TranscriptionModel } from "ai"
 import type { Config, ModelConfig, ProviderConfig } from "../config/config.ts"
 import { dataDir } from "../config/paths.ts"
 import { catalogKey, modelInfo } from "./catalog.ts"
@@ -97,7 +97,11 @@ function pickFactory(mod: Record<string, unknown>, name: string | undefined, npm
 }
 
 /** AI SDK ProviderV2, or a bare callable provider from older packages. */
-type Provider = ((modelID: string) => LanguageModel) & { languageModel?: (modelID: string) => LanguageModel }
+type Provider = ((modelID: string) => LanguageModel) & {
+  languageModel?: (modelID: string) => LanguageModel
+  /** Only some providers speak audio; `resolveTranscription` is what says so out loud. */
+  transcription?: (modelID: string) => TranscriptionModel
+}
 
 const loaded = new Map<string, Promise<Provider>>()
 
@@ -146,6 +150,33 @@ export function parseModelID(id: string): { providerID: string; modelID: string 
   return { providerID: id.slice(0, slash), modelID: id.slice(slash + 1) }
 }
 
+/**
+ * Groq refuses the `reasoning_content` that `@ai-sdk/openai-compatible` puts back on an
+ * assistant message the same gateway produced a moment earlier — its own field, rejected on
+ * the way in — so step two of every multi-step turn 400s and nothing that needs a second
+ * tool call can ever finish. The reasoning is display-only on this path, so dropping it
+ * before it is sent costs nothing.
+ *
+ * Scoped to openai-compatible on purpose: Anthropic needs its thinking blocks handed back
+ * intact or a tool-use turn fails signature verification.
+ */
+function withoutReasoning(model: LanguageModel): LanguageModel {
+  if (typeof model === "string") return model
+  return wrapLanguageModel({
+    model,
+    middleware: {
+      transformParams: async ({ params }) => ({
+        ...params,
+        prompt: params.prompt.map((message) =>
+          message.role === "assistant"
+            ? { ...message, content: message.content.filter((part) => part.type !== "reasoning") }
+            : message,
+        ),
+      }),
+    },
+  })
+}
+
 export async function resolveModel(config: Config, id: string): Promise<ResolvedModel> {
   const { providerID, modelID } = parseModelID(id)
   const providerConfig = config.provider[providerID]
@@ -155,7 +186,8 @@ export async function resolveModel(config: Config, id: string): Promise<Resolved
   }
   if (!providerConfig.enabled) throw new ProviderError(`provider "${providerID}" is disabled`)
   const provider = await loadProvider(providerID, providerConfig)
-  const model = provider.languageModel ? provider.languageModel(modelID) : provider(modelID)
+  const created = provider.languageModel ? provider.languageModel(modelID) : provider(modelID)
+  const model = providerConfig.npm === "@ai-sdk/openai-compatible" ? withoutReasoning(created) : created
   const configured = providerConfig.models[modelID] ?? {}
   // Nothing left for the catalog to add, so don't go looking.
   const complete = configured.contextLimit !== undefined && configured.cost !== undefined
@@ -183,6 +215,28 @@ export function defaultModelID(config: Config): string {
   const first = listModels(config)[0]
   // Points at the flow rather than at the file: setting a provider up by hand still works, but
   // it is no longer the way anyone should be told to do it first.
-  if (!first) throw new ProviderError("no models configured — run `jarvis` and press alt+p, or `jarvis pair`")
+  if (!first) throw new ProviderError("no models configured — run `jarvis` and press ctrl+y, or `jarvis pair`")
   return first.id
+}
+
+/**
+ * The transcription model behind `"provider/model"`, for voice input.
+ *
+ * Separate from `resolveModel` because it is a different capability, not a different model:
+ * a provider that chats perfectly well may have no audio endpoint at all. Only
+ * `@ai-sdk/openai` and `@ai-sdk/gateway` expose one today, so the error here is the whole
+ * user experience of "your provider cannot do this" — it names the provider on purpose.
+ */
+export async function resolveTranscription(config: Config, id: string): Promise<TranscriptionModel> {
+  const { providerID, modelID } = parseModelID(id)
+  const providerConfig = config.provider[providerID]
+  if (!providerConfig) throw new ProviderError(`no provider "${providerID}" in the config`)
+  const provider = await loadProvider(providerID, providerConfig)
+  if (typeof provider.transcription !== "function") {
+    throw new ProviderError(
+      `${providerID} (${providerConfig.npm}) has no transcription model — set voice.model to an ` +
+        `openai provider, e.g. "openai/whisper-1" or "openai/gpt-4o-transcribe"`,
+    )
+  }
+  return provider.transcription(modelID)
 }

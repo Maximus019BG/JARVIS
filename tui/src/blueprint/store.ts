@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { Config } from "../config/config.ts"
 import { dataDir } from "../config/paths.ts"
-import { BlueprintError, parseDoc, serialize, type BlueprintDoc } from "./schema.ts"
+import { BlueprintError, emptyDoc, parseDoc, serialize, type BlueprintDoc } from "./schema.ts"
 
 const SUFFIX = ".blueprint.json"
 
@@ -14,24 +14,32 @@ const SUFFIX = ".blueprint.json"
  * cwd. So this is the whole path-traversal defence, and it is a whitelist rather than a
  * blacklist for that reason.
  */
+const VALID = /^[a-z0-9][a-z0-9-]{0,63}$/
+
 export function safeName(name: string): string {
   const trimmed = name.trim().replace(new RegExp(`${SUFFIX.replace(".", "\\.")}$`), "")
-  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(trimmed)) {
-    // Suggest the corrected name rather than only restating the rule. The usual failure is
-    // an underscore or a capital, and a caller told exactly what to send instead fixes it
-    // in one step instead of guessing at the rule.
-    const suggestion = trimmed
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 64)
-      .replace(/-+$/, "")
-    const hint = /^[a-z0-9][a-z0-9-]{0,63}$/.test(suggestion) ? ` — try "${suggestion}"` : ""
-    throw new BlueprintError(
-      `invalid blueprint name "${name}": use lowercase letters, digits and hyphens, starting with a letter or digit, up to 64 characters${hint}`,
-    )
+  if (VALID.test(trimmed)) return trimmed
+  // Correct the name rather than refuse it. There is exactly one right answer — the usual
+  // failure is an underscore or a capital — and a caller told to try again mostly tries a
+  // different wrong name instead. Idempotent, so a name that came back from here round-trips
+  // through `sync` and the Pi unchanged.
+  //
+  // Not for anything path-shaped, though. `../../etc/passwd` would normalize to a perfectly
+  // safe `etc-passwd`, and quietly drawing into that is worse than refusing: the caller is
+  // confused about what a blueprint name is, and this is the one place that shows up.
+  if (/[/\\]/.test(trimmed) || trimmed.includes("..")) {
+    throw new BlueprintError(`invalid blueprint name "${name}": a blueprint name is not a path`)
   }
-  return trimmed
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/, "")
+  if (VALID.test(normalized)) return normalized
+  throw new BlueprintError(
+    `invalid blueprint name "${name}": use lowercase letters, digits and hyphens, starting with a letter or digit, up to 64 characters`,
+  )
 }
 
 export function blueprintRoot(config: Config): string {
@@ -126,6 +134,17 @@ export function readDoc(root: string, name: string): BlueprintDoc {
     if (error instanceof BlueprintError) throw new BlueprintError(`${safeName(name)}: ${error.message}`)
     throw error
   }
+}
+
+/**
+ * Read, or hand back a fresh empty document. Every writing path wants this: making a caller
+ * `create` before it can draw is a two-call handshake, and a model that fumbles the first
+ * call is left with an edit that can never land. Reading paths keep `readDoc`, where "it is
+ * not there" is the honest answer.
+ */
+export function readOrCreate(root: string, name: string): BlueprintDoc {
+  const safe = safeName(name)
+  return exists(root, safe) ? readDoc(root, safe) : emptyDoc(safe)
 }
 
 export function writeDoc(root: string, name: string, doc: BlueprintDoc, message: string): string {

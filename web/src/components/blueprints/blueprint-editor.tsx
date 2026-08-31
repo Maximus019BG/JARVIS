@@ -30,7 +30,7 @@ import { BlueprintCanvas, entitiesWithin, type CanvasPointer, type CanvasView } 
 import { CheckPanel } from "./editor/check-panel";
 import { LayersPanel } from "./editor/layers-panel";
 import { PropertiesPanel } from "./editor/properties-panel";
-import { SymbolPalette, symbolOps, type SymbolPlacement } from "./editor/symbol-palette";
+import { SymbolPalette, symbolOp, type SymbolPlacement } from "./editor/symbol-palette";
 import { EditorToolbar, TOOLS, type Tool } from "./editor/toolbar";
 import { useEditorDoc } from "./editor/use-editor-doc";
 
@@ -72,7 +72,6 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
   const [arcPending, setArcPending] = React.useState<{ c: Pt; r: number; a0: number } | null>(null);
   const [textAt, setTextAt] = React.useState<Pt | null>(null);
   const [textDraft, setTextDraft] = React.useState("");
-  const placedCount = React.useRef(0);
 
   const name = nameOverride ?? base?.name ?? "";
   // A layer can be deleted out from under the choice, so it falls back rather than pointing
@@ -144,10 +143,9 @@ export function BlueprintEditor({ blueprintId, userId, workstationId }: Props) {
 
     if (tool === "symbol") {
       if (!placement) return toast.info("Pick a symbol from the panel first");
-      placedCount.current += 1;
-      const ops = symbolOps(placement, at, activeLayer, placedCount.current);
-      if (!ops) return toast.error(`No symbol called ${placement.name}`);
-      push(...ops);
+      // `push` reports what the engine says if the symbol name is wrong, so there is no
+      // second copy of that check here.
+      push(symbolOp(placement, at, activeLayer));
       return;
     }
 

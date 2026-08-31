@@ -1,6 +1,7 @@
 import type { Agent } from "../agent/agent-def.ts"
 import { listModels } from "../agent/provider.ts"
 import { listSessions } from "../agent/session.ts"
+import { blueprintRoot, listBlueprints } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
 import { describeGap, reachability, type Reach } from "../config/provider-status.ts"
 import { listThemes } from "../config/theme.ts"
@@ -8,7 +9,7 @@ import type { Command } from "../extend/command.ts"
 import type { Choice } from "./components/dialog.tsx"
 
 /** Everything the one list-picker component can be pointed at. */
-export type PickerKind = "model" | "agent" | "session" | "command" | "theme" | "file" | "provider"
+export type PickerKind = "model" | "agent" | "session" | "command" | "theme" | "file" | "provider" | "blueprint"
 
 export const PICKER_TITLES: Record<PickerKind, string> = {
   model: "Select model",
@@ -18,6 +19,7 @@ export const PICKER_TITLES: Record<PickerKind, string> = {
   theme: "Select theme",
   file: "Insert file path",
   provider: "Providers",
+  blueprint: "Open blueprint",
 }
 
 /** The row that opens the setup flow. A value no provider id can collide with. */
@@ -69,6 +71,24 @@ export function pickerChoices(kind: PickerKind, { config, cwd, agents, commands,
       return files.map((path) => ({ value: path, label: path }))
     case "provider":
       return providerChoices(config, cwd)
+    case "blueprint":
+      return blueprintChoices(config)
+  }
+}
+
+/**
+ * The blueprints in the store, newest-facing detail in the hint. A store that will not read
+ * degrades to an empty list rather than throwing out of a render.
+ */
+function blueprintChoices(config: Config): Choice[] {
+  try {
+    return listBlueprints(blueprintRoot(config)).map((item) => ({
+      value: item.name,
+      label: item.name,
+      hint: `${item.entities} entit${item.entities === 1 ? "y" : "ies"}${item.updated ? ` · ${item.updated}` : ""}`,
+    }))
+  } catch {
+    return []
   }
 }
 

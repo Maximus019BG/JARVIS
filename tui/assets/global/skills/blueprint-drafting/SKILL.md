@@ -145,8 +145,21 @@ architectural symbols:
 ]}
 ```
 
-It returns each symbol's **connection points already transformed**, so wiring a rotated
-part needs no trigonometry — draw to the coordinates it gives you.
+Each placement is remembered as a **part**, addressed by the reference in its `label` —
+everything before the `|`, so `"M1 | kW=7.5"` is addressed as `M1` — and its connection
+points as `REF.PORT` — 1-based, in the order the symbol documents. Wire between two of them
+with `blueprint_edit`:
+
+```json
+{"op": "connect", "from": "M1.1", "to": "Q1.2", "layer": "power", "label": "L1 | mm2=2.5, A=16"}
+```
+
+The route is worked out for you: orthogonal, as few bends as possible, around the parts it
+is not connecting. **Do not compute wire coordinates yourself** — even for a rotated part,
+`connect` needs no trigonometry, and a hand-drawn wire is not recorded as a connection.
+`{"op": "arrange"}` snaps parts to the 2.54 mm schematic grid and pushes apart any that
+overlap, so approximate placement is enough. Building symbols are left where they are: a
+floor plan is drawn at real size.
 
 ## Constructions
 

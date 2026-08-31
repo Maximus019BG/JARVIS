@@ -67,6 +67,8 @@ function board(options: {
       ...(options.extra ?? []),
     ],
     ports: [...a.pins, ...b.pins],
+    // Same order as `ports`: left column top to bottom, then right.
+    pins: [...left, ...right],
   }
 }
 
@@ -92,6 +94,9 @@ function module(describe: string, name: string, pins: string[], options: { w?: n
     standard: options.standard,
     entities: [box(w, h, [-w / 2, -h / 2], 1.5), text(name, [-name.length * 0.8, -h / 2 + 3], 2.4), ...(options.body ?? []), ...marks],
     ports,
+    // The labels were already the pin names — they were being drawn as glyphs and then
+    // dropped, which is why nothing downstream could tell a VCC pin from a data line.
+    pins,
   }
 }
 

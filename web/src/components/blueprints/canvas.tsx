@@ -385,7 +385,7 @@ export function BlueprintCanvas({
     if (preview) {
       context.save();
       context.globalAlpha = 0.85;
-      drawEntity({ ...preview, id: "__preview", layer: preview.layer ?? doc.layers[0]!.id }, undefined, true);
+      drawEntity({ ...preview, id: "__preview", layer: preview.layer ?? doc.layers[0]?.id ?? "l0" }, undefined, true);
       context.restore();
     }
 
@@ -426,7 +426,9 @@ export function BlueprintCanvas({
   /** Screen event -> document point plus what is under it, which is all a tool ever needs. */
   const readPointer = useCallback(
     (event: React.PointerEvent | React.MouseEvent): CanvasPointer => {
-      const rect = canvasRef.current!.getBoundingClientRect();
+      // The rect comes from the event's own element, not the ref: every caller is a handler
+      // bound to this canvas, so `currentTarget` is always the canvas and always non-null.
+      const rect = event.currentTarget.getBoundingClientRect();
       const at: Pt = [
         (event.clientX - rect.left - view.x) / view.scale,
         (event.clientY - rect.top - view.y) / view.scale,

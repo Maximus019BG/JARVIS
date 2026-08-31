@@ -4,6 +4,7 @@ import type { ToolContext } from "../tools/context.ts"
 import { checkDoc, formatReport } from "./check.ts"
 import { applyOps, OpSchema } from "./ops.ts"
 import { blueprintSymbolTool } from "./symbol-tool.ts"
+import { diffDocs, summarise } from "./diff.ts"
 import { autoView, renderBraille } from "./render-braille.ts"
 import { toSvg } from "./render-svg.ts"
 import { DEFAULT_VIEW_BOX, emptyDoc, serialize, UNITS, type BlueprintDoc } from "./schema.ts"
@@ -17,6 +18,7 @@ import {
   history,
   listBlueprints,
   readDoc,
+  readOrCreate,
   safeName,
   writeDoc,
 } from "./store.ts"
@@ -127,9 +129,21 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
   tool({
     description: [
       "Draw on a blueprint by applying a list of operations, then commit them to git.",
-      'The blueprint must exist first — call `blueprint` action:"create" before the first edit.',
+      'A blueprint that does not exist yet is created by the first edit; `blueprint` action:"create" is only needed to set non-default units or sheet size.',
       "Coordinates are in the drawing's units with Y pointing DOWN, like SVG.",
       "Entity ids are assigned automatically on `add` — read them back from the preview or `blueprint` action:\"info\".",
+      // Stated as the method rather than as an option, because a model given the choice
+      // draws wires by hand — and now genuinely does not need to, since wire geometry,
+      // junction dots and label positions are all derived after every edit.
+      'For anything made of standard parts use op:"place" to drop a symbol roughly where it belongs with a `label`,',
+      'then op:"connect" with from:"R1.2" and to:"U1.5" to name the two ports you want joined.',
+      "Do NOT work out wire coordinates, junction dots or label positions yourself — all three are derived for you,",
+      "orthogonally, around the other parts, to the named pin, and they are re-derived whenever a part moves.",
+      "Placing parts also wires the connections that are unambiguous on their own — a pin called 3V3 or GND beside a",
+      "supply, a port dropped onto an existing wire, two lone components that are each other's nearest neighbour —",
+      "and the reply says which; delete a wire you did not want.",
+      'op:"arrange" snaps parts to the grid and separates any that overlap, so rough placement is enough.',
+      'The `nets` list in action:"json" is the connectivity: which ports each wire actually joins.',
       "Returns a braille rendering of the result, so check it and fix what looks wrong.",
       "Batch a whole figure into one call rather than one op per call.",
     ].join(" "),
@@ -141,10 +155,10 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
     }),
     execute: async ({ name, ops, message, view: region }) => {
       const safe = safeName(name)
-      const doc = readDoc(root, safe)
+      const doc = readOrCreate(root, safe)
       // Apply first: an op set that will not apply should never reach the permission
       // prompt, let alone the disk.
-      const { doc: next, summary } = applyOps(doc, ops)
+      const { doc: next, summary, warnings } = applyOps(doc, ops)
 
       await ctx.gate.check({
         tool: "blueprint_edit",
@@ -154,7 +168,17 @@ export const blueprintEditTool = (ctx: ToolContext, root: string) =>
       })
 
       const sha = writeDoc(root, safe, next, message ?? summary)
-      return `${safe} ${sha} — ${summary}\n\n${preview(next, { view: region })}`
+      // What the edit actually did to the drawing, which the re-render below does not say:
+      // the same picture comes back whether one entity moved or twenty were replaced.
+      const changed = diffDocs(doc, next)
+      const touched = changed.entities
+        .filter((change) => change.kind === "added" || change.kind === "removed")
+        .map((change) => `${change.kind === "added" ? "+" : "-"}${change.id}`)
+      // Warnings first: a wire that had to cross a part is the one thing in the result the
+      // model must act on, and the preview below is 22 rows tall.
+      const notes = warnings.map((warning) => `warning: ${warning}`).join("\n")
+      const change = `${summarise(changed)}${touched.length > 0 ? ` (${touched.join(" ")})` : ""}`
+      return `${safe} ${sha} — ${summary}\n${change}\n${notes ? `${notes}\n` : ""}\n${preview(next, { view: region })}`
     },
   })
 
