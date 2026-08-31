@@ -37,7 +37,7 @@ export default function IntegrationsSection() {
 
   return (
     <section ref={sectionRef} className="dark relative overflow-hidden bg-background py-32 text-foreground">
-      <div className="absolute inset-0 bg-gradient-to-b from-[var(--color-bp-accent-muted)] via-transparent to-[var(--color-bp-accent-muted)]" />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#424241] via-transparent]" />
 
       <div className="relative z-10 container mx-auto px-8 md:px-16 lg:px-24 max-w-7xl">
         <div
@@ -52,7 +52,7 @@ export default function IntegrationsSection() {
             <span
               className="bg-clip-text text-transparent"
               style={{
-                backgroundImage: "linear-gradient(to right, var(--bp-accent), var(--bp-accent-bright))",
+                backgroundImage: "linear-gradient(to right, #ffffff, #9d9999)",
               }}
             >
               Integrations
@@ -67,7 +67,7 @@ export default function IntegrationsSection() {
           {integrations.map((integration, index) => (
             <div
               key={index}
-              className="flex flex-col items-center gap-4 p-6 rounded-xl border border-white/5 bg-white/[0.02] hover:border-[var(--color-bp-accent)] hover:bg-white/[0.04] transition-all duration-300 group"
+              className="flex flex-col items-center gap-4 p-6 rounded-xl border border-white/5 bg-white/[0.02] hover:border-[#ffffff] hover:bg-white/[0.04] transition-all duration-300 group"
               style={{
                 opacity: isVisible ? 1 : 0,
                 transform: isVisible ? "scale(1)" : "scale(0.9)",

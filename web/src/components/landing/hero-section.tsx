@@ -79,7 +79,7 @@ export default function HeroSection() {
       <div
         className="absolute top-1/2 left-[20%] -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[120px] opacity-15 transition-all duration-800"
         style={{
-          background: "var(--bp-accent)",
+          background: "#ffffffc2",
           transform: mounted ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.8)",
           opacity: mounted ? 0.15 : 0,
         }}
@@ -113,7 +113,7 @@ export default function HeroSection() {
             <span
               className="bg-clip-text text-transparent inline-block"
               style={{
-                backgroundImage: "linear-gradient(to right, var(--bp-accent-bright), var(--bp-accent)",
+                backgroundImage: "linear-gradient(to right, #ffffff, #9d9999)",
               }}
             >
               {displayedText}

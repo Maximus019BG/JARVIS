@@ -66,7 +66,7 @@ export default function UseCasesSection() {
               className="bg-clip-text text-transparent"
               style={{
                 backgroundImage:
-                  "linear-gradient(to right, var(--bp-accent), var(--bp-accent-bright))",
+                  "linear-gradient(to right, #ffffff, #9d9999)",
               }}
             >
               See It
@@ -93,7 +93,7 @@ export default function UseCasesSection() {
                 onClick={() => setActiveIndex(index)}
                 className={`cursor-pointer rounded-xl border p-6 transition-all duration-300 ${
                   activeIndex === index
-                    ? "border-[var(--bp-accent)] bg-white/[0.04]"
+                    ? "border-[#ffffff] bg-white/[0.04]"
                     : "border-white/5 bg-white/[0.02] hover:border-white/10"
                 }`}
               >
