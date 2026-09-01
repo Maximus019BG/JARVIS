@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { loadCommands } from "./extend/command.ts"
+import { pairArgs } from "./cli/pair-flow.ts"
 import { ConfigError, loadConfig, configFiles } from "./config/config.ts"
 import { ProviderError, defaultModelID, listModels } from "./agent/provider.ts"
 import { withHostedFallback } from "./agent/hosted.ts"
@@ -17,7 +18,8 @@ usage:
   jarvis init                  scaffold a .jarvis directory in this project
   jarvis models                list configured models
   jarvis config                show config files, agents, tools, skills and plugins
-  jarvis pair [url]            pair this device with the jarvis cloud
+  jarvis pair [email] [url]    pair this device with the jarvis cloud
+  jarvis unpair                forget this device's pairing (add -y to confirm)
   jarvis device                show this device's pairing
   jarvis pi [blueprint]        draw with your hands onto a projector
   jarvis pi calibrate          align the camera to the projected sheet
@@ -139,7 +141,12 @@ async function main() {
     case "pair": {
       const { pair } = await import("./cli/pair.ts")
       // Name defaults to the hostname; it is renameable on the web approval screen.
-      await pair({ baseUrl: args[0] })
+      await pair({ configCloud: config.cloud, ...pairArgs(args) })
+      return
+    }
+    case "unpair": {
+      const { unpair } = await import("./cli/pair.ts")
+      unpair({ yes: flags.yes })
       return
     }
     case "device": {

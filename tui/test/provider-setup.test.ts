@@ -24,8 +24,12 @@ import {
 const ctx: SetupCtx = { existing: [], paired: true }
 
 /** Walks the flow with canned answers, returning every step it stopped at. */
-function walk(answers: (string | string[])[], context: SetupCtx = ctx): { steps: string[]; setup: Setup } {
-  let setup = beginSetup(context)
+function walk(
+  answers: (string | string[])[],
+  context: SetupCtx = ctx,
+  options?: { voice?: boolean },
+): { steps: string[]; setup: Setup } {
+  let setup = beginSetup(context, options)
   const steps = [setup.step as string]
   for (const answer of answers) {
     setup = submitStep(setup, answer, context)
@@ -234,9 +238,18 @@ describe("draftEntry and planWrites", () => {
 })
 
 describe("presets and model choices", () => {
-  test("an unpaired device is not offered the hosted provider", () => {
-    expect(presetChoices({ paired: false }).map((choice) => choice.value)).not.toContain("jarvis")
+  test("the hosted provider is offered whether or not the device is paired", () => {
+    // It used to be hidden when unpaired, which made the only no-API-key option invisible to
+    // exactly the people who had not got a key. Choosing it now opens pairing and comes back.
+    expect(presetChoices({ paired: false }).map((choice) => choice.value)).toContain("jarvis")
     expect(presetChoices({ paired: true }).map((choice) => choice.value)).toContain("jarvis")
+  })
+
+  test("an unpaired device is told that picking the hosted provider will pair it first", () => {
+    const hint = (paired: boolean) =>
+      presetChoices({ paired }).find((choice) => choice.value === "jarvis")?.hint ?? ""
+    expect(hint(false)).toContain("pairs this device first")
+    expect(hint(true)).not.toContain("pairs this device first")
   })
 
   test("picking the same preset twice suggests a free name rather than refusing", () => {
@@ -275,5 +288,41 @@ describe("presets and model choices", () => {
     const rows = modelChoices(draft, { ...ctx, discovered: [{ value: "claude-3-haiku", label: "claude-3-haiku" }] })
     expect(rows.map((row) => row.value)).toContain("claude-sonnet-4-5")
     expect(rows.map((row) => row.value)).toContain("claude-3-haiku")
+  })
+})
+
+describe("voice setup", () => {
+  test("the flow is two questions: which provider, and the key", () => {
+    const { steps } = walk(["groq-voice", "gsk-secret"], ctx, { voice: true })
+    // No id, no model list, and no check step — a whisper model cannot answer the round-trip
+    // the check sends, and the preset already names the only model there is.
+    expect(steps).toEqual(["preset", "key", "done"])
+  })
+
+  test("it writes voice.model and leaves the chat default alone", () => {
+    const { setup } = walk(["groq-voice", "gsk-secret"], ctx, { voice: true })
+    const writes = planWrites(setup.draft, { setDefaultModel: true })
+    expect(writes).toEqual([
+      { kind: "secret", name: "groq-voice-api-key", value: "gsk-secret" },
+      { kind: "config", path: ["provider", "groq-voice"], value: draftEntry(setup.draft).entry },
+      { kind: "config", path: ["voice", "model"], value: "groq-voice/whisper-large-v3-turbo" },
+    ])
+    expect(writes.some((write) => write.kind === "config" && write.path[0] === "model")).toBe(false)
+  })
+
+  test("it goes through the one package that can transcribe, and hides the key", () => {
+    // @ai-sdk/openai-compatible exposes no transcription model, so the Groq chat preset's
+    // package would resolve to a provider that cannot do this at all.
+    const { entry } = draftEntry(walk(["groq-voice", "gsk-secret"], ctx, { voice: true }).setup.draft)
+    expect(entry.npm).toBe("@ai-sdk/openai")
+    expect(entry.options.baseURL).toBe("https://api.groq.com/openai/v1")
+    expect(entry.options.apiKey).toBe("{secret:groq-voice-api-key}")
+    expect(JSON.stringify(entry)).not.toContain("gsk-secret")
+    expect(checkEntry(entry).ok).toBe(true)
+  })
+
+  test("only the transcription providers are offered", () => {
+    const spec = stepSpec(beginSetup(ctx, { voice: true }), ctx)
+    expect(spec.choices?.map((choice) => choice.value)).toEqual(["groq-voice", "openai-voice"])
   })
 })

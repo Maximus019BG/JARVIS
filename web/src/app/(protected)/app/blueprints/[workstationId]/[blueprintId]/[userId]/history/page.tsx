@@ -22,8 +22,8 @@ export default async function BlueprintHistoryPage({ params }: Props) {
   const { workstationId, blueprintId, userId } = await params;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="px-4 pt-4">
+    <div className="flex h-[calc(100svh_-_var(--header-height))] overflow-hidden flex-col">
+      <div className="shrink-0 px-4 pt-4">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>

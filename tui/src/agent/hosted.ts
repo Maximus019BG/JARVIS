@@ -83,7 +83,7 @@ export function hostedGuidance(config: Config): string | undefined {
   return [
     "No model yet.",
     "",
+    "  /pair       link this device for a hosted model with no key at all",
     "  /provider   set one up here — a key is all it takes",
-    "  jarvis pair link this device for a hosted model with no key at all",
   ].join("\n")
 }

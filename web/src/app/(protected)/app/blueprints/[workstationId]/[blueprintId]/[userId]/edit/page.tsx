@@ -13,7 +13,7 @@ export default async function BlueprintEditPage({ params }: Props) {
   const { workstationId, blueprintId, userId } = await params;
 
   return (
-    <div className="h-full">
+    <div className="h-[calc(100svh_-_var(--header-height))] overflow-hidden">
       <BlueprintEditor
         blueprintId={blueprintId}
         userId={userId}

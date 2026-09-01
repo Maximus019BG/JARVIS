@@ -337,7 +337,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     if (!failedGeneration) {
-      if (text.startsWith(GROQ_REFUSAL_SIGNATURE)) {
+      // Report the outcome, not the provider's wording. Matching on GROQ_REFUSAL_SIGNATURE
+      // alone let every other phrasing — and an empty response — fall through both branches
+      // and end the turn with nothing said and nothing appended to the session, which reads
+      // as jarvis having ignored the prompt. Skipped when the stream already emitted a real
+      // error: that one names the actual cause, and this one would only bury it.
+      if (!reported && !sawToolCall && !text.trim()) {
+        emit({
+          type: "error",
+          message:
+            "The model returned nothing — no text and no tool call, usually because it could not produce a valid call for the tools available. Try a stronger model, or name the tool you want explicitly (e.g. \"render the blueprint with blueprint_view\").",
+        })
+      } else if (text.startsWith(GROQ_REFUSAL_SIGNATURE)) {
         emit({
           type: "error",
           message:

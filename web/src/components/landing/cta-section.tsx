@@ -51,7 +51,7 @@ export default function CTASection() {
             <span
               className="bg-clip-text text-transparent"
               style={{
-                backgroundImage: "linear-gradient(to right, var(--bp-accent), var(--bp-accent-bright))",
+                backgroundImage: "linear-gradient(to right, #ffffff, #9d9999)",
               }}
             >
               Your Workspace?
@@ -66,7 +66,7 @@ export default function CTASection() {
               size="lg"
               className="text-black font-semibold px-8 hover:opacity-90 hover:scale-105 transition-all"
               style={{
-                background: "var(--bp-accent)",
+                background: "",
               }}
             >
               Get Started

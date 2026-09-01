@@ -1,4 +1,5 @@
 import { blueprintCommand } from "./blueprint-command.ts"
+import { blueprintRoot, listBlueprints } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
 import { panelBody, type PanelContent } from "./components/panel.tsx"
@@ -32,6 +33,9 @@ export const KEY_HELP: [keyof Keymap, string][] = [
   ["scrollHalfUp", "scroll up"],
   ["scrollHalfDown", "scroll down"],
   ["scrollBottom", "jump to newest"],
+  ["toggleReasoning", "expand thinking"],
+  ["blueprintView", "blueprint pane / fullscreen"],
+  ["voice", "talk instead of typing"],
 ]
 
 export function help(keymap: Keymap): string {
@@ -79,6 +83,8 @@ export type CommandDeps = {
   openPanel: (content: PanelContent) => void
   /** Opens the interactive provider setup flow, optionally starting from a known preset. */
   openSetup: (presetID?: string) => void
+  /** Opens the pairing flow, or this device's pairing when it already has one. */
+  openPair: () => void
   /**
    * Re-reads the config after a command wrote to it. Returns false if the result did not parse,
    * in which case the running session keeps the config it had.
@@ -95,7 +101,8 @@ export type CommandDeps = {
  * command table is readable in one place.
  */
 export function runCommand(command: Command, args: string, deps: CommandDeps): void {
-  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, openSetup, reload, quit } = deps
+  const { turn, keymap, mcp, extensions, config, cwd, width, openPicker, openPanel, openSetup, openPair, reload, quit } =
+    deps
 
   if (command.kind === "prompt") {
     turn.send(expand(command, args), { agent: command.agent, model: command.model })
@@ -144,7 +151,12 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       })
       return content ? openPanel(content) : undefined
     }
+    case "pair":
+      return openPair()
     case "blueprint":
+      // Bare `/blueprint` picks one rather than printing names to retype. An empty store
+      // still gets the panel — the picker's "no matches" would lose the how-to-make-one hint.
+      if (!args.trim() && listBlueprints(blueprintRoot(config)).length > 0) return openPicker("blueprint")
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
     case "stats":
       return openPanel(statsCommand(args, { width: panelBody(width) }))

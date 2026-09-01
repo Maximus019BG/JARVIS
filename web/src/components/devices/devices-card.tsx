@@ -1,8 +1,8 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { Copy, MoreHorizontal, ShieldOff, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -17,7 +17,9 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "~/components/u
 import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { devicesApi, type DeviceRow } from "~/lib/api/blueprint-versions";
+import { copyToClipboard } from "~/lib/copy";
 import { typeToConfirm } from "~/lib/type-to-confirm-store";
+import { AddDevicePanel } from "./add-device-panel";
 import { openDeviceAccessSheet } from "./device-access-sheet";
 import { LinkDeviceDialog, type LinkableBlueprint } from "./link-device-dialog";
 
@@ -25,6 +27,21 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   active: "default",
   revoked: "destructive",
 };
+
+/**
+ * Whether a device is actually working, not merely approved.
+ *
+ * `jarvis work` polls every three seconds while busy and every fifteen once idle, so a gap
+ * under a minute means something is running on the other end. Without this the table
+ * answers "was this ever paired", which is not the question anyone opens it with.
+ */
+function liveness(device: DeviceRow): { label: string; live: boolean } {
+  if (device.status !== "active") return { label: "—", live: false };
+  if (!device.lastSeenAt) return { label: "never", live: false };
+  const seen = new Date(device.lastSeenAt);
+  const live = Date.now() - seen.getTime() < 60_000;
+  return { label: live ? "polling now" : formatDistanceToNow(seen, { addSuffix: true }), live };
+}
 
 function accessLabel(device: DeviceRow): string {
   if (device.access.scope === "all") return `All blueprints · ${device.access.mode}`;
@@ -42,20 +59,21 @@ export function DevicesCard({
   blueprints: LinkableBlueprint[];
   defaultCode?: string;
 }) {
-  const [devices, setDevices] = useState<DeviceRow[] | null>(null);
+  const client = useQueryClient();
+  const { data: devices } = useQuery({
+    queryKey: ["devices", "list", workstationId],
+    queryFn: () => devicesApi.list(workstationId),
+    /**
+     * Poll only while something is still arriving. A device is approved before it holds a
+     * token — it mints one on its next check — so `paired: false` is a transient state that
+     * used to sit there reading as broken until someone reloaded the page.
+     */
+    refetchInterval: (query) => (query.state.data?.some((device) => !device.paired) ? 3000 : false),
+  });
 
-  const load = useCallback(async () => {
-    try {
-      setDevices(await devicesApi.list(workstationId));
-    } catch {
-      toast.error("Could not load devices");
-      setDevices([]);
-    }
-  }, [workstationId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = () => {
+    void client.invalidateQueries({ queryKey: ["devices"] });
+  };
 
   const revoke = (device: DeviceRow) => {
     void typeToConfirm.show({
@@ -70,7 +88,7 @@ export function DevicesCard({
         try {
           await devicesApi.revoke(device.id);
           toast.success(`${device.name} revoked`);
-          await load();
+          load();
           typeToConfirm.close(true);
         } catch {
           toast.error("Could not revoke this device");
@@ -98,8 +116,10 @@ export function DevicesCard({
         </CardAction>
       </CardHeader>
 
-      <div className="px-6 pb-6">
-        {devices === null ? (
+      <div className="space-y-4 px-6 pb-6">
+        <AddDevicePanel />
+
+        {devices === undefined ? (
           <div className="space-y-2">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
@@ -109,7 +129,8 @@ export function DevicesCard({
             <EmptyHeader>
               <EmptyTitle>No devices yet</EmptyTitle>
               <EmptyDescription>
-                Run <code className="font-mono text-xs">jarvis pair</code> on a machine, then enter the code it shows.
+                Start JARVIS on a machine and run <code className="font-mono text-xs">/pair</code>. It shows up
+                here for approval, no code to type.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -145,10 +166,7 @@ export function DevicesCard({
                         <button
                           type="button"
                           className="hover:text-foreground"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(device.id);
-                            toast.success("Device id copied");
-                          }}
+                          onClick={() => void copyToClipboard(device.id, "Device id")}
                         >
                           <Copy className="size-3" />
                         </button>
@@ -159,10 +177,16 @@ export function DevicesCard({
                       <code className="font-mono text-xs">{device.tokenPrefix ?? "—"}</code>
                     </TableCell>
                     <TableCell className="text-sm">{accessLabel(device)}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {device.lastSeenAt
-                        ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true })
-                        : "never"}
+                    <TableCell className="text-sm">
+                      {(() => {
+                        const { label, live } = liveness(device);
+                        return (
+                          <span className={live ? "flex items-center gap-1.5" : "text-muted-foreground"}>
+                            {live && <span className="bg-primary size-1.5 animate-pulse rounded-full" />}
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>

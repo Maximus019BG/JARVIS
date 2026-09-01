@@ -9,7 +9,8 @@ import { device } from "~/server/db/schemas/device";
 import { deviceGrant } from "~/server/db/schemas/device_grant";
 import { deviceLink } from "~/server/db/schemas/device_link";
 import { workstation } from "~/server/db/schemas/workstation";
-import { normaliseUserCode } from "~/server/device-auth";
+import { mayActOnLink, normaliseUserCode } from "~/server/device-auth";
+import { defaultScopesForMode, isMcpScope } from "~/server/mcp/scopes";
 
 const bodySchema = z.object({
   userCode: z.string().min(8).max(16),
@@ -20,6 +21,8 @@ const bodySchema = z.object({
   blueprintIds: z.array(z.string()).default([]),
   allBlueprints: z.boolean().default(false),
   mode: z.enum(["read", "write"]).default("write"),
+  /** MCP scopes. Omitted means "derive them from `mode`" — see `defaultScopesForMode`. */
+  scopes: z.array(z.string()).optional(),
 });
 
 /** Lookup for the approval screen: what is asking, so the user can recognise it. */
@@ -36,6 +39,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "expired_or_unknown" }, { status: 404 });
   }
   if (link.approvedDeviceId) return NextResponse.json({ error: "already_approved" }, { status: 409 });
+  // Addressed to somebody else: indistinguishable from "no such code", so holding the code
+  // does not reveal that a request exists for another account.
+  if (!mayActOnLink(link, session.user.id)) {
+    return NextResponse.json({ error: "expired_or_unknown" }, { status: 404 });
+  }
 
   return NextResponse.json({
     request: {
@@ -70,6 +78,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "expired_or_unknown" }, { status: 404 });
   }
   if (link.approvedDeviceId) return NextResponse.json({ error: "already_approved" }, { status: 409 });
+  /**
+   * A request that named an email may only be redeemed by that account.
+   *
+   * The code alone used to be the whole authority, so a code read over someone's shoulder
+   * could be approved into an unrelated workstation. Now that requests can be addressed,
+   * addressing one narrows it — and an unaddressed request behaves exactly as before.
+   */
+  if (!mayActOnLink(link, session.user.id)) {
+    return NextResponse.json({ error: "expired_or_unknown" }, { status: 404 });
+  }
 
   // Every named blueprint must live in the workstation being granted. Otherwise the
   // approval screen becomes a way to hand a device access to somebody else's drawing.
@@ -98,6 +116,9 @@ export async function POST(request: Request) {
     fingerprint: link.fingerprint,
     platform: link.platform,
     status: "active",
+    // Without this a freshly paired device holds no MCP scopes at all and silently cannot
+    // use the MCP server until somebody edits it by hand.
+    scopes: body.scopes?.filter(isMcpScope) ?? defaultScopesForMode(body.mode),
     approvedBy: session.user.id,
     approvedAt: now,
     createdAt: now,

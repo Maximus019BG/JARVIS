@@ -94,37 +94,25 @@ export const blueprintsApi = {
     return data as BlueprintsResponse;
   },
 
-  // Get a single blueprint by ID
-  getBlueprintById: async (id: string): Promise<Blueprint> => {
-    const response = await api.get(`/blueprints/${id}`);
+  // Create a new blueprint. Returns the id to route the user straight into the editor.
+  createBlueprint: async (input: {
+    workstationId: string;
+    name: string;
+    units: "mm" | "cm" | "in" | "px";
+    viewBox: [number, number, number, number];
+  }): Promise<{ id: string; name: string; createdBy: string }> => {
+    const response = await api.post("/blueprint/create", input);
     return response.data;
   },
 
-  // Create a new blueprint
-  createBlueprint: async (
-    blueprint: Partial<Blueprint>,
-  ): Promise<Blueprint> => {
-    const response = await api.post("/blueprints", blueprint);
-    return response.data;
-  },
-
-  // Update an existing blueprint
-  updateBlueprint: async (
-    id: string,
-    blueprint: Partial<Blueprint>,
-  ): Promise<Blueprint> => {
-    const response = await api.put(`/blueprints/${id}`, blueprint);
-    return response.data;
-  },
-
-  // Delete a blueprint
+  // Delete a blueprint. Versions and sync logs go with it by cascade.
   deleteBlueprint: async (id: string): Promise<void> => {
-    await api.delete(`/blueprints/${id}`);
+    await api.delete(`/blueprint/${id}`);
   },
 
-  // Clone a blueprint
-  cloneBlueprint: async (id: string, name?: string): Promise<Blueprint> => {
-    const response = await api.post(`/blueprints/${id}/clone`, { name });
+  // Clone a blueprint. The copy starts its own history at v1.
+  cloneBlueprint: async (id: string, name?: string): Promise<{ id: string; name: string }> => {
+    const response = await api.post(`/blueprint/${id}/clone`, name ? { name } : {});
     return response.data;
   },
 

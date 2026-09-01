@@ -3,7 +3,7 @@ import type { Write } from "../config/provider-plan.ts"
 import { envName } from "../config/provider-status.ts"
 import { secretName, secretRef } from "../config/secrets.ts"
 import type { Choice } from "./components/dialog.tsx"
-import { findPreset, presetChoices, type Preset } from "./provider-presets.ts"
+import { findPreset, presetChoices, voicePresetChoices, type Preset } from "./provider-presets.ts"
 
 /**
  * The provider setup flow, as a reducer over a draft. Deliberately free of React and of I/O:
@@ -38,6 +38,12 @@ export type Draft = {
   envName: string
   models: string[]
   catalogKeys: readonly string[]
+  /**
+   * Setting up transcription rather than chat. The same flow with three questions dropped: the
+   * preset already names the only model that matters, and the check step sends a text
+   * generation that a whisper model cannot answer.
+   */
+  voice: boolean
 }
 
 export type Setup = {
@@ -66,10 +72,11 @@ const EMPTY_DRAFT: Draft = {
   envName: "",
   models: [],
   catalogKeys: [],
+  voice: false,
 }
 
-export function beginSetup(_ctx: SetupCtx): Setup {
-  return { draft: { ...EMPTY_DRAFT }, step: "preset", history: [] }
+export function beginSetup(_ctx: SetupCtx, { voice = false }: { voice?: boolean } = {}): Setup {
+  return { draft: { ...EMPTY_DRAFT, voice }, step: "preset", history: [] }
 }
 
 /** The draft a chosen preset starts from. Everything a preset knows, nothing it has to ask. */
@@ -101,6 +108,9 @@ const ORDER: StepKind[] = ["preset", "id", "npm", "baseURL", "keyMode", "key", "
 /** Whether a step has anything to ask, given what the preset already decided. */
 function asks(step: StepKind, draft: Draft): boolean {
   const preset = findPreset(draft.presetID)
+  // Voice asks two questions: which provider, and the key. The name is the preset's, the model
+  // is the preset's only one, and the check step cannot check a transcription model.
+  if (draft.voice && (step === "id" || step === "models" || step === "test")) return false
   switch (step) {
     case "npm":
       return preset?.askNpm ?? true
@@ -195,7 +205,9 @@ export function stepSpec(setup: Setup, ctx: SetupCtx): StepSpec {
 
   switch (step) {
     case "preset":
-      return { ...base, choices: presetChoices({ paired: ctx.paired }) }
+      return draft.voice
+        ? { ...base, prompt: "Which provider should transcribe?", choices: voicePresetChoices() }
+        : { ...base, choices: presetChoices({ paired: ctx.paired }) }
     case "keyMode":
       return { ...base, choices: KEY_MODE_CHOICES }
     case "models":
@@ -381,7 +393,11 @@ export function planWrites(draft: Draft, { setDefaultModel }: { setDefaultModel:
   const writes: Write[] = []
   if (draft.keyMode === "store") writes.push({ kind: "secret", name: secretName(id), value: draft.key })
   writes.push({ kind: "config", path: ["provider", id], value: entry })
-  if (setDefaultModel && draft.models[0]) {
+  // A transcription provider is never the chat default: it points `voice.model` at itself and
+  // leaves whatever model the reader was already talking to alone.
+  if (draft.voice && draft.models[0]) {
+    writes.push({ kind: "config", path: ["voice", "model"], value: `${id}/${draft.models[0]}` })
+  } else if (setDefaultModel && draft.models[0]) {
     writes.push({ kind: "config", path: ["model"], value: `${id}/${draft.models[0]}` })
   }
   return writes

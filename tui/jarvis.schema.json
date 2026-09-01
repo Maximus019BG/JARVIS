@@ -267,6 +267,9 @@
         "type": "string"
       }
     },
+    "cloud": {
+      "type": "string"
+    },
     "theme": {
       "default": "jarvis",
       "type": "string"
@@ -463,6 +466,17 @@
               }
             }
           }
+        }
+      }
+    },
+    "voice": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "recorder": {
+          "type": "string"
         }
       }
     },

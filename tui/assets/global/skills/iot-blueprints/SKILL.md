@@ -32,14 +32,22 @@ diagrams end up with wires that nearly meet a pin.
 1. `blueprint` `action: "create"`. A4 landscape suits most wiring diagrams; use a bigger
    `viewBox` for a board-level layout at real size.
 2. `blueprint_symbol` `action: "list"` `domain: "iot"` with a query to find parts.
-3. `blueprint_symbol` `action: "place"` — the whole diagram in one call. The reply gives
-   each part's **ports already transformed**, in the order its pin labels are drawn.
-4. `blueprint_edit` to wire between those coordinates. `junction-dot` wherever wires meet.
+3. `blueprint_symbol` `action: "place"` — the whole diagram in one call. Give every part a
+   `label`; put it roughly where it belongs and it is snapped to the grid for you. The reply
+   names each part and how many ports it has, in the order its pin labels are drawn.
+   A label may carry its annotation — `"U1 | mA=240, V=3.3"` — and it is still addressed as
+   `U1`: the reference is whatever comes before the bar, so annotating costs nothing.
+4. `blueprint_edit` with `op: "connect"` to wire them: `{"op": "connect", "from": "U1.3",
+   "to": "R1.1", "layer": "signals"}`. The route is found for you, around the other parts,
+   and junction dots are placed where wires meet. **Never work out a wire coordinate
+   yourself** — a port is named `REF.PORT`, 1-based, and that is the only handle you need.
+   `op: "arrange"` re-tidies everything if a placement turns out cramped.
 5. `engineering_calc` for the power budget, pull-ups, regulator dissipation, battery life.
 6. Annotate, then `blueprint_check` `domain: "iot"`.
 
-Board ports are reported **left column top-to-bottom, then right column top-to-bottom**,
-matching the pin labels drawn on the symbol. Port 1 of an `esp32-devkit` is `3V3`.
+Board ports are numbered **left column top-to-bottom, then right column top-to-bottom**,
+matching the pin labels drawn on the symbol. Port 1 of an `esp32-devkit` is `3V3`, so
+`"from": "U1.1"` is its 3V3 pin.
 
 ## Layers
 

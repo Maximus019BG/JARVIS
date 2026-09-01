@@ -31,24 +31,61 @@ export function Modal({ children }: { children: ReactNode }) {
   )
 }
 
+/** The `Other…` entry's value. A control character, so no real choice can collide with it. */
+const OTHER = "\u0000other"
+
 /**
- * The one list picker, reused for models, agents, sessions and commands. Typing
- * filters; enter picks; escape cancels. Presented as a centered modal, so choosing a model
- * does not shove the prompt you were writing off the screen.
+ * Greedy word wrap. A word wider than the box is broken rather than left to overflow, which
+ * a terminal renders as a silently clipped line.
+ */
+export function wrapText(text: string, width: number): string[] {
+  const lines: string[] = []
+  let line = ""
+  const flush = () => {
+    if (line) lines.push(line)
+    line = ""
+  }
+  for (let word of text.split(/\s+/).filter(Boolean)) {
+    while (word.length > width) {
+      flush()
+      lines.push(word.slice(0, width))
+      word = word.slice(width)
+    }
+    if (!line) line = word
+    else if (line.length + 1 + word.length <= width) line += ` ${word}`
+    else {
+      flush()
+      line = word
+    }
+  }
+  flush()
+  return lines
+}
+
+/**
+ * The one list picker, reused for models, agents, sessions, commands and the `ask` tool's
+ * question. Typing filters; enter picks; escape cancels. Presented as a centered modal, so
+ * choosing a model does not shove the prompt you were writing off the screen.
  */
 export function Picker({
   title,
+  prompt,
   choices,
   theme,
   motion,
+  allowOther,
   onPick,
   onDelete,
   onCancel,
 }: {
   title: string
+  /** Body text above the list, wrapped. For a question, whose sentence a title would clip. */
+  prompt?: string
   choices: Choice[]
   theme: Theme
   motion: MotionLevel
+  /** Adds an `Other…` entry that opens a one-line field, so the answer is not list-bound. */
+  allowOther?: boolean
   onPick: (value: string) => void
   /** When given, `shift+D` removes the highlighted entry after a confirmation. */
   onDelete?: (value: string) => void
@@ -57,6 +94,8 @@ export function Picker({
   const [query, setQuery] = useState("")
   /** The entry `shift+D` is asking about. Nothing is removed until `y`. */
   const [pending, setPending] = useState<Choice | null>(null)
+  /** The free-text answer, once `Other…` has been chosen. Null means the list is up. */
+  const [other, setOther] = useState<string | null>(null)
   const box = useRef<BoxRenderable>(null)
   // Read at press time rather than mirrored into state: the select owns the highlight, and
   // a copy would only be a second thing that can be wrong.
@@ -67,6 +106,21 @@ export function Picker({
   }, [choices, query])
 
   useKeyboard((key) => {
+    // The field owns every key while it is open — otherwise each letter would land in the
+    // filter as well as in the input. Escape backs out to the list rather than closing the
+    // dialog: a half-typed answer is not a dismissal.
+    if (other !== null) {
+      if (key.name === "escape") setOther(null)
+      // Enter is claimed here rather than through the `<input>`'s own onSubmit, which the
+      // OpenTUI intrinsics type as both a value and a form-event handler.
+      else if (key.name === "return" || key.name === "enter") {
+        const answer = other.trim()
+        // Empty is the `ask` tool's dismissal sentinel, so it must never be sent as an answer.
+        if (answer) onPick(answer)
+        return key.stopPropagation()
+      }
+      return
+    }
     // The confirmation owns every key while it is up, so a stray letter cannot both answer
     // it and land in the filter. Only `y` deletes; anything else backs out.
     if (pending) {
@@ -96,20 +150,28 @@ export function Picker({
     description: choice.hint ?? "",
     value: choice.value,
   }))
+  // Appended after the filter rather than through it: the way out of a list that does not
+  // contain your answer must not be something the query can hide.
+  if (allowOther) options.push({ name: "Other…", description: "type your own answer", value: OTHER })
 
   const { width: columns, height: rows } = useTerminalDimensions()
+  const width = Math.max(28, Math.min(76, columns - 8))
+  // The border and its one column of padding on each side eat four columns.
+  const lines = prompt ? wrapText(prompt, width - 4) : []
   // A choice with a hint renders as two lines, name over description. Counting one line
   // each would show half the list and hide the rest behind a scrollbar for no reason.
   const perRow = filtered.some((choice) => choice.hint) ? 2 : 1
-  const height = Math.max(3, Math.min(filtered.length * perRow + 2, Math.floor(rows * 0.7)))
-  const width = Math.max(28, Math.min(76, columns - 8))
+  const body = other !== null ? 1 : Math.min(options.length * perRow, Math.floor(rows * 0.7))
+  const height = Math.max(3, Math.min(body + lines.length + 2, Math.floor(rows * 0.9)))
   useEnter(box, motion, { ms: 140, height })
 
   return (
     <Modal>
       <box
         ref={box}
-        title={pending ? `delete "${clip(pending.label, 30)}"?` : query ? `${title} — ${query}` : title}
+        title={
+          pending ? `delete "${clip(pending.label, 30)}"?` : query && other === null ? `${title} — ${query}` : title
+        }
         titleColor={pending ? theme.error : theme.accent}
         // A bottom title wider than the box is dropped silently rather than clipped, so the
         // keys have to be kept short enough to survive — losing the one line that says
@@ -117,7 +179,9 @@ export function Picker({
         bottomTitle={clip(
           pending
             ? "y delete · any other key keeps it"
-            : `↑↓ enter${onDelete ? " · shift+D del" : ""} · esc · ${filtered.length}/${choices.length}`,
+            : other !== null
+              ? "enter send · esc back"
+              : `↑↓ enter${onDelete ? " · shift+D del" : ""} · esc · ${filtered.length}/${choices.length}`,
           width - 4,
         )}
         style={{
@@ -133,13 +197,33 @@ export function Picker({
           paddingRight: 1,
         }}
       >
-        {options.length === 0 ? (
+        {lines.map((line, index) => (
+          <text key={index} fg={theme.fg} style={{ flexShrink: 0 }}>
+            {line}
+          </text>
+        ))}
+        {other !== null ? (
+          <input
+            focused
+            value={other}
+            placeholder="your answer"
+            backgroundColor={theme.panel}
+            textColor={theme.fg}
+            placeholderColor={theme.muted}
+            cursorColor={theme.accent}
+            onInput={setOther}
+          />
+        ) : options.length === 0 ? (
           <text fg={theme.muted}>no matches — esc to cancel</text>
         ) : (
           <select
             ref={list}
             focused
             options={options}
+            // Off unless something actually has a description to show: the renderable spends
+            // two lines an entry whenever it is on, empty description or not, while the height
+            // above counts one — which is how a three-option question rendered as one option.
+            showDescription={perRow === 2}
             showScrollIndicator
             wrapSelection
             backgroundColor={theme.panel}
@@ -147,7 +231,12 @@ export function Picker({
             descriptionColor={theme.muted}
             selectedBackgroundColor={theme.selection}
             selectedTextColor={theme.fg}
-            onSelect={(_, option) => option && onPick(String(option.value))}
+            onSelect={(_, option) => {
+              if (!option) return
+              const value = String(option.value)
+              if (value === OTHER) setOther("")
+              else onPick(value)
+            }}
             style={{ flexGrow: 1 }}
           />
         )}
@@ -159,7 +248,7 @@ export function Picker({
 export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /** Preamble lines of a unified patch, which the diff view does not render. */
-const PATCH_HEADER = /^(Index: |={10,}$|--- |\+\+\+ |@@ )/
+export const PATCH_HEADER = /^(Index: |={10,}$|--- |\+\+\+ |@@ )/
 
 /**
  * The approval prompt. Rendered whenever a tool asks the permission gate. The detail

@@ -81,10 +81,30 @@ export type DeviceRow = {
     | { scope: "some"; mode: string; blueprintIds: string[] };
 };
 
+export type PendingDeviceRequest = {
+  userCode: string;
+  name: string;
+  fingerprint: string;
+  platform: string | null;
+  knownFingerprint: boolean;
+  createdAt: string;
+  expiresAt: string;
+};
+
 export const devicesApi = {
   async list(workstationId: string) {
     const { data } = await axios.get<{ devices: DeviceRow[] }>("/api/device/list", { params: { workstationId } });
     return data.devices;
+  },
+
+  /** Pairing requests addressed to the signed-in user — scoped server-side, never global. */
+  async pending() {
+    const { data } = await axios.get<{ requests: PendingDeviceRequest[] }>("/api/device/pending");
+    return data.requests;
+  },
+
+  async reject(userCode: string) {
+    await axios.post("/api/device/reject", { userCode });
   },
 
   async lookup(code: string) {

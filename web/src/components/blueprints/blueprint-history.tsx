@@ -188,10 +188,12 @@ export function BlueprintHistory({ blueprintId }: { blueprintId: string }) {
   return (
     // react-resizable-panels v4: `orientation`, not `direction`, and a bare number means
     // *pixels* — percentages have to be strings.
-    <ResizablePanelGroup orientation="horizontal" className="min-h-[calc(100vh-8rem)]">
+    // The page now gives this a real height, so it fills what it is given rather than
+    // asserting a viewport-relative minimum that no longer matches the space available.
+    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
       <ResizablePanel defaultSize="30" minSize="22" maxSize="45">
-        <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between gap-2 px-4 py-3">
+        <div className="flex h-full flex-col overflow-hidden">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
             <span className="text-sm font-medium">{versions.length} versions</span>
             {compareWith ? (
               <Button variant="ghost" size="sm" onClick={() => setCompareWith(null)}>
@@ -202,7 +204,7 @@ export function BlueprintHistory({ blueprintId }: { blueprintId: string }) {
             )}
           </div>
           <Separator />
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1 overscroll-contain">
             <div className="p-2">
               {versions.map((row) => {
                 const ref = refOf(row);
@@ -266,8 +268,8 @@ export function BlueprintHistory({ blueprintId }: { blueprintId: string }) {
       <ResizableHandle withHandle />
 
       <ResizablePanel defaultSize="70">
-        <div className="flex h-full flex-col">
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+        <div className="flex h-full flex-col overflow-hidden">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 py-3">
             {diff ? (
               <>
                 <GitCompare className="text-muted-foreground size-4" />

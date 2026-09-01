@@ -13,6 +13,7 @@ export function Activity({
   motion,
   keymap,
   compacting = false,
+  queued = 0,
 }: {
   items: Item[]
   theme: Theme
@@ -20,6 +21,8 @@ export function Activity({
   keymap: Keymap
   /** Summarizing takes a model round trip of its own, so say what the wait is for. */
   compacting?: boolean
+  /** Prompts typed during this turn and waiting for it, so the queue is never invisible. */
+  queued?: number
 }) {
   const { frame, seconds } = useTicker(true, motion)
   const running = items.findLast((item) => item.kind === "tool" && item.output === undefined)
@@ -29,6 +32,7 @@ export function Activity({
     : [
         `working ${seconds}s`,
         running?.kind === "tool" ? summarize(running.name, running.input) : undefined,
+        queued > 0 ? `${queued} queued` : undefined,
         `${describe(keymap.interrupt)} to stop`,
       ].filter(Boolean)
 

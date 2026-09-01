@@ -5,6 +5,10 @@ import { useSearchParams } from "next/navigation";
 import { ApprovalsCard } from "~/components/approvals/approvals-card";
 import { DevicesCard } from "~/components/devices/devices-card";
 import { McpTokensDialog } from "~/components/devices/mcp-tokens-dialog";
+import { PendingRequestsCard } from "~/components/devices/pending-requests-card";
+import { CreateWorkstationDialog } from "~/components/workstation/create-workstation-dialog";
+import { Button } from "~/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
 import {
   Card,
   CardAction,
@@ -24,7 +28,30 @@ export default function SettingsPage() {
   const code = searchParams.get("code") ?? undefined;
   const blueprints = useWorkstationBlueprints(activeWorkstation?.id);
 
-  if (!activeWorkstation) return null;
+  /**
+   * A device is always paired *into* a workstation, so with none there is nothing to
+   * approve into. This used to render nothing at all, which left a new account facing a
+   * blank page with no way forward — the one state where the way forward matters most.
+   */
+  if (!activeWorkstation) {
+    return (
+      <div className="container mx-auto p-6">
+        <h1 className="mb-4 text-2xl font-semibold">Settings</h1>
+        <Empty className="rounded-lg border">
+          <EmptyHeader>
+            <EmptyTitle>No workstation yet</EmptyTitle>
+            <EmptyDescription>
+              A workstation holds your blueprints and the devices allowed to reach them. Create one to
+              start pairing machines.
+            </EmptyDescription>
+          </EmptyHeader>
+          <CreateWorkstationDialog>
+            <Button>Create a workstation</Button>
+          </CreateWorkstationDialog>
+        </Empty>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6">
@@ -62,6 +89,13 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <PendingRequestsCard
+          workstationId={activeWorkstation.id}
+          blueprints={blueprints}
+        />
       </div>
 
       <div className="mt-4">

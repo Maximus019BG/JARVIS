@@ -1,5 +1,5 @@
 import { byId } from "./diff.ts"
-import { canonicalEntity, seqOf, type BlueprintDoc, type Entity, type Layer } from "./schema.ts"
+import { canonicalEntity, seqOf, type BlueprintDoc, type Entity, type Layer, type Net, type Part } from "./schema.ts"
 
 export type MergeConflict = {
   id: string
@@ -35,6 +35,69 @@ function unionViewBox(a: BlueprintDoc["viewBox"], b: BlueprintDoc["viewBox"]): B
   const maxX = Math.max(a[0] + a[2], b[0] + b[2])
   const maxY = Math.max(a[1] + a[3], b[1] + b[3])
   return [minX, minY, maxX - minX, maxY - minY]
+}
+
+/**
+ * Parts, unioned by ref, ours winning a tie.
+ *
+ * A part is a record of geometry that lives in `entities`, so the entity merge above is
+ * what actually decides whether a symbol survives — this only keeps the record in step
+ * with it. Parts whose entities did not make it through are dropped, because a part
+ * pointing at geometry nobody draws is exactly the stale port `connect` must never wire to.
+ */
+function mergeParts(ours: BlueprintDoc, theirs: BlueprintDoc, entities: readonly Entity[]): Part[] {
+  const merged: Part[] = []
+  const seen = new Set<string>()
+  for (const part of [...(ours.parts ?? []), ...(theirs.parts ?? [])]) {
+    const key = part.ref.toLowerCase()
+    if (seen.has(key)) continue
+    if (!entities.some((entity) => entity.id?.startsWith(`${part.prefix}-`))) continue
+    seen.add(key)
+    merged.push(part)
+  }
+  return merged
+}
+
+/**
+ * Nets, unioned by the pair of ports they join, ours winning a tie.
+ *
+ * Keyed on the connection rather than on the net id, because the id is bookkeeping and the
+ * pair of ports is the fact: two devices that each wire R1.2 to U1.5 have made the same
+ * connection twice, not two connections, and both allocate `n1` for it from the same
+ * counter. Ids that survive are re-issued in order for the same reason.
+ *
+ * A net whose wire was renamed by the entity merge follows it, and a net whose wire or part
+ * did not survive at all is dropped — a net pointing at geometry nobody draws is the stale
+ * connection `settle` would otherwise faithfully redraw.
+ */
+function mergeNets(
+  ours: BlueprintDoc,
+  theirs: BlueprintDoc,
+  entities: readonly Entity[],
+  parts: readonly Part[],
+  renamed: readonly { from: string; to: string }[],
+): Net[] {
+  const moved = new Map(renamed.map((entry) => [entry.from, entry.to]))
+  const refs = new Set(parts.map((part) => part.ref.toLowerCase()))
+  const hasPort = (address: string) => refs.has(address.slice(0, address.lastIndexOf(".")).toLowerCase())
+  const merged: Net[] = []
+  const seen = new Set<string>()
+  for (const [side, nets] of [
+    ["ours", ours.nets ?? []],
+    ["theirs", theirs.nets ?? []],
+  ] as const) {
+    for (const net of nets) {
+      const key = [net.from.toLowerCase(), net.to.toLowerCase()].sort().join("|")
+      if (seen.has(key)) continue
+      // Only theirs can have been renamed: the entity merge keeps our ids and moves theirs.
+      const wire = side === "theirs" ? (moved.get(net.wire) ?? net.wire) : net.wire
+      if (!entities.some((entity) => entity.id === wire)) continue
+      if (!hasPort(net.from) || !hasPort(net.to)) continue
+      seen.add(key)
+      merged.push({ ...net, wire, id: `n${merged.length + 1}` })
+    }
+  }
+  return merged
 }
 
 function mergeLayers(base: BlueprintDoc, ours: BlueprintDoc, theirs: BlueprintDoc): Layer[] {
@@ -145,6 +208,7 @@ export function merge3(base: BlueprintDoc, ours: BlueprintDoc, theirs: Blueprint
   const known = new Set(layers.map((layer) => layer.id))
   const fallback = layers[0]?.id ?? ours.layers[0]!.id
   const merged = entities.map((entity) => (known.has(entity.layer!) ? entity : { ...entity, layer: fallback }))
+  const parts = mergeParts(ours, theirs, merged)
 
   return {
     doc: {
@@ -154,6 +218,8 @@ export function merge3(base: BlueprintDoc, ours: BlueprintDoc, theirs: Blueprint
       // A merge can orphan an entity onto a layer the other side deleted; parking it on
       // the first layer keeps the document valid rather than unparseable.
       entities: merged,
+      parts,
+      nets: mergeNets(ours, theirs, merged, parts, renamed),
       // Past both sides' counters, so the next `add` on either cannot reuse an id that
       // now exists here.
       seq: Math.max(seqOf(ours), seqOf(theirs), seqOf({ entities: merged })),

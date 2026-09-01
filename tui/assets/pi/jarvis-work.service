@@ -1,0 +1,28 @@
+[Unit]
+Description=JARVIS automation worker
+Documentation=https://github.com/Maximus019BG/JARVIS
+# Only the network: no camera, no compositor, no display. This is the unit for a headless
+# box — the projector units are separate on purpose so a Pi with no desktop installs neither.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+# jarvis reads its credentials from the invoking user's XDG directories, so these must match
+# the account that paired the device. Running as root would look for them in the wrong home.
+Environment=XDG_CONFIG_HOME=/home/%i/.config
+Environment=XDG_DATA_HOME=/home/%i/.local/share
+# `--root` is not decoration: jobs run with every tool permission auto-approved, so this is
+# the one thing between a mistyped cwd in the web editor and the rest of the filesystem.
+ExecStart=/home/%i/.local/bin/jarvis work --root /home/%i/jarvis
+Restart=on-failure
+RestartSec=10
+# An unpaired machine fails here with "this device is not paired" in the journal, which is
+# the diagnosis. RestartSec is long enough that the loop is a note rather than a flood.
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

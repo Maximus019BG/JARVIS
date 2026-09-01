@@ -1,5 +1,5 @@
 import { evaluate, RHO } from "../engineering/formulas.ts"
-import { bbox, flatten } from "./geom.ts"
+import { bbox, flatten, textBox } from "./geom.ts"
 import type { BlueprintDoc, Entity, Pt } from "./schema.ts"
 
 /**
@@ -173,7 +173,140 @@ function generalChecks(doc: BlueprintDoc): Finding[] {
     })
   }
 
+  return [...findings, ...connectivityChecks(doc)]
+}
+
+/**
+ * What the nets say against what the wires draw.
+ *
+ * None of this was checkable before. A wire was an anonymous polyline, so "this conductor is
+ * no longer attached to the part it claims to join" had nothing to compare against, and a
+ * label was a zero-area point, so "these two labels are on top of each other" was not a
+ * question the geometry could answer. Both are the failures a reader notices first and the
+ * checker used to pass in silence.
+ */
+function connectivityChecks(doc: BlueprintDoc): Finding[] {
+  const findings: Finding[] = []
+  const parts = doc.parts ?? []
+  const portAt = (address: string): Pt | undefined => {
+    const dot = address.lastIndexOf(".")
+    const part = parts.find((candidate) => candidate.ref.toLowerCase() === address.slice(0, dot).toLowerCase())
+    return part?.ports[Number(address.slice(dot + 1)) - 1]
+  }
+  const near = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6
+
+  for (const net of doc.nets ?? []) {
+    const wire = doc.entities.find((entity) => entity.id === net.wire)
+    if (!wire || wire.type !== "polyline") {
+      findings.push({ severity: "error", id: net.id, message: `net ${net.id} (${net.from}–${net.to}) has no wire drawn for it` })
+      continue
+    }
+    for (const [address, end] of [
+      [net.from, wire.pts[0]!],
+      [net.to, wire.pts.at(-1)!],
+    ] as [string, Pt][]) {
+      const port = portAt(address)
+      if (!port) {
+        findings.push({ severity: "error", id: net.id, message: `net ${net.id} names ${address}, which is not a port in this drawing` })
+      } else if (!near(port, end)) {
+        findings.push({
+          severity: "error",
+          id: net.wire,
+          message: `${net.wire} is detached from ${address}: the wire ends elsewhere, so the circuit is drawn open`,
+        })
+      }
+    }
+  }
+
+  // Conductors sharing a line. Two wires crossing is ordinary; two wires lying along each
+  // other draws one line where the circuit has two, and no junction dot can disambiguate it.
+  const runs: { id: string; a: Pt; b: Pt }[] = []
+  for (const entity of doc.entities) {
+    if (entity.type !== "polyline" || !/^w\d+$/.test(entity.id ?? "")) continue
+    for (let i = 1; i < entity.pts.length; i += 1) runs.push({ id: entity.id!, a: entity.pts[i - 1]!, b: entity.pts[i]! })
+  }
+  const reported = new Set<string>()
+  for (let i = 0; i < runs.length; i += 1) {
+    for (let j = i + 1; j < runs.length; j += 1) {
+      const one = runs[i]!
+      const other = runs[j]!
+      if (one.id === other.id) continue
+      const pair = [one.id, other.id].sort().join("+")
+      if (reported.has(pair) || overlapLength(one.a, one.b, other.a, other.b) <= 1e-6) continue
+      reported.add(pair)
+      findings.push({
+        severity: "warning",
+        id: one.id,
+        message: `${one.id} and ${other.id} run along each other: two conductors drawn as one line cannot be told apart`,
+      })
+    }
+  }
+
+  // Ports with nothing attached. Info, not a warning: a drawing in progress is full of them,
+  // and a spare terminal on a connector is not a defect. It is here because the alternative
+  // to reporting it is a circuit that looks finished and is open.
+  for (const part of parts) {
+    const wired = new Set(
+      (doc.nets ?? [])
+        .flatMap((net) => [net.from, net.to])
+        .filter((address) => address.slice(0, address.lastIndexOf(".")).toLowerCase() === part.ref.toLowerCase())
+        .map((address) => address.slice(address.lastIndexOf(".") + 1)),
+    )
+    if (part.symbol.endsWith("junction-dot")) continue
+    const loose = part.ports.map((_, i) => String(i + 1)).filter((index) => !wired.has(index))
+    if (loose.length > 0) {
+      const named = loose.map((index) => part.pins?.[Number(index) - 1] || index)
+      findings.push({
+        severity: "info",
+        message: `${part.ref} has nothing connected to ${named.length === part.ports.length ? "any of its ports" : named.join(", ")}`,
+      })
+    }
+  }
+
+  // Labels on top of geometry or each other.
+  const labels = doc.entities.filter(
+    (entity): entity is Extract<Entity, { type: "text" }> => entity.type === "text" && /-label$/.test(entity.id ?? ""),
+  )
+  const overlaps = (a: [number, number, number, number], b: [number, number, number, number]) =>
+    a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]
+  for (let i = 0; i < labels.length; i += 1) {
+    const mine = textBox(labels[i]!)
+    for (let j = i + 1; j < labels.length; j += 1) {
+      if (!overlaps(mine, textBox(labels[j]!))) continue
+      findings.push({
+        severity: "warning",
+        id: labels[i]!.id,
+        message: `label "${labels[i]!.text}" overlaps "${labels[j]!.text}" — one of them cannot be read`,
+      })
+    }
+    for (const part of parts) {
+      // Its own part's geometry is not a finding: a designator drawn against the symbol it
+      // designates is how a schematic looks.
+      if (labels[i]!.id?.startsWith(`${part.prefix}-`)) continue
+      const box = bbox(doc.entities.filter((entity) => entity.id?.startsWith(`${part.prefix}-`) && entity.type !== "text"))
+      if (box && overlaps(mine, box)) {
+        findings.push({
+          severity: "warning",
+          id: labels[i]!.id,
+          message: `label "${labels[i]!.text}" sits on top of ${part.ref}`,
+        })
+      }
+    }
+  }
+
   return findings
+}
+
+/** How much of a-b runs along c-d. Mirrors the router's rule, which is what avoids these. */
+function overlapLength(a: Pt, b: Pt, c: Pt, d: Pt): number {
+  const tol = 1e-6
+  const vertical = Math.abs(a[0] - b[0]) < tol && Math.abs(c[0] - d[0]) < tol && Math.abs(a[0] - c[0]) < tol
+  const horizontal = Math.abs(a[1] - b[1]) < tol && Math.abs(c[1] - d[1]) < tol && Math.abs(a[1] - c[1]) < tol
+  const axis = vertical ? 1 : horizontal ? 0 : -1
+  if (axis === -1) return 0
+  const lo = Math.max(Math.min(a[axis], b[axis]), Math.min(c[axis], d[axis]))
+  const hi = Math.min(Math.max(a[axis], b[axis]), Math.max(c[axis], d[axis]))
+  return Math.max(0, hi - lo)
 }
 
 // ─── electrical ──────────────────────────────────────────────────────────────────────
