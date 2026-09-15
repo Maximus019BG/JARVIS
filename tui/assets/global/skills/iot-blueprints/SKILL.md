@@ -41,7 +41,7 @@ diagrams end up with wires that nearly meet a pin.
    "to": "R1.1", "layer": "signals"}`. The route is found for you, around the other parts,
    and junction dots are placed where wires meet. **Never work out a wire coordinate
    yourself** — a port is named `REF.PORT`, 1-based, and that is the only handle you need.
-   `op: "arrange"` re-tidies everything if a placement turns out cramped.
+   A `blueprint_edit` op of `"arrange"` re-tidies everything if a placement turns out cramped.
 5. `engineering_calc` for the power budget, pull-ups, regulator dissipation, battery life.
 6. Annotate, then `blueprint_check` `domain: "iot"`.
 

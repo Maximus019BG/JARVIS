@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "JARVIS",
+    "slug": "jarvis",
+    "scheme": "jarvis",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": { "package": "com.maximus019.jarvis", "googleServicesFile": "./android/app/google-services.json" },
+    "ios": { "bundleIdentifier": "com.maximus019.jarvis", "supportsTablet": true },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "JARVIS listens when you hold the talk button.",
+          "speechRecognitionPermission": "Speech is turned into text on this device, then sent to your workstation."
+        }
+      ]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}

@@ -47,7 +47,7 @@ export const blueprintSymbolTool = (ctx: ToolContext, root: string) =>
   tool({
     description: [
       "Place standard symbols on a blueprint: IEC 60617 electrical, architectural plan symbols, and IoT wiring blocks.",
-      'Call it with action:"list" and a query first to find the name you want, then action:"place".',
+      "This tool's own `action` field chooses what it does: set `action` to \"list\" with a query first, to find the name you want, then set `action` to \"place\". There is no separate tool for either.",
       "Placing creates the blueprint if it does not exist yet.",
       "Put symbols roughly where they belong and give each a `label` — schematic parts are snapped to the",
       "2.54 mm grid and pushed apart if they overlap, and labels are moved clear of whatever they would cover.",

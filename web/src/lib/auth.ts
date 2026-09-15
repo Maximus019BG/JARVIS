@@ -4,7 +4,7 @@ import { db, schema } from "~/server/db";
 import { env } from "~/env";
 import { sendResetPasswordEmail } from "~/server/email/utils/send-password-reset-email";
 import { sendVerificationEmail } from "~/server/email/utils/send-verification-email";
-import { lastLoginMethod, twoFactor } from "better-auth/plugins";
+import { bearer, lastLoginMethod, twoFactor } from "better-auth/plugins";
 
 export const auth = betterAuth({
   trustedOrigins: ["*"],
@@ -52,6 +52,19 @@ export const auth = betterAuth({
   },
   plugins: [
     lastLoginMethod(),
+    /**
+     * `Authorization: Bearer <session token>` as an alternative to the session cookie.
+     *
+     * This is what lets a native client sign in at all: a React Native app has no cookie jar
+     * a browser would recognise, so without this the phone can authenticate to nothing. It
+     * does not widen what a session may do — the token is the same session token, expiring on
+     * the same schedule and revocable the same way — it only changes where it is carried.
+     *
+     * `requireSignature` because the cookie these tokens mirror is signed. Accepting an
+     * unsigned one would mean a token that failed its integrity check by the cookie path
+     * succeeding by the header path, which is not a difference anybody intended.
+     */
+    bearer({ requireSignature: true }),
     // Enable (TOTP) two-factor authentication
     twoFactor({
       issuer: "JARVIS",

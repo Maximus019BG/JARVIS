@@ -6,7 +6,7 @@ import { DEFAULT_AGENT, loadAgents, resolveAgent } from "../agent/agent-def.ts"
 import { withHostedFallback } from "../agent/hosted.ts"
 import { forgetProvider, listModels } from "../agent/provider.ts"
 import { claimPrompt } from "../agent/remote-prompt.ts"
-import { deleteSession, type Session } from "../agent/session.ts"
+import { deleteSession, type Session, type SessionHeader } from "../agent/session.ts"
 import { loadConfig, type Config } from "../config/config.ts"
 import { describe, matches, type Action, type Keymap } from "../config/keybinds.ts"
 import { loadTheme, type Theme } from "../config/theme.ts"
@@ -39,7 +39,7 @@ import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { BlueprintEditor } from "./components/blueprint-editor.tsx"
 import { BlueprintPane } from "./components/blueprint-view.tsx"
-import { clip, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
+import { clip, tail, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
 import {
@@ -75,6 +75,13 @@ import { ADD_PROVIDER, listFiles, pickerChoices, PICKER_TITLES, type PickerKind 
 import { completion, suggest, type Suggestion } from "./suggest.ts"
 import { activeBlueprint, type Item, type Note } from "./transcript.ts"
 import { errorMessage } from "../agent/agent.ts"
+import type { BootRow } from "./boot.ts"
+import { play } from "./sound.ts"
+import { listenForWake, onnxWakeSource, type WakeListener } from "../voice/wake.ts"
+import { DictationError, dictate, type Heard } from "../voice/dictate.ts"
+import { embedder, type Embedder } from "../voice/embedder.ts"
+import { identify, loadVoices } from "../voice/speaker.ts"
+import { missingWakeModels } from "../voice/wake-models.ts"
 import { useTurn } from "./use-turn.ts"
 
 export type AppProps = {
@@ -94,6 +101,10 @@ export type AppProps = {
   autoSetup?: boolean
   /** First run on an unpaired machine: open the pairing flow before asking for a key. */
   autoPair?: boolean
+  /** The startup sweep, gathered before the first paint and shown above an empty prompt. */
+  boot?: BootRow[]
+  /** The previous session in this directory, so a new one can pick up the thread. */
+  previous?: SessionHeader
 }
 
 const SCROLL_LINES = 10
@@ -225,17 +236,40 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   /** Whether the mic is live, for the status line. */
   const [recording, setRecording] = useState(false)
   /**
+   * The words heard so far, while streaming dictation is running. Shown in the status line
+   * rather than written into the buffer: a partial transcript is a guess that gets rewritten,
+   * and rewriting somebody's prompt under their cursor is not a thing to do to them.
+   */
+  const [heard, setHeard] = useState("")
+  /**
    * The live recording, or `"starting"` while the recorder and the transcription model are
    * still being resolved. Resolving can install a provider package, which takes tens of
    * seconds, and a second press in that window must not open a second microphone.
    */
   const voice = useRef<Recording | "starting" | null>(null)
+  /** The wake listener, so the pause effect below can reach it without restarting it. */
+  const wakeRef = useRef<WakeListener | null>(null)
+  /**
+   * `toggleVoice` through a ref. The wake effect must not re-run — and re-open the microphone
+   * — every time that callback is rebuilt, which is on every config or turn change.
+   */
+  const wakeToggle = useRef<() => void>(() => {})
   const { toasts, toast } = useToasts()
   // The agent checks out branches and edits files, so a value read once at startup goes stale
   // mid-session. Refreshed between turns instead: one spawn per turn, never during one.
   const [git, setGit] = useState(() => readGit(cwd))
 
-  const turn = useTurn({ config, cwd, extensions, mcpTools: mcp.tools, session: initial.session, notes, agent, model })
+  const turn = useTurn({
+    config,
+    cwd,
+    extensions,
+    mcpTools: mcp.tools,
+    session: initial.session,
+    previous: initial.previous,
+    notes,
+    agent,
+    model,
+  })
   const editor = useRef<EditorHandle>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const history = useRef<string[]>([])
@@ -458,7 +492,16 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     setPanel(null)
     setDiscovered({ loading: false, models: [] })
     setTested(null)
-    setSetup(beginSetup({ existing: Object.keys(config.provider), paired: isPaired() }, { voice: true }))
+    setSetup(beginSetup({ existing: Object.keys(config.provider), paired: isPaired() }, { kind: "transcribe" }))
+  }, [config.provider])
+
+  /** The same flow, pointed the other way: a provider that can generate audio rather than read it. */
+  const openSpeakSetup = useCallback(() => {
+    setPicker(null)
+    setPanel(null)
+    setDiscovered({ loading: false, models: [] })
+    setTested(null)
+    setSetup(beginSetup({ existing: Object.keys(config.provider), paired: isPaired() }, { kind: "speak" }))
   }, [config.provider])
 
   const openPair = useCallback(() => {
@@ -666,18 +709,24 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       // Checked before anything is written, so a bad draft costs a message rather than a config
       // that fails to parse on the next launch.
       if (!checked.ok) return toast(`cannot save: ${checked.problems.join("; ")}`, "error")
-      // A voice draft never touches the chat default, so there is no `model` to cross-check.
+      // An audio draft never touches the chat default, so there is no `model` to cross-check.
       const model =
-        !draft.voice && listModels(config).length === 0 && draft.models[0] ? `${id}/${draft.models[0]}` : undefined
+        draft.kind === "chat" && listModels(config).length === 0 && draft.models[0]
+          ? `${id}/${draft.models[0]}`
+          : undefined
       const merged = checkMerged(config, id, checked.entry, model)
       if (!merged.ok) return toast(`cannot save: ${merged.problems.join("; ")}`, "error")
 
       applyWrites(planWrites(draft, { setDefaultModel: model !== undefined }), globalConfigFile())
       setSetup(null)
       setTested(null)
-      if (draft.voice) {
+      if (draft.kind === "transcribe") {
         reloadConfig(id)
         return toast(`voice is ready — ${describe(keymap.voice)} to talk`, "info")
+      }
+      if (draft.kind === "speak") {
+        reloadConfig(id)
+        return toast("speech is on — /speak off to stop it", "info")
       }
       if (reloadConfig(id) && draft.models[0]) selectModel(`${id}/${draft.models[0]}`)
       toast(`${id} is ready`, "info")
@@ -750,12 +799,27 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         openPanel: setPanel,
         openSetup,
         openPair,
+        openSpeakSetup,
         reload: reloadConfig,
         testProvider: runTest,
         quit: () => process.exit(0),
       })
     },
-    [commands, config, cwd, extensions, keymap, mcp, openPair, openSetup, reloadConfig, runTest, turn, width],
+    [
+      commands,
+      config,
+      cwd,
+      extensions,
+      keymap,
+      mcp,
+      openPair,
+      openSetup,
+      openSpeakSetup,
+      reloadConfig,
+      runTest,
+      turn,
+      width,
+    ],
   )
 
   const shell = useCallback(
@@ -790,6 +854,51 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   )
 
   /**
+   * The speaker-identification worker, started on first use and kept for the session. A ref
+   * rather than state: nothing renders differently because it exists.
+   */
+  const speaker = useRef<Embedder | null>(null)
+  // The worker holds a hundred megabytes of model. It outlives every turn and nothing else,
+  // so unmounting is the one place it can be released.
+  useEffect(() => () => speaker.current?.close(), [])
+
+  /**
+   * Whether this utterance is allowed through, as a refusal message or nothing.
+   *
+   * **Fails closed on purpose.** Every way of not knowing who spoke — no audio to check, a
+   * worker that will not start, a clip too short to score — refuses. A gate that opens when
+   * it is confused is not a gate, and the whole reason somebody turned this on is that the
+   * agent behind it can run `bash`.
+   */
+  const gateVoice = useCallback(
+    async (heard: Heard): Promise<string | undefined> => {
+      const settings = config.voice?.speaker
+      if (!settings?.enabled) return undefined
+      const voices = loadVoices()
+      if (voices.speakers.length === 0) return "nobody is enrolled — run `jarvis voice enrol <name>`"
+      if (!heard.pcm) {
+        return "cannot check whose voice that was: this recording is not raw 16 kHz audio (voice.stream is off, or the provider cannot stream)"
+      }
+      try {
+        speaker.current ??= embedder(config)
+        const { match, best } = identify(await speaker.current.embed(heard.pcm), voices, settings.threshold)
+        if (match) return undefined
+        // The score and the bar, both, because a threshold set too high is indistinguishable
+        // from a microphone problem unless you can see the number.
+        return best
+          ? `that did not sound like ${best.name} (${best.score.toFixed(2)}, and the bar is ${settings.threshold})`
+          : "I do not recognise that voice"
+      } catch (error) {
+        // A broken worker is still "I do not know who that was".
+        speaker.current?.close()
+        speaker.current = null
+        return `could not check the voice: ${errorMessage(error)}`
+      }
+    },
+    [config],
+  )
+
+  /**
    * Push-to-talk: first press starts recording, second press transcribes into the prompt.
    *
    * The text lands in the buffer rather than being submitted. Transcription mishears things,
@@ -803,15 +912,48 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     if (active) {
       voice.current = null
       setRecording(false)
+      setHeard("")
       void active
         .stop()
-        .then((text) => (text ? editor.current?.insert(text) : turn.note("heard nothing")))
+        .then(async (heard) => {
+          if (!heard.text) return turn.note("heard nothing")
+          const refusal = await gateVoice(heard)
+          if (refusal) return turn.note(refusal, "error")
+          editor.current?.insert(heard.text)
+        })
         .catch((error) => turn.note(errorMessage(error), "error"))
       return
     }
+    // Barge-in. Reaching for the microphone means stop talking, and it has to happen on the
+    // keypress rather than once the recorder is up — a second of the last answer playing into
+    // the first second of the next one is exactly what makes an assistant feel deaf.
+    turn.hush()
     voice.current = "starting"
     setRecording(true)
-    void listen(config)
+    setHeard("")
+
+    /**
+     * Streaming when the provider can, the wav-file path when it cannot.
+     *
+     * The fallback is chosen by asking the resolved model rather than by naming providers, so
+     * `whisper-1` quietly takes the old path and `gpt-4o-transcribe` quietly takes the new one
+     * with nothing to configure either way.
+     */
+    const start = async () => {
+      if (config.voice?.stream !== false) {
+        try {
+          return await dictate(config, { onText: setHeard })
+        } catch (error) {
+          // Only a "this model cannot stream" refusal falls through. A missing key or a
+          // missing recorder would fail the same way on the other path, and reporting it once
+          // beats reporting it twice.
+          if (!(error instanceof DictationError) || !/cannot stream/.test(error.message)) throw error
+        }
+      }
+      return await listen(config)
+    }
+
+    void start()
       .then((session) => {
         // Stopped or cancelled while the model was still resolving: nobody is waiting for
         // this recorder, so shut it down rather than leaving the mic open.
@@ -821,9 +963,69 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       .catch((error) => {
         voice.current = null
         setRecording(false)
+        setHeard("")
         turn.note(errorMessage(error), "error")
       })
   }, [config, openVoiceSetup, turn])
+
+  /**
+   * The always-on wake word, when it is switched on and the models are there.
+   *
+   * Started once and torn down with the session. Nothing here is awaited into a render: the
+   * worker takes a second to load three ONNX models, and a terminal must not wait on it.
+   */
+  useEffect(() => {
+    const wake = config.voice?.wake
+    if (!wake?.enabled) return
+    const missing = missingWakeModels(wake.phrase)
+    if (missing.length > 0) {
+      turn.note(`wake word is on but ${missing.join(", ")} are missing — run \`jarvis wake models\``, "error")
+      return
+    }
+    const listener = listenForWake({
+      source: onnxWakeSource({ phrase: wake.phrase, recorder: config.voice?.capture }),
+      settings: { threshold: wake.threshold, frames: wake.frames, refractoryMs: wake.refractoryMs },
+      onWake: () => {
+        wakeRef.current?.pause()
+        // The earcon is the acknowledgement. Without it there is a second of silence between
+        // saying the phrase and the recorder appearing, which reads as "it did not hear me"
+        // and gets the phrase said again.
+        play(config, "attention")
+        wakeToggle.current()
+      },
+      onError: (message) => turn.note(`wake word: ${message}`, "error"),
+    })
+    wakeRef.current = listener
+    return () => {
+      wakeRef.current = null
+      listener.close()
+    }
+    // Deliberately not depending on `turn`: it changes identity every turn, and restarting
+    // the worker — and the microphone — on each one is not what "always on" means.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config])
+
+  /**
+   * The listener is deaf while the microphone is being recorded into, and while an answer is
+   * being spoken. The first is a device conflict — on ALSA the capture device is usually
+   * exclusive, so push-to-talk cannot open it while the worker holds it. The second is worse
+   * than a conflict: with no echo cancellation, an assistant that says its own name out loud
+   * wakes itself up, and does it again on the way out of the recording it just started.
+   */
+  useEffect(() => {
+    const listener = wakeRef.current
+    if (!listener) return
+    // Recording always pauses it: on ALSA the capture device is usually exclusive, so the
+    // worker holding it is why push-to-talk could not open it. Speech pauses it only when
+    // barge-in is off — the whole point of barge-in is to stay listening through an answer.
+    const deaf = recording || (turn.speaking && config.voice?.wake?.bargeIn === false)
+    if (deaf) listener.pause()
+    else listener.resume()
+    // `config` is in the list only so this re-syncs after the effect above rebuilds the
+    // listener: a fresh one starts unpaused, which would be wrong mid-recording.
+  }, [recording, turn.speaking, config])
+
+  wakeToggle.current = toggleVoice
 
   /** Drops a recording without transcribing it. Escape means stop, here as everywhere. */
   const cancelVoice = useCallback(() => {
@@ -831,6 +1033,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     if (!active) return false
     voice.current = null
     setRecording(false)
+    setHeard("")
     if (active !== "starting") void active.cancel()
     return true
   }, [])
@@ -1082,6 +1285,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       agent={agent}
       empty={empty}
       needsProvider={listModels(config).length === 0}
+      boot={initial.boot}
     />
   )
 
@@ -1269,7 +1473,12 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         warn={health.warning}
         hint={
           recording
-            ? `● recording · ${describe(keymap.voice)} to transcribe`
+            ? // The words so far while streaming, the key to press while not. Clipped from the
+              // left so the tail — what was said most recently — is the part that stays put
+              // rather than scrolling away as it grows.
+              heard
+              ? `● ${tail(heard, Math.max(20, width - 24))}`
+              : `● recording · ${describe(keymap.voice)} to transcribe`
             : copied
               ? "copied to clipboard"
               : quitting

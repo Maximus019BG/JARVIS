@@ -16,6 +16,7 @@ import {
   setTitle,
   textOf,
   type Session,
+  type SessionHeader,
 } from "../agent/session.ts"
 import type { Config } from "../config/config.ts"
 import type { Extensions } from "../extend/extensions.ts"
@@ -23,6 +24,8 @@ import { persistPermission } from "../config/persist.ts"
 import { PermissionGate, type PermissionAnswer, type PermissionRequest } from "../permission.ts"
 import type { ToolSet } from "../tools/index.ts"
 import { beginGroup, endGroup, redo, undo } from "../tools/snapshot.ts"
+import { play } from "./sound.ts"
+import { speaking, type Speaking } from "./speak.ts"
 import { applyEvent, attachPatch, type Item } from "./transcript.ts"
 
 export type PendingPermission = { request: PermissionRequest; answer: (answer: PermissionAnswer) => void }
@@ -63,6 +66,18 @@ export type Turn = {
   retry: (model?: string) => void
   /** Aborts the running turn. Returns false when there was nothing to abort. */
   interrupt: () => boolean
+  /**
+   * Whether an answer is being read out loud right now. Outlives `busy`: the tail of a long
+   * answer keeps playing after the turn ends, and the wake word has to stay deaf until it
+   * stops or the assistant hears itself say its own name.
+   */
+  speaking: boolean
+  /**
+   * Stops the speech and nothing else. Barge-in: reaching for the microphone means "stop
+   * talking", not "abandon what you were doing" — the turn behind the voice carries on, and
+   * its text is already on screen to read.
+   */
+  hush: () => void
 }
 
 export type UseTurnOptions = {
@@ -71,6 +86,8 @@ export type UseTurnOptions = {
   extensions: Extensions
   mcpTools: ToolSet
   session: Session
+  /** The previous session in this directory, for the system prompt's continuity block. */
+  previous?: SessionHeader
   /** Startup warnings, seeded into the transcript before anything else. */
   notes: string[]
   agent: string
@@ -129,6 +146,10 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
   const sessionRef = useRef(initial.session)
   sessionRef.current = session
 
+  /** The speaking session for the turn in flight, so an interrupt can cut it off mid-word. */
+  const voice = useRef<Speaking | null>(null)
+  const [isSpeaking, setSpeaking] = useState(false)
+
   const note = useCallback((text: string, level: "info" | "error" = "info") => {
     setItems((current) => [...current, { kind: "note", text, level }])
   }, [])
@@ -143,6 +164,9 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
    */
   const ask = useCallback(
     (request: PermissionRequest) => {
+      // The turn has stopped and cannot go on until a human answers. If any moment in a
+      // session is worth a noise, it is this one.
+      play(config, "attention")
       const controller = new AbortController()
       const local = new Promise<PermissionAnswer>((resolve) =>
         setPermission({
@@ -164,7 +188,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         }),
       ])
     },
-    [config.remoteApproval, note],
+    [config, note],
   )
 
   /**
@@ -252,11 +276,18 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
       appendMessages(active, [{ role: "user", content: attached.content }])
       setBusy(true)
       const started = Date.now()
+      // Set by the catch below, read by the finally, so the closing earcon can tell a turn
+      // that finished from one that fell over.
+      let failed = false
       setInFlight({ input: 0, output: 0, cost: 0 })
       // Everything this turn writes undoes as one step.
       beginGroup(active.id)
       const controller = new AbortController()
       abort.current = controller
+      // One session per turn, not one per process: a turn is the unit that gets interrupted,
+      // and a session that outlived it would keep the previous answer's queue alive.
+      voice.current = config.voice?.speak ? speaking(config, (message) => note(`voice: ${message}`, "error")) : null
+      setSpeaking(voice.current !== null)
 
       // Reads `active.messages` when called, not when defined, so a retry after
       // compaction sends the shortened history rather than the one that overflowed.
@@ -271,12 +302,16 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           extraTools: mcpTools,
           extensions,
           sessionID: active.id,
+          previous: initial.previous,
           read: read.current,
           abort: controller.signal,
           ask: askUser,
           onEvent: (event) => {
             setItems((current) => applyEvent(current, event))
             if (event.type === "usage") setInFlight(event.usage)
+            // Only the top-level text. A subagent's events arrive wrapped as `sub`, and two
+            // agents narrating at once is not a feature.
+            if (event.type === "text") voice.current?.push(event.text)
           },
         })
 
@@ -354,6 +389,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
         } catch (error) {
           if (controller.signal.aborted) note("interrupted")
           else {
+            failed = true
             const message = errorMessage(error)
             note(message, "error")
             // A hard failure never reached a response, so the SDK reports no usage. The
@@ -373,6 +409,35 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
             })
           }
         } finally {
+          const spoken = voice.current
+          if (controller.signal.aborted) {
+            spoken?.stop()
+            voice.current = null
+            setSpeaking(false)
+          } else {
+            // Not awaited: the answer is on screen and the next prompt should be typeable
+            // while the tail of it is still being read out. The ref is held until the last
+            // clip finishes, which is what lets escape cut off a turn that has already ended.
+            void spoken
+              ?.flush()
+              .catch(() => {})
+              .finally(() => {
+                if (voice.current !== spoken) return
+                voice.current = null
+                setSpeaking(false)
+              })
+          }
+
+          // Only for a turn long enough that somebody may have stopped watching it, and never
+          // for one they interrupted themselves — they are at the keyboard, they know. Nor when
+          // the answer was spoken aloud: that was the notification.
+          if (
+            !controller.signal.aborted &&
+            !spoken &&
+            Date.now() - started >= (config.sound?.afterSeconds ?? 20) * 1000
+          ) {
+            play(config, failed ? "fail" : "ack")
+          }
           endGroup(active.id)
           abort.current = null
           setBusy(false)
@@ -467,8 +532,20 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
       [swap],
     ),
     clear: useCallback(() => setItems([]), []),
+    speaking: isSpeaking,
+    hush: useCallback(() => {
+      voice.current?.stop()
+      voice.current = null
+      setSpeaking(false)
+    }, []),
     interrupt: useCallback(() => {
-      if (!abort.current) return false
+      // Barge-in: stopping the voice is worth doing even when there is no turn left to abort,
+      // because the tail of the last answer can still be playing after the turn has ended.
+      const spoke = Boolean(voice.current)
+      voice.current?.stop()
+      voice.current = null
+      setSpeaking(false)
+      if (!abort.current) return spoke
       abort.current.abort()
       return true
     }, []),

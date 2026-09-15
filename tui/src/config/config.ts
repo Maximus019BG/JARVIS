@@ -104,6 +104,26 @@ export const ConfigSchema = z
     /** Extra instruction files appended to the system prompt. Globs allowed. */
     instructions: z.array(z.string()).default([]),
     /**
+     * The voice the agent answers in: `"jarvis"`, `"plain"`, or a path to a markdown file
+     * holding one. Tone only — a persona never grants a capability or relaxes a rule, so
+     * `plain` is a safe way to turn the character off without weakening anything.
+     */
+    persona: z.string().default("jarvis"),
+    /**
+     * Who the agent is talking to. Entirely optional, and absent by default: guessing at a
+     * name from the git config would put someone's real name into every system prompt on
+     * the strength of a commit they made three years ago.
+     */
+    operator: z
+      .object({
+        name: z.string().optional(),
+        /** How to address them — "sir", "Maximus", "boss". Left alone if unset. */
+        address: z.string().optional(),
+        /** One line of standing context: role, what they are building, what they care about. */
+        about: z.string().optional(),
+      })
+      .optional(),
+    /**
      * Glob -> commands run after a matching file is written, with `$FILE` substituted.
      * Failures come back to the model. This is how formatting and diagnostics reach the
      * agent: `{ "**\/*.ts": ["bunx prettier --write $FILE", "bunx tsc --noEmit"] }`.
@@ -212,10 +232,127 @@ export const ConfigSchema = z
          * Overrides the PATH probe — set it when the probe picks the wrong input device.
          */
         recorder: z.string().optional(),
+        /**
+         * Capture command writing raw 16 kHz mono signed 16-bit PCM to **stdout**, for the
+         * wake word and for streaming dictation. A different question from `recorder`, which
+         * names a command that writes a wav file and stops — handing one to the other
+         * produces a command that runs and returns nothing usable.
+         */
+        capture: z.string().optional(),
+        /**
+         * Transcribe while you talk, when the model can — text appears as you speak instead of
+         * after you stop. On by default, because a provider that cannot stream falls back to
+         * the push-to-talk path on its own; set it false to stay on that path deliberately,
+         * which is worth doing on a metered connection where an open socket costs more than a
+         * single upload.
+         */
+        stream: z.boolean().default(true),
+        /**
+         * Read answers out loud. Off by default and separate from `model`: listening and
+         * speaking are independent wants, and someone who dictates prompts in an open-plan
+         * office is exactly the person who does not want the replies broadcast back.
+         */
+        speak: z.boolean().default(false),
+        /**
+         * `"provider/model"` for hosted speech, e.g. `"openai/gpt-4o-mini-tts"`. Unset means
+         * the local synthesiser is used instead, which is what keeps a Pi talking off-network.
+         */
+        speakModel: z.string().optional(),
+        /** Voice id for the hosted model — `"onyx"`, an ElevenLabs voice id, and so on. */
+        speakVoice: z.string().optional(),
+        /**
+         * Local synthesiser command: reads the text on stdin, writes a wav to the path
+         * appended as its last argument. Overrides the PATH probe, and the way to reach
+         * piper, which cannot be probed for because it needs a voice model chosen:
+         * `"piper --model /path/en_GB-alan-medium.onnx --output_file"`.
+         */
+        synth: z.string().optional(),
+        /**
+         * Always-on wake word. Off by default, and not merely as a preference: this holds the
+         * microphone open for as long as the session lasts. Nothing leaves the machine — the
+         * scoring is three small ONNX models running locally, and audio only reaches a
+         * transcription provider once the phrase has fired — but a terminal that opens your
+         * microphone should be something you turned on.
+         */
+        wake: z
+          .object({
+            enabled: z.boolean().default(false),
+            /**
+             * A pretrained openWakeWord phrase (`hey_jarvis`, `alexa`, `hey_mycroft`) or a path
+             * to an `.onnx` classifier you trained yourself.
+             */
+            phrase: z.string().default("hey_jarvis"),
+            /** Score above which the phrase counts as heard. Higher is fewer false alarms. */
+            threshold: z.number().default(0.5),
+            /** Consecutive 80 ms chunks over the threshold before it fires. */
+            frames: z.number().default(2),
+            /** How long to ignore the microphone after firing, so one phrase wakes once. */
+            refractoryMs: z.number().default(2000),
+            /**
+             * Keep listening while an answer is being read out, so saying the phrase cuts him
+             * off mid-sentence. On by default: interrupting by name is most of the reason to
+             * have a wake word at all.
+             *
+             * The cost is that there is no echo cancellation here, so an answer that contains
+             * the phrase out loud can wake him into his own sentence. Turn this off and he
+             * goes deaf while speaking, at the price of having to reach for the keyboard.
+             */
+            bargeIn: z.boolean().default(true),
+          })
+          .optional(),
+        /**
+         * Only act on voices you have enrolled.
+         *
+         * **This is a convenience gate, not authentication.** It compares a voice against
+         * `voices.json` and refuses the ones it does not know, which keeps the person standing
+         * next to you from talking to your workbench by accident. It is defeated by a
+         * recording of you, and it does not replace the permission gate: it decides *whose*
+         * words become a prompt, never what the agent may then do with them.
+         */
+        speaker: z
+          .object({
+            enabled: z.boolean().default(false),
+            /**
+             * Cosine similarity a voice must reach. 0.86 is what the model's authors publish;
+             * `jarvis voice test` prints the real scores so it can be set from measurement
+             * rather than from a guess.
+             */
+            threshold: z.number().default(0.86),
+            /** Path to a different ONNX embedder. Must take a raw 16 kHz waveform. */
+            model: z.string().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+    /**
+     * Short tones for "done", "you are needed" and "failed". Absent means off, and that is
+     * the right default: a terminal that makes a noise nobody asked for is a terminal people
+     * turn off, and the sounds only earn their keep for someone who walks away mid-turn.
+     */
+    sound: z
+      .object({
+        earcons: z.boolean().default(false),
+        /** Playback command, with the wav path appended. Overrides the PATH probe. */
+        player: z.string().optional(),
+        /**
+         * Only sound the "done" tone for turns longer than this many seconds. A beep after
+         * every two-second answer is noise; a beep after the four-minute one is the point.
+         */
+        afterSeconds: z.number().default(20),
       })
       .optional(),
     /** Max tool-call steps in one turn before the loop stops. */
     maxSteps: z.number().default(200),
+    /**
+     * Send only the core tools up front and let the model load the rest with `tool_search`,
+     * rather than carrying every schema in every request. Worth about half the per-turn
+     * floor, and all of the cost of an MCP server nobody is using this session.
+     *
+     * Turn it off for a model that cannot manage a two-step load. Nothing else changes: the
+     * request that goes out with this false is byte-identical to the one that went out
+     * before the option existed.
+     */
+    lazyTools: z.boolean().default(true),
     /**
      * Stop and ask once a session has cost this much in USD, then again after every
      * further increment of it. `0` disables the check.

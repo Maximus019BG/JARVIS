@@ -181,8 +181,39 @@ export const VOICE_PRESETS: readonly Preset[] = [
   },
 ]
 
+/**
+ * Presets that can speak. Apart again, and for the same reason as `VOICE_PRESETS`: generating
+ * audio is a different provider method from consuming it, and a package that does one does not
+ * necessarily do the other. ElevenLabs is here because it is the one that sounds like a person;
+ * OpenAI because it is already configured on most machines that got this far.
+ */
+export const SPEAK_PRESETS: readonly Preset[] = [
+  {
+    id: "openai-speech",
+    label: "OpenAI",
+    hint: "gpt-4o-mini-tts — cheap, and steerable by instruction",
+    npm: "@ai-sdk/openai",
+    askBaseURL: false,
+    askNpm: false,
+    auth: "key",
+    discovery: { kind: "none" },
+    models: ["gpt-4o-mini-tts"],
+  },
+  {
+    id: "elevenlabs-speech",
+    label: "ElevenLabs",
+    hint: "the one that sounds like a person — elevenlabs.io",
+    npm: "@ai-sdk/elevenlabs",
+    askBaseURL: false,
+    askNpm: false,
+    auth: "key",
+    discovery: { kind: "none" },
+    models: ["eleven_turbo_v2_5"],
+  },
+]
+
 export const findPreset = (id: string): Preset | undefined =>
-  [...PRESETS, ...VOICE_PRESETS].find((preset) => preset.id === id)
+  [...PRESETS, ...VOICE_PRESETS, ...SPEAK_PRESETS].find((preset) => preset.id === id)
 
 /** The hosted provider, named once so the first-run hand-off does not hardcode the string. */
 export const HOSTED_PRESET_ID = "jarvis"
@@ -207,4 +238,9 @@ export function presetChoices({ paired }: { paired: boolean }): Choice[] {
 /** The transcription providers offered on first use of the mic. */
 export function voicePresetChoices(): Choice[] {
   return VOICE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))
+}
+
+/** The speech providers offered when `/speak` finds nothing that can talk. */
+export function speakPresetChoices(): Choice[] {
+  return SPEAK_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))
 }

@@ -124,11 +124,48 @@ itself contain slashes. `options` goes straight to the provider factory;
 `cost` is per million tokens and only drives the status-line estimate. Set
 `export` if the package's factory is not the first `create*` export.
 
+### Persona
+
+The system prompt is two layers. The capability half — how to work, what not to invent,
+which tool to reach for — never changes. The voice on top of it does:
+
+```jsonc
+{
+  "persona": "jarvis",                 // or "plain", or "personas/house.md"
+  "operator": {
+    "name": "Maximus",
+    "address": "sir",                  // how you want to be addressed
+    "about": "builds hardware; prefers metric and EU standards"
+  }
+}
+```
+
+`jarvis` is composed, precise and unimpressed: it reports a failure in the same register as
+a success, volunteers the consequence rather than only the fact, disagrees once and then
+does as it is told. `plain` turns the character off without weakening a single rule above
+it, which is the reason the two are separate. A path is read as markdown and used verbatim.
+
+An unknown persona name is an error rather than a fallback — a typo should not quietly hand
+you a different voice than the one you configured.
+
+`operator` is entirely optional and absent by default. Nothing is inferred from your git
+config: a name guessed from a commit you made three years ago does not belong in every
+system prompt.
+
+A new session in a directory is also told the title of the last one, so it can pick the
+thread up instead of asking. Subagents are not — they are handed a task, not a conversation
+they were part of yesterday.
+
 ### Agents
 
-Two are built in: `build` (everything) and `plan` (read-only). Add your own in
-config, or as markdown in `.jarvis/agents/<name>.md` — frontmatter is settings, the
-body is the system prompt.
+Two are built in: `build` (everything) and `plan` (read-only). `install.sh` seeds five more
+into `~/.config/jarvis/agents/` — `draftsman` (drawings), `butler` (answers questions,
+touches nothing), `sentry` (sweeps for what is broken and reports without fixing),
+`mechanic` (firmware, serial, bring-up) and `analyst` (reads the numbers). Delete any of
+them and re-run it to get the original back.
+
+Add your own in config, or as markdown in `.jarvis/agents/<name>.md` — frontmatter is
+settings, the body is the system prompt.
 
 ```markdown
 ---
@@ -177,6 +214,35 @@ Run the pipeline, wait for the smoke tests, then tag the release.
 `name` must be lowercase alphanumeric with single hyphens and match the directory
 name. Other files in the skill directory are listed to the model so it can read them.
 Access is gated like any tool: `"permission": { "skill:deploy": "ask" }`.
+
+### Tool loading
+
+Tool schemas are the largest fixed cost of a turn, and they are paid on every turn
+whether or not the tools are used. `blueprint_edit` alone is about two thousand
+tokens; the blueprint family is two thirds of the whole tool payload. A session
+spent writing TypeScript should not be buying all of it.
+
+So the same trade skills make for instructions, tools make for schemas. Jarvis
+sends the core set — `read`, `write`, `edit`, `bash`, `glob`, `grep`, `list`,
+`todo`, `webfetch`, plus `ask`, `task` and your own `.jarvis/tools` — and
+announces the rest by name and one line in a `tool_search` tool. The model calls
+`tool_search` with a name, and the schema is on the wire from the next step on. A
+catalog line costs around twenty tokens against a schema's sixty to two thousand.
+
+It cuts the tool payload by about two thirds on a cold session. MCP is the larger
+win: an MCP server you are not using this session now costs nothing rather than
+its full schemas in every request, forever.
+
+Tools already used earlier in the conversation stay loaded, so the lookup is paid
+once per session rather than once per turn. If the model calls a tool that is not
+loaded, the call is turned into the load it needed rather than failing. And on the
+last retry of a turn that keeps failing on tool names, jarvis loads everything and
+sends the request it would have sent anyway — saving tokens must never be why a
+turn fails.
+
+Set `"lazyTools": false` for a model that cannot manage a two-step load. The
+request that goes out then is byte-identical to the one that went out before the
+option existed.
 
 ### Custom tools
 
@@ -265,6 +331,186 @@ runs deny unless you pass `--yes`. Agents can tighten this with their own
 `"theme": "jarvis"` or `"light"`, or drop a `themes/<name>.json` in any `.jarvis`
 directory overriding any subset of the tokens in [src/config/theme.ts](src/config/theme.ts).
 `/theme` switches at runtime.
+
+### Voice
+
+Two independent halves. Listening needs a provider with an audio endpoint; speaking needs
+either one that generates audio or a synthesiser on the machine.
+
+```jsonc
+"voice": {
+  "model": "groq/whisper-large-v3-turbo",   // in: transcription
+  "stream": true,                            // transcribe while you talk, when the model can
+  "recorder": "sox -d",                      // wav-file capture, for the non-streaming path
+  "capture": "arecord -q -f S16_LE -r 16000 -c 1 -t raw -",  // raw PCM, for streaming and wake
+
+  "speak": true,                             // out: read answers aloud
+  "speakModel": "openai/gpt-4o-mini-tts",    // hosted, or omit for the local synthesiser
+  "speakVoice": "onyx",
+  "synth": "piper --model ~/voices/en_GB-alan-medium.onnx --output_file"
+}
+```
+
+The two capture overrides answer different questions and are not interchangeable: `recorder`
+names a command that writes a **wav file** and stops, `capture` one that writes **raw 16 kHz
+mono PCM to stdout** and never stops. Both are probed for, so neither is usually needed.
+
+**In.** Press the mic key — or say the wake word, below — to start recording, press it again
+to transcribe into the prompt. The text lands in the buffer rather than being sent, because a
+misheard prompt that has already started a turn costs money to take back. Escape throws the
+recording away. The first press with nothing configured opens the setup rather than reporting
+that voice is off.
+
+When the model can stream, the words appear in the status line **as you speak** rather than
+after you stop, and the transcript is assembled from whichever of `delta`, `partial` and
+`final` parts the provider chooses to send. Partials are shown but never written into your
+buffer: a partial is a guess that gets rewritten, and rewriting somebody's prompt under their
+cursor is not a thing to do to them.
+
+Every chunk is also kept in memory, and that buffer is the fallback rather than belt and
+braces. The AI SDK's OpenAI transcription model advertises streaming for *every* model id —
+including `whisper-1`, whose API does not support it — so the stream is attempted, fails, and
+the whole recording is uploaded as one wav instead. You get the old behaviour, not a lost
+sentence. Set `"stream": false` to skip the attempt, which is worth doing on a metered
+connection.
+
+**Out.** `/speak` toggles it, `/speak test` says a line, and `/speak` with nothing installed
+opens the same setup pointed the other way. Answers are spoken sentence by sentence off the
+token stream, so it starts talking before the answer is finished, and **escape stops it
+mid-word** — including after the turn itself has ended, while the tail is still playing.
+
+**Barge-in.** Reaching for the microphone means *stop talking*: pressing the mic key, or
+saying the wake word, cuts the speech off on the keypress rather than once the recorder is up.
+The turn behind the voice carries on — its text is already on screen to read — because
+interrupting the speech and abandoning the work are different intentions.
+
+Code fences are never read out. Neither are URLs, markdown emphasis or table rules: the
+terminal is already showing them, and a paragraph of TypeScript read aloud is the fastest way
+to make somebody turn this off.
+
+With `speakModel` set, speech goes to that provider. Without it, the first of `say`,
+`espeak-ng` or `espeak` on PATH is used. **Piper** — the one worth having on a Pi, and the
+only one that keeps working off-network — is not probed for, because it is useless until a
+voice model is chosen; point `synth` at it as above. Any command works so long as it reads
+the text on stdin and writes a wav to the path given as its last argument.
+
+Nothing here is on by default. Listening and speaking are separate switches on purpose:
+someone dictating prompts in an open-plan office is exactly the person who does not want the
+replies broadcast back.
+
+#### Wake word
+
+Say "hey jarvis" and the microphone opens on its own.
+
+```bash
+jarvis wake models          # ~3.7 MB, once
+bun add onnxruntime-node    # on the machine that will listen
+```
+
+```jsonc
+"voice": {
+  "wake": {
+    "enabled": true,
+    "phrase": "hey_jarvis",     // or alexa, hey_mycroft, or a path to your own .onnx
+    "threshold": 0.5,
+    "frames": 2,                // consecutive 80 ms chunks over the threshold
+    "refractoryMs": 2000,
+    "bargeIn": true             // stay listening while an answer is being read out
+  }
+}
+```
+
+Detection is [openWakeWord](https://github.com/dscripka/openWakeWord) — three small ONNX
+models in a chain, running in their own process for the same reason the Pi's vision worker
+does. **Nothing leaves the machine**: scoring is entirely local, and audio only reaches a
+transcription provider after the phrase has fired.
+
+A score arrives every 80 ms once about **1.9 seconds** of audio has accumulated, which is how
+much context the two sliding windows need — a listener that has just started is genuinely deaf
+for the first two seconds. Firing needs `frames` consecutive chunks over `threshold`, because
+a single chunk spikes for all sorts of things that are not the phrase; `refractoryMs` then
+ignores the microphone, because one real utterance scores high for most of a second and would
+otherwise start ten recordings.
+
+The listener goes deaf **while you are recording a prompt** — on ALSA the capture device is
+usually exclusive, so the worker holding it is the reason push-to-talk could not open it.
+
+It keeps listening **while an answer is being read out**, which is what `bargeIn` buys: you
+cut him off by name, mid-sentence. The cost is that there is no echo cancellation here, so an
+answer that happens to say the phrase out loud can wake him into his own sentence. That is
+self-limiting — he stops talking, records the silence, and reports hearing nothing — but set
+`bargeIn` to false and he goes deaf while speaking instead, at the price of reaching for the
+keyboard to stop him.
+
+`hey_jarvis` is a real pretrained openWakeWord model, so no training is needed. Only the last
+model in the chain is phrase-specific — it is about 100 KB and trains in an afternoon — so
+pointing `phrase` at your own `.onnx` is a config change rather than a fork.
+
+`onnxruntime-node` is deliberately **not** a dependency: it is ~100 MB of native code that
+only this and the Pi camera use. Without it the wake word reports what to install and the rest
+of the session carries on.
+
+#### Speaker identification
+
+Only act on voices you have enrolled.
+
+```bash
+jarvis voice models          # ~100 MB, once
+bun add onnxruntime-node     # on the machine that will listen
+jarvis voice enrol Maximus   # three clips, four seconds each
+jarvis voice test            # score yourself against everyone enrolled
+```
+
+```jsonc
+"voice": { "speaker": { "enabled": true, "threshold": 0.86 } }
+```
+
+**This is a convenience gate, not authentication.** It keeps the person standing next to you
+from talking to your workbench by accident. It is defeated by a recording of your voice, and
+it decides *whose* words become a prompt — never what the agent may then do with them. The
+permission gate is still the thing standing between a prompt and your filesystem, and nothing
+here is a reason to loosen it.
+
+With that said, it **fails closed**. Every way of not knowing who spoke — no audio to check, a
+worker that will not start, a clip too short to score, nobody enrolled — refuses. A gate that
+opens when it is confused is not a gate.
+
+Embeddings come from WavLM base+ with an x-vector head, running locally in its own process.
+It was chosen over the usual speaker embedders (ECAPA-TDNN, CAM++, WeSpeaker) for one
+practical reason: it takes a **raw waveform**, where all of those want 80-dimensional
+filterbank features and would have meant writing a mel front end in TypeScript and getting it
+bit-exact against a reference. Measured on this model: 512 dimensions, deterministic, ~700 ms
+of CPU per 3 s of audio on a desktop, and clear separation between two voices.
+
+`0.86` is the threshold the model's authors publish. Do not take it on faith — `jarvis voice
+test` prints the real scores, and enrolment prints how well your own three clips agree with
+each other, which is the number that tells you whether enrolment worked at all. If your
+samples do not agree with each other, they will not agree with you tomorrow.
+
+Verification needs raw 16 kHz audio, which is the streaming path (`voice.stream`, and the wake
+word). On the wav-file path there is nothing comparable to check, so the gate says so and
+refuses rather than waving it through.
+
+Enrolments live in `~/.local/share/jarvis/voices.json` at mode 0600, beside the device token
+and for the same reason: an embedding cannot be turned back into audio, but it is derived from
+a person's body and it does not change for the rest of their life.
+
+### Sound
+
+Three tones — acknowledged, you-are-needed, failed — off unless you ask for them.
+
+```jsonc
+"sound": { "earcons": true, "afterSeconds": 20, "player": "mpv --no-video" }
+```
+
+The "done" tone only fires for turns longer than `afterSeconds`, and never for one you
+interrupted yourself: a beep after every two-second answer is noise, and the four-minute one
+is the whole point. Nor when the answer was read out loud — that was the notification. A
+permission prompt always sounds, because the turn has stopped and cannot go on without you.
+
+The wavs are generated at startup rather than shipped, and playback spawns the first of
+`afplay`, `paplay`, `aplay`, `ffplay` or `play` found on PATH — `player` overrides the probe.
+A machine with none of them stays silent, which is the correct failure mode for a sound.
 
 ### Keybinds
 
@@ -477,9 +723,13 @@ Swapping detection onto the IMX500's on-sensor accelerator later means writing o
 
 ## Tools
 
-`read`, `write`, `edit`, `bash`, `glob`, `grep`, `list`, `task`, `blueprint`,
-`blueprint_edit`, `blueprint_view`, plus `skill` when skills exist, anything in
-`.jarvis/tools/`, and every MCP tool. Paths are resolved against the workspace root and
+`read`, `write`, `edit`, `bash`, `glob`, `grep`, `list`, `todo`, `webfetch`,
+`bash_output`, `engineering_calc`, `blueprint`, `blueprint_edit`, `blueprint_view`,
+`blueprint_symbol`, `blueprint_check`, `blueprint_sync`, plus `ask` when there is a user
+to answer it, `task` when subagents can be spawned, `skill` when skills exist, anything in
+`.jarvis/tools/`, and every MCP tool. That set is listed to the model in the system prompt,
+because a model not told which tools exist invents one — and some gateways reject the whole
+request for a name they were not offered. Paths are resolved against the workspace root and
 rejected if they escape it; `edit` requires the file to have been read first and refuses
 an ambiguous match.
 
@@ -512,6 +762,7 @@ src/
   init.ts        the `jarvis init` scaffold
   theme.ts       color tokens
   keybinds.ts    keymap
+  voice/         wake word, streaming dictation, speaker id, wav encoding
   tools/         one file per built-in tool, plus custom.ts and skill.ts
   ui/            opentui/react components
 ```

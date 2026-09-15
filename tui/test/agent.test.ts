@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import type { ModelMessage } from "ai"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,7 +8,7 @@ import { ConfigSchema } from "../src/config/config.ts"
 import { constantAsker, PermissionGate } from "../src/permission.ts"
 import type { MockPart } from "./fixtures/mock-provider.ts"
 
-const config = ConfigSchema.parse({
+const rawConfig = {
   model: "mock/test",
   provider: {
     mock: {
@@ -16,7 +17,9 @@ const config = ConfigSchema.parse({
       models: { test: { cost: { input: 1, output: 2 } } },
     },
   },
-})
+}
+
+const config = ConfigSchema.parse(rawConfig)
 
 function script(...steps: MockPart[][]) {
   globalThis.mockSteps = steps
@@ -31,13 +34,20 @@ function toolNames(call: unknown): string[] {
   return tools.map((tool) => tool.name)
 }
 
-async function turn(prompt: string, cwd: string, allow = true) {
+async function turn(
+  prompt: string,
+  cwd: string,
+  allow = true,
+  overrides: Record<string, unknown> = {},
+  history: ModelMessage[] = [],
+) {
   const events: AgentEvent[] = []
+  const used = Object.keys(overrides).length > 0 ? ConfigSchema.parse({ ...rawConfig, ...overrides }) : config
   const result = await run({
-    config,
+    config: used,
     cwd,
-    messages: [{ role: "user", content: prompt }],
-    gate: new PermissionGate(config.permission, constantAsker(allow)),
+    messages: [...history, { role: "user", content: prompt }],
+    gate: new PermissionGate(used.permission, constantAsker(allow)),
     onEvent: (event) => events.push(event),
   })
   return { result, events }
@@ -239,6 +249,155 @@ describe("run", () => {
     expect(result.text).toBe("retried ok")
     expect(globalThis.mockCalls).toHaveLength(3)
     expect(events.some((e) => e.type === "error" && e.message.includes("retrying"))).toBe(true)
+  })
+
+  // The failure this exists for: a model asked for a blueprint invented a tool called
+  // `browse`, the gateway validated the name against the tools the request carried, rejected
+  // the whole completion, and the turn died on its first tool call with the provider's wording.
+  const rejected = (): MockPart[] => [
+    {
+      type: "error",
+      error: "Tool call validation failed: attempted to call tool 'browse' which was not in request.tools",
+    },
+  ]
+
+  test("retries when the gateway rejects a tool name it was never offered", async () => {
+    const cwd = workspace()
+    writeFileSync(join(cwd, "hello.txt"), "hello\n")
+    script(rejected(), [{ type: "tool", id: "c1", name: "read", input: { filePath: "hello.txt" } }], [
+      { type: "text", text: "retried ok" },
+    ])
+
+    const { result, events } = await turn("read hello.txt", cwd)
+    expect(result.text).toBe("retried ok")
+    expect(globalThis.mockCalls).toHaveLength(3)
+    // The second attempt is told which tools exist, by name — a hint that does not name them
+    // leaves the model to guess again.
+    const second = JSON.stringify(globalThis.mockCalls[1])
+    expect(second).toContain("called a tool that does not exist")
+    expect(second).toContain("blueprint_symbol")
+    expect(events.some((e) => e.type === "error" && e.message.includes("retrying"))).toBe(true)
+  })
+
+  test("explains an unknown tool name once the retries are spent", async () => {
+    script(rejected(), rejected(), rejected())
+    const { events } = await turn("look something up", workspace())
+    expect(globalThis.mockCalls).toHaveLength(3)
+    expect(events.filter((e) => e.type === "error" && e.message.includes("retrying"))).toHaveLength(2)
+    // The provider's wording names the tool it refused, but never what to do about it.
+    const explained = events.filter((e) => e.type === "error" && e.message.includes("The tools available this turn"))
+    expect(explained).toHaveLength(1)
+    expect(explained[0]).toMatchObject({ message: expect.stringContaining("webfetch") })
+  })
+
+  test("does not retry an unknown-tool error that arrives after a tool already ran", async () => {
+    const cwd = workspace()
+    writeFileSync(join(cwd, "hello.txt"), "hello\n")
+    script([{ type: "tool", id: "c1", name: "read", input: { filePath: "hello.txt" } }, ...rejected()])
+    const { events } = await turn("read hello.txt", cwd)
+    // Replaying the attempt would run `read` a second time, so the error is reported as it is.
+    expect(events.some((e) => e.type === "error" && e.message.includes("retrying"))).toBe(false)
+    expect(events.some((e) => e.type === "tool-end" && e.name === "read")).toBe(true)
+  })
+
+  test("names the tools it actually offers in the system prompt", async () => {
+    script([{ type: "text", text: "ok" }])
+    await turn("hello", workspace())
+    const sent = JSON.stringify(globalThis.mockCalls[0])
+    expect(sent).toContain("Loaded at the start of this turn")
+    expect(sent).toContain("webfetch")
+    // The set is still closed; the other half of it is named in tool_search's description,
+    // which is in this same request.
+    expect(sent).toContain("tool_search")
+    expect(sent).toContain("blueprint_symbol")
+  })
+
+  test("names the whole set as closed when nothing is deferred", async () => {
+    script([{ type: "text", text: "ok" }])
+    await turn("hello", workspace(), true, { lazyTools: false })
+    const sent = JSON.stringify(globalThis.mockCalls[0])
+    expect(sent).toContain("The only tools that exist")
+    expect(sent).not.toContain("tool_search")
+  })
+
+  describe("deferred tool loading", () => {
+    test("a cold turn sends the core tools and none of the blueprint schemas", async () => {
+      script([{ type: "text", text: "ok" }])
+      await turn("hello", workspace())
+      const sent = toolNames(globalThis.mockCalls[0])
+      expect(sent).toContain("read")
+      expect(sent).toContain("bash")
+      expect(sent).toContain("tool_search")
+      expect(sent).not.toContain("blueprint_edit")
+      expect(sent).not.toContain("engineering_calc")
+    })
+
+    // The test the whole design rests on: `activeTools` is recomputed per step, so a load in
+    // step 0 has to put the schema on the wire in step 1. If this fails, nothing else matters.
+    test("tool_search puts a tool on the wire for the next step", async () => {
+      script(
+        [{ type: "tool", id: "c1", name: "tool_search", input: { names: ["blueprint_edit"] } }],
+        [{ type: "text", text: "loaded" }],
+      )
+      const { result } = await turn("draw a divider", workspace())
+      expect(result.text).toBe("loaded")
+      expect(toolNames(globalThis.mockCalls[0])).not.toContain("blueprint_edit")
+      expect(toolNames(globalThis.mockCalls[1])).toContain("blueprint_edit")
+      // And the siblings it cannot check its own work without.
+      expect(toolNames(globalThis.mockCalls[1])).toContain("blueprint_view")
+    })
+
+    test("a call to an unloaded tool is rerouted into a load, not into a wrong tool", async () => {
+      script(
+        [{ type: "tool", id: "c1", name: "blueprint_edit", input: { name: "x", ops: [] } }],
+        [{ type: "text", text: "recovered" }],
+      )
+      const { result, events } = await turn("draw", workspace())
+      expect(result.text).toBe("recovered")
+      const start = events.find((e) => e.type === "tool-start")
+      expect(start && "name" in start && start.name).toBe("tool_search")
+      // Announced, never silent — the same rule the rest of repair.ts follows.
+      expect(events.some((e) => e.type === "error" && e.message.includes("blueprint_edit"))).toBe(true)
+      expect(toolNames(globalThis.mockCalls[1])).toContain("blueprint_edit")
+    })
+
+    test("a tool the history already used is loaded before the turn starts", async () => {
+      script([{ type: "text", text: "ok" }])
+      await turn("and now move R1", workspace(), true, {}, [
+        { role: "user", content: "draw a divider" },
+        {
+          role: "assistant",
+          content: [{ type: "tool-call", toolCallId: "c0", toolName: "blueprint_edit", input: {} }],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool-result", toolCallId: "c0", toolName: "blueprint_edit", output: { type: "text", value: "drawn" } }],
+        },
+      ])
+      // No second load round trip two turns into a drawing, and the history never names a
+      // tool the request does not carry.
+      expect(toolNames(globalThis.mockCalls[0])).toContain("blueprint_edit")
+    })
+
+    test("lazyTools off sends every tool, as before the option existed", async () => {
+      script([{ type: "text", text: "ok" }])
+      await turn("hello", workspace(), true, { lazyTools: false })
+      const sent = toolNames(globalThis.mockCalls[0])
+      expect(sent).toContain("blueprint_edit")
+      expect(sent).toContain("engineering_calc")
+      expect(sent).not.toContain("tool_search")
+    })
+
+    // The guarantee that makes this safe to turn on by default: whatever else deferral does,
+    // it must never be the reason a turn fails. The last attempt is the request jarvis would
+    // have sent anyway.
+    test("the last retry gives up on saving tokens and sends everything", async () => {
+      script(rejected(), rejected(), [{ type: "text", text: "eventually" }])
+      const { result } = await turn("do the thing", workspace())
+      expect(result.text).toBe("eventually")
+      expect(toolNames(globalThis.mockCalls[0])).not.toContain("blueprint_edit")
+      expect(toolNames(globalThis.mockCalls[2])).toContain("blueprint_edit")
+    })
   })
 
   test("delegates to a subagent and returns its text", async () => {

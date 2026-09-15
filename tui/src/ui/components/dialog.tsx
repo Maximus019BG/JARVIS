@@ -247,6 +247,15 @@ export function Picker({
 
 export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
+/**
+ * `clip` from the other end, keeping the last `max` characters.
+ *
+ * For text that is still being written — a live transcript — where the interesting part is
+ * the end. Clipping from the right there pins the opening words on screen and hides every
+ * word as it arrives, which is precisely backwards.
+ */
+export const tail = (text: string, max: number) => (text.length > max ? `…${text.slice(1 - max)}` : text)
+
 /** Preamble lines of a unified patch, which the diff view does not render. */
 export const PATCH_HEADER = /^(Index: |={10,}$|--- |\+\+\+ |@@ )/
 

@@ -3,6 +3,7 @@ import { useTerminalDimensions } from "@opentui/react"
 import { VERSION } from "../../index.tsx"
 import { describe, type Keymap } from "../../config/keybinds.ts"
 import type { Theme } from "../../config/theme.ts"
+import type { BootRow } from "../boot.ts"
 import type { Git } from "../git.ts"
 import { BRANCH_MARK } from "./status.tsx"
 
@@ -21,6 +22,7 @@ export function Welcome({
   agent,
   empty,
   needsProvider,
+  boot,
 }: {
   theme: Theme
   keymap: Keymap
@@ -32,6 +34,11 @@ export function Welcome({
   empty: boolean
   /** No provider yet, so the one key that fixes that earns a place in a four-key list. */
   needsProvider?: boolean
+  /**
+   * The startup sweep. Shown only on an empty session: on a resumed one the transcript is
+   * the more useful thing to be looking at, and the report has already been read once.
+   */
+  boot?: BootRow[]
 }) {
   const { width: columns } = useTerminalDimensions()
   // `block` is 66 columns of JARVIS; `tiny` says the same thing in 20 when there is no room.
@@ -68,7 +75,24 @@ export function Welcome({
         {git?.branch && git.dirty && <text fg={theme.warning}>*</text>}
       </box>
       <text fg={theme.muted}>{`${agent}  ${model}`}</text>
-      <text fg={theme.hint}>{keys.map(([key, label]) => `${key} ${label}`).join("   ")}</text>
+      {empty && boot && boot.length > 0 && (
+        // `flex-start` inside a parent that centres: the block is centred as a whole, while
+        // the rows inside it stay left-aligned so the padded labels line the values up into a
+        // column. Centring each row individually would ragged them against each other.
+        <box style={{ flexDirection: "column", paddingTop: 1, alignItems: "flex-start" }}>
+          {boot.map((row) => (
+            <box key={row.label} style={{ flexDirection: "row" }}>
+              <text fg={theme.dim}>{`${row.label.padEnd(7)} `}</text>
+              <text fg={row.tone === "warn" ? theme.warning : row.tone === "off" ? theme.dim : theme.muted}>
+                {row.value}
+              </text>
+            </box>
+          ))}
+        </box>
+      )}
+      <box style={{ paddingTop: 1 }}>
+        <text fg={theme.hint}>{keys.map(([key, label]) => `${key} ${label}`).join("   ")}</text>
+      </box>
     </box>
   )
 }

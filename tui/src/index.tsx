@@ -24,6 +24,11 @@ usage:
   jarvis pi [blueprint]        draw with your hands onto a projector
   jarvis pi calibrate          align the camera to the projected sheet
   jarvis pi models             download the hand-tracking models
+  jarvis wake models [phrase]  download the wake-word models (default hey_jarvis)
+  jarvis voice models          download the speaker-identification model (~100 MB)
+  jarvis voice enrol <name>    teach it your voice
+  jarvis voice test            score your voice against everyone enrolled
+  jarvis voice list / forget <name>
 
 pi options:
   --source <rpicam|webcam|script|replay>   frame source (default rpicam)
@@ -152,6 +157,31 @@ async function main() {
     case "device": {
       const { showDevice } = await import("./cli/pair.ts")
       showDevice()
+      return
+    }
+    case "wake": {
+      const { fetchWakeModels, missingWakeModels, wakeModelDir } = await import("./voice/wake-models.ts")
+      // `jarvis wake models hey_mycroft` — "models" is the only subcommand, so anything else
+      // positional is the phrase, falling back to whatever the config already asks for.
+      const phrase =
+        args.find((arg) => !arg.startsWith("-") && arg !== "models") ?? config.voice?.wake?.phrase ?? "hey_jarvis"
+      const say = (line: string) => process.stdout.write(`${line}\n`)
+      const { fetched, errors } = await fetchWakeModels(phrase, say)
+      say(fetched.length > 0 ? `fetched ${fetched.length} model(s) into ${wakeModelDir}` : "models already present")
+      for (const error of errors) process.stderr.write(`warning: ${error}\n`)
+      const missing = missingWakeModels(phrase)
+      if (missing.length > 0) {
+        process.stderr.write(`still missing: ${missing.join(", ")}\n`)
+        process.exitCode = 1
+        return
+      }
+      say(`"${phrase}" is ready — set voice.wake.enabled to turn it on`)
+      return
+    }
+    case "voice": {
+      const { runVoice } = await import("./cli/voice.ts")
+      const positional = args.filter((arg) => !arg.startsWith("-"))
+      await runVoice({ config, action: positional[0], name: positional[1] })
       return
     }
     case "pi": {

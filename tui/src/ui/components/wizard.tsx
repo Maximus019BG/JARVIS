@@ -139,7 +139,8 @@ export function Wizard({
     }
   })
 
-  const heading = setup.draft.voice ? "voice input" : "add a provider"
+  const heading =
+    setup.draft.kind === "transcribe" ? "voice input" : setup.draft.kind === "speak" ? "spoken replies" : "add a provider"
 
   const { width: columns, height: rows } = useTerminalDimensions()
   const width = Math.max(34, Math.min(76, columns - 8))

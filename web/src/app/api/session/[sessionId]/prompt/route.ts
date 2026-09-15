@@ -8,11 +8,12 @@ import { db } from "~/server/db";
 import { agentSession } from "~/server/db/schemas/agent_session";
 import { sessionPrompt } from "~/server/db/schemas/session_prompt";
 import { workstation } from "~/server/db/schemas/workstation";
+// One definition, shared with the list endpoint: a client that greys out its microphone at a
+// different number than the one the server refuses at is worse than no warning at all.
+import { MAX_PENDING } from "~/server/steering";
 
 /** Long enough for a paragraph of direction, short enough not to be a file upload. */
 const MAX_PROMPT = 8000;
-/** Prompts already waiting before another is refused, so a stuck terminal cannot be flooded. */
-const MAX_PENDING = 10;
 
 const bodySchema = z.object({ prompt: z.string().trim().min(1).max(MAX_PROMPT) });
 

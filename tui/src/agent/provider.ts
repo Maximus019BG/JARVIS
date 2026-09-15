@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { wrapLanguageModel, type LanguageModel, type TranscriptionModel } from "ai"
+import { wrapLanguageModel, type LanguageModel, type SpeechModel, type TranscriptionModel } from "ai"
 import type { Config, ModelConfig, ProviderConfig } from "../config/config.ts"
 import { dataDir } from "../config/paths.ts"
 import { catalogKey, modelInfo } from "./catalog.ts"
@@ -101,6 +101,8 @@ type Provider = ((modelID: string) => LanguageModel) & {
   languageModel?: (modelID: string) => LanguageModel
   /** Only some providers speak audio; `resolveTranscription` is what says so out loud. */
   transcription?: (modelID: string) => TranscriptionModel
+  /** Fewer still generate it. Same story as `transcription`, in the other direction. */
+  speech?: (modelID: string) => SpeechModel
 }
 
 const loaded = new Map<string, Promise<Provider>>()
@@ -239,4 +241,25 @@ export async function resolveTranscription(config: Config, id: string): Promise<
     )
   }
   return provider.transcription(modelID)
+}
+
+/**
+ * The speech model behind `voice.speakModel`. The mirror image of `resolveTranscription`,
+ * separate for the same reason: a provider that can hold a conversation usually cannot say
+ * one out loud, and the failure has to name the setting that is wrong rather than the
+ * method that was missing.
+ */
+export async function resolveSpeech(config: Config, id: string): Promise<SpeechModel> {
+  const { providerID, modelID } = parseModelID(id)
+  const providerConfig = config.provider[providerID]
+  if (!providerConfig) throw new ProviderError(`no provider "${providerID}" in the config`)
+  const provider = await loadProvider(providerID, providerConfig)
+  if (typeof provider.speech !== "function") {
+    throw new ProviderError(
+      `${providerID} (${providerConfig.npm}) has no speech model — set voice.speakModel to a ` +
+        `provider that generates audio, e.g. "openai/gpt-4o-mini-tts", or leave it unset and ` +
+        `install a local synthesiser instead`,
+    )
+  }
+  return provider.speech(modelID)
 }

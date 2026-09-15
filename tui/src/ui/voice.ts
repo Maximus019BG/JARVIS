@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { resolveTranscription } from "../agent/provider.ts"
+import type { Heard } from "../voice/dictate.ts"
 import type { Config } from "../config/config.ts"
 
 export class VoiceError extends Error {}
@@ -44,8 +45,14 @@ export function pickRecorder(has: (bin: string) => boolean, override?: string): 
 const onPath = (bin: string) => Bun.which(bin) !== null
 
 export type Recording = {
-  /** Stops the recorder and resolves with what was said. */
-  stop: () => Promise<string>
+  /**
+   * Stops the recorder and resolves with what was said.
+   *
+   * No `pcm`, unlike the streaming path: this captures a wav at whatever rate and channel
+   * count the recorder chose, and speaker identification needs 16 kHz mono. Handing back
+   * audio the verifier cannot use would be worse than handing back none.
+   */
+  stop: () => Promise<Heard>
   /** Stops the recorder and throws the audio away. */
   cancel: () => Promise<void>
 }
@@ -101,8 +108,8 @@ export async function listen(config: Config): Promise<Recording> {
       const bytes = await finish()
       // A wav header alone is 44 bytes, so anything near it is a stray keypress rather than
       // a sentence — and not worth a round trip to a paid endpoint to be told so.
-      if (bytes.length < 1024) return ""
-      return (await transcribe({ model, audio: bytes })).text.trim()
+      if (bytes.length < 1024) return { text: "" }
+      return { text: (await transcribe({ model, audio: bytes })).text.trim() }
     },
     cancel: async () => {
       // No transcription: cancelling is the "throw this away" path, and it should not spend.

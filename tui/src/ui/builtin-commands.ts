@@ -4,6 +4,7 @@ import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
 import { panelBody, type PanelContent } from "./components/panel.tsx"
 import { providerCommand } from "./provider-command.ts"
+import { runSpeak } from "./speak-command.ts"
 import { statsCommand } from "./stats-command.ts"
 import { tutorialContent } from "./tutorial.ts"
 import { expand, type Command } from "../extend/command.ts"
@@ -85,6 +86,8 @@ export type CommandDeps = {
   openSetup: (presetID?: string) => void
   /** Opens the pairing flow, or this device's pairing when it already has one. */
   openPair: () => void
+  /** Opens the provider flow set to add something that can speak. */
+  openSpeakSetup: () => void
   /**
    * Re-reads the config after a command wrote to it. Returns false if the result did not parse,
    * in which case the running session keeps the config it had.
@@ -160,6 +163,13 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
     case "stats":
       return openPanel(statsCommand(args, { width: panelBody(width) }))
+    case "speak":
+      return runSpeak(args, {
+        config,
+        note: (text, level) => turn.note(text, level),
+        openSetup: deps.openSpeakSetup,
+        reload: () => reload(),
+      })
     case "tutorial":
       return openPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     case "extensions":

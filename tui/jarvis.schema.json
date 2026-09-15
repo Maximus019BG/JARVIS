@@ -294,6 +294,24 @@
         "type": "string"
       }
     },
+    "persona": {
+      "default": "jarvis",
+      "type": "string"
+    },
+    "operator": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "about": {
+          "type": "string"
+        }
+      }
+    },
     "check": {
       "default": {},
       "type": "object",
@@ -477,12 +495,97 @@
         },
         "recorder": {
           "type": "string"
+        },
+        "capture": {
+          "type": "string"
+        },
+        "stream": {
+          "default": true,
+          "type": "boolean"
+        },
+        "speak": {
+          "default": false,
+          "type": "boolean"
+        },
+        "speakModel": {
+          "type": "string"
+        },
+        "speakVoice": {
+          "type": "string"
+        },
+        "synth": {
+          "type": "string"
+        },
+        "wake": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "phrase": {
+              "default": "hey_jarvis",
+              "type": "string"
+            },
+            "threshold": {
+              "default": 0.5,
+              "type": "number"
+            },
+            "frames": {
+              "default": 2,
+              "type": "number"
+            },
+            "refractoryMs": {
+              "default": 2000,
+              "type": "number"
+            },
+            "bargeIn": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        },
+        "speaker": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "threshold": {
+              "default": 0.86,
+              "type": "number"
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "sound": {
+      "type": "object",
+      "properties": {
+        "earcons": {
+          "default": false,
+          "type": "boolean"
+        },
+        "player": {
+          "type": "string"
+        },
+        "afterSeconds": {
+          "default": 20,
+          "type": "number"
         }
       }
     },
     "maxSteps": {
       "default": 200,
       "type": "number"
+    },
+    "lazyTools": {
+      "default": true,
+      "type": "boolean"
     },
     "maxCost": {
       "default": 0,

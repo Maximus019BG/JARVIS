@@ -2,7 +2,8 @@
 
 Every name here is a real entry in the `electrical` library. Use
 `blueprint_symbol action:"list"` with a query to see descriptions, standard references and
-port counts; use `action:"place"` to put one on a drawing.
+port counts; then the same tool with `action:"place"` to put one on a drawing. Both are
+values of that tool's `action` field — there is no `blueprint_place`.
 
 Names are unique across libraries in almost every case, so `resistor` works as well as
 `electrical/resistor`. Qualify it when a name also exists in the `iot` or `building`

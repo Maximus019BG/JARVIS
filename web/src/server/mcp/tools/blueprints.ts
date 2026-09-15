@@ -229,7 +229,7 @@ export const blueprintsModule: McpModule = {
     }),
 
     tool({
-      name: "blueprint_symbols",
+      name: "blueprint_symbol",
       title: "Search the symbol library",
       description:
         "Standard symbols — electrical, building, IoT — you can place with blueprint_edit. Search before inventing geometry by hand.",

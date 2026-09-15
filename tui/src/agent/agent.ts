@@ -8,10 +8,14 @@ import { PermissionDenied, type PermissionGate } from "../permission.ts"
 import { fire, wrapTools } from "../extend/plugin.ts"
 import { providerOf, record } from "./metrics.ts"
 import { systemPrompt } from "./prompt.ts"
+import { toolCallRepair } from "./repair.ts"
 import { defaultModelID, resolveModel, type ResolvedModel } from "./provider.ts"
 import { customTools } from "../extend/custom-tools.ts"
 import { skillTool } from "../extend/skill-tool.ts"
 import { builtinTools, filterTools, gateTools, MAX_DEPTH, ToolError, type ToolSet } from "../tools/index.ts"
+import { createLoadout, toolsUsedIn } from "../tools/loadout.ts"
+import { toolSearchTool } from "../tools/tool-search.ts"
+import { startedBackground } from "../tools/background.ts"
 
 export type Usage = { input: number; output: number; cost: number }
 
@@ -40,6 +44,12 @@ export type RunOptions = {
   extensions?: Extensions
   /** Session id, passed to custom tools and plugin hooks. */
   sessionID?: string
+  /**
+   * The previous session in this directory, for the system prompt's continuity block.
+   * Supplied by the interactive UI only: a subagent has no history of its own to resume,
+   * and a headless run is a script rather than a conversation being picked back up.
+   */
+  previous?: { title: string; created: number }
   /**
    * Files read so far, keyed to the mtime they had when read. Owned by the caller so it
    * survives across turns; a fresh map per turn would make the model re-read every file.
@@ -129,6 +139,13 @@ export function errorMessage(error: unknown): string {
  */
 const GROQ_REFUSAL_SIGNATURE = "Failed to call a function"
 
+/**
+ * Some gateways validate the model's tool calls against the tools the request carried and
+ * reject the whole completion server-side, rather than passing the bad name through for the
+ * SDK — and `repair.ts` — to deal with. The wording is the provider's, so match loosely.
+ */
+const UNKNOWN_TOOL = /not in request\.tools|no such tool|unknown tool|is not a valid tool|tool .* does not exist/i
+
 export async function run(options: RunOptions): Promise<RunResult> {
   const {
     config,
@@ -170,6 +187,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
             agent: name,
             model: agents[name]?.model,
             messages: [{ role: "user", content: prompt }],
+            // A subagent is handed a task, not a thread it was part of yesterday. Passing the
+            // parent's continuity down would have it apologising for a session it never had.
+            previous: undefined,
             // Shared, not copied: a file the subagent read shouldn't force the parent to re-read.
             read,
             depth: depth + 1,
@@ -218,9 +238,46 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Built-ins, skills and custom tools call the gate themselves with a useful title and
   // detail. Everything else — MCP, plugin-contributed tools — gets the generic check, so
   // nothing reaches the model ungated.
-  const selfGated = new Set([...Object.keys(builtins), ...Object.keys(custom), "skill"])
+  // `tool_search` reveals a schema and does nothing else; the tool it loads is gated as it
+  // always was, at the point it actually runs. Prompting for the lookup would be theatre.
+  const selfGated = new Set([...Object.keys(builtins), ...Object.keys(custom), "skill", "tool_search"])
   const gated = gateTools(filterTools(available, agent.tools, agent.defaultTools), agentGate, selfGated)
   const tools = wrapTools(gated, plugins, { sessionID, agent: agent.name })
+
+  // Which of those tools actually ride along in each request. Every tool stays registered —
+  // registration is free, only serialization is not — and `prepareStep` names the subset.
+  // `filterTools` has already run, so an agent's `write: false` never reaches the catalog and
+  // `tool_search` cannot load it back.
+  const loadout = config.lazyTools
+    ? createLoadout(tools, {
+        // `.jarvis/tools` and anything a plugin registered. Written for this project, few in
+        // number, and useless if the model never sees them.
+        core: Object.keys(custom),
+        // What the transcript already shows in use. Two turns into a drawing the schemas are
+        // simply there, and because this is read off the history rather than held in memory it
+        // survives a session reloaded from disk.
+        eager: toolsUsedIn(messages),
+        auto: { bash_output: startedBackground },
+      })
+    : undefined
+  // Nothing to defer, nothing to search: a small agent should not carry a lookup tool for an
+  // empty catalog. Same idiom as `skill`, `ask` and `task` above.
+  const deferring = Boolean(loadout && loadout.deferred().length > 0)
+  if (loadout && deferring) tools.tool_search = toolSearchTool(loadout)
+
+  // Named in the system prompt and in the retry hint below. A model that is not told the set
+  // guesses at it, and a guess costs the whole turn on a gateway that validates server-side.
+  const toolNames = Object.keys(tools).sort()
+
+  /**
+   * What the tools are, for the messages below. Under deferred loading that is two answers —
+   * what is on the wire right now, and what one `tool_search` call away. Saying only the
+   * first would send a model looking for `blueprint_edit` away empty-handed.
+   */
+  const offered = () =>
+    deferring && loadout
+      ? `${loadout.active().sort().join(", ")} — plus these, once loaded with tool_search: ${loadout.deferred().join(", ")}`
+      : toolNames.join(", ")
 
   const contextLimit = model.info.contextLimit
   const outgoing = { messages }
@@ -248,13 +305,32 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     const result = streamText({
       model: model.model,
-      system: systemPrompt({ config, cwd, agentPrompt: agentPrompt(agent, cwd) }),
+      system: systemPrompt({
+        config,
+        cwd,
+        agentPrompt: agentPrompt(agent, cwd),
+        previous: options.previous,
+        toolNames: deferring && loadout ? loadout.active().sort() : toolNames,
+        deferredTools: deferring,
+      }),
       messages: outgoing.messages,
       tools,
       temperature: agent.temperature,
       stopWhen: stepCountIs(config.maxSteps),
       abortSignal: abort,
+      // Only the active subset is serialized for the provider — the SDK filters `tools` by
+      // this list before converting any schema, so an unloaded tool costs literally nothing.
+      // Re-read every step, so a `tool_search` in step N is on the wire in step N + 1.
+      prepareStep: deferring && loadout ? () => ({ activeTools: loadout.active() }) : undefined,
       providerOptions: model.info.options as Record<string, Record<string, never>> | undefined,
+      // Catches a hallucinated name the provider passed through, without a second round trip.
+      // Announced rather than applied quietly: rerouting a call the model did not make is not
+      // something the transcript should have to be read twice to notice.
+      repairToolCall: toolCallRepair(
+        (from, to) =>
+          emit({ type: "error", message: `the model called "${from}", which does not exist — using ${to} instead` }),
+        deferring ? loadout : undefined,
+      ),
       onStepFinish: ({ response }) => {
         completed.push(...response.messages)
       },
@@ -263,6 +339,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     })
 
     let failedGeneration = false
+    /** Set when the provider rejected the completion for naming a tool it was not offered. */
+    let unknownTool = false
     // Groq returns the refusal as assistant text; the finish reason can be `failed_generation`
     // or plain `stop`, so the text signature is what makes detection reliable across both.
     let sawToolCall = false
@@ -310,6 +388,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
             // Explained here rather than at the transcript, so the throw path below compares
             // against the same string and still recognises it as already reported.
             reported = explainAuth(errorMessage(part.error), config, cwd, model.providerID)
+            unknownTool = UNKNOWN_TOOL.test(reported)
             emit({ type: "error", message: reported })
             break
           default:
@@ -336,6 +415,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
       failedGeneration = true
     }
 
+    // A rejected completion is the same situation arriving as a hard error instead of a finish
+    // reason, and the same retry fixes it — the model is simply told which tools exist. Guarded
+    // by `sawToolCall` for the same reason as above: a real call followed by a late failure
+    // must not be replayed.
+    if (!failedGeneration && unknownTool && retries < MAX_RETRIES && !sawToolCall) failedGeneration = true
+
     if (!failedGeneration) {
       // Report the outcome, not the provider's wording. Matching on GROQ_REFUSAL_SIGNATURE
       // alone let every other phrasing — and an empty response — fall through both branches
@@ -353,6 +438,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
           type: "error",
           message:
             "The model kept failing to produce a valid tool call and the provider rejected it. This usually means the model is weak at tool calling for the tools available — try a stronger model, or rephrase the request to name the tool explicitly (e.g. \"render the blueprint with blueprint_view\").",
+        })
+      } else if (unknownTool) {
+        // The provider's own wording was already emitted and names the tool it refused; this
+        // says what it means and what to do, which that wording never does. Reached either
+        // with the retries spent, or on the first attempt when a tool had already run and
+        // replaying it was not safe.
+        emit({
+          type: "error",
+          message: `The model called a tool that does not exist, and the provider rejected the request. The tools available this turn are: ${offered()}. Name one of them explicitly, or use a model that follows a tool list more closely.`,
         })
       }
       try {
@@ -379,17 +473,32 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // error text, which is noise the model should not see — and steer the next attempt with a
     // user-role hint so the history stays provider-agnostic.
     retries++
+    // Last attempt, and the model is still reaching for a tool that is not on the wire. Stop
+    // saving tokens: load everything, so the final request is the one jarvis would have sent
+    // before deferred loading existed. Whatever else this feature does, it must never be the
+    // reason a turn fails. Only for `unknownTool` — a `failed_generation` is the model
+    // struggling with a schema it already has, and adding more schemas makes that worse.
+    if (unknownTool && loadout && retries === MAX_RETRIES) loadout.loadAll()
     text = ""
     contextTokens = 0
+    // Belongs to the attempt being discarded. Left set, it would still be here when a later
+    // attempt returns, and the dedupe above would misjudge which failures were already shown.
+    reported = undefined
     outgoing.messages = [
       ...outgoing.messages,
       {
         role: "user",
-        content:
-          "Your previous attempt failed to produce a valid tool call (the provider reported `failed_generation`), so nothing was executed. Try again: pick exactly one tool from the ones offered, and emit a small, valid JSON object for its arguments that matches that tool's schema — do not invent tool names or arguments. Prefer flat fields over nested arrays when the schema allows.",
+        content: unknownTool
+          ? `Your previous attempt called a tool that does not exist, so the provider rejected it and nothing was executed. The only tools available are: ${offered()}. Try again: pick exactly one of those by name, and emit a small, valid JSON object for its arguments that matches that tool's schema.`
+          : "Your previous attempt failed to produce a valid tool call (the provider reported `failed_generation`), so nothing was executed. Try again: pick exactly one tool from the ones offered, and emit a small, valid JSON object for its arguments that matches that tool's schema — do not invent tool names or arguments. Prefer flat fields over nested arrays when the schema allows.",
       },
     ]
-    emit({ type: "error", message: `the model failed to generate a valid tool call — retrying (${retries}/${MAX_RETRIES})` })
+    emit({
+      type: "error",
+      message: unknownTool
+        ? `the model called a tool that does not exist — retrying (${retries}/${MAX_RETRIES})`
+        : `the model failed to generate a valid tool call — retrying (${retries}/${MAX_RETRIES})`,
+    })
   }
 }
 

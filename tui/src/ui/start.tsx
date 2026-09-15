@@ -12,6 +12,9 @@ import { pushSessions } from "../agent/session-sync.ts"
 import { loadTheme } from "../config/theme.ts"
 import { killBackground } from "../tools/background.ts"
 import { App } from "./app.tsx"
+import { bootReport, collectBoot } from "./boot.ts"
+import { cleanupSounds } from "./sound.ts"
+import { cleanupSpeech } from "./speak.ts"
 import { resolveMotion } from "./motion.ts"
 
 export type StartOptions = {
@@ -46,11 +49,17 @@ export async function startTui(options: StartOptions) {
   // so asking for an API key first is asking for something pairing might make unnecessary.
   const autoPair = needsProvider && !isPaired()
 
+  // Gathered before the first paint, not on render: it reads the credentials file and stats
+  // every session in this directory, and neither answer changes while the session is open.
+  const facts = collectBoot(options.config, cwd, extensions, mcp.status, session.id)
+
   // Ctrl-C is handled in the app so it can interrupt a running turn first.
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
   // Covers every exit path, so a backgrounded dev server never outlives the session.
   process.on("exit", () => {
     killBackground()
+    cleanupSounds()
+    cleanupSpeech()
     void mcp.close()
   })
 
@@ -69,6 +78,8 @@ export async function startTui(options: StartOptions) {
       agent={options.agent}
       autoSetup={needsProvider}
       autoPair={autoPair}
+      boot={bootReport(facts)}
+      previous={facts.previous}
     />,
   )
 }

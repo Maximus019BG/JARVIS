@@ -19,6 +19,7 @@ import {
   validate,
   type Setup,
   type SetupCtx,
+  type SetupKind,
 } from "../src/ui/provider-setup.ts"
 
 const ctx: SetupCtx = { existing: [], paired: true }
@@ -27,7 +28,7 @@ const ctx: SetupCtx = { existing: [], paired: true }
 function walk(
   answers: (string | string[])[],
   context: SetupCtx = ctx,
-  options?: { voice?: boolean },
+  options?: { kind?: SetupKind },
 ): { steps: string[]; setup: Setup } {
   let setup = beginSetup(context, options)
   const steps = [setup.step as string]
@@ -293,14 +294,14 @@ describe("presets and model choices", () => {
 
 describe("voice setup", () => {
   test("the flow is two questions: which provider, and the key", () => {
-    const { steps } = walk(["groq-voice", "gsk-secret"], ctx, { voice: true })
+    const { steps } = walk(["groq-voice", "gsk-secret"], ctx, { kind: "transcribe" })
     // No id, no model list, and no check step — a whisper model cannot answer the round-trip
     // the check sends, and the preset already names the only model there is.
     expect(steps).toEqual(["preset", "key", "done"])
   })
 
   test("it writes voice.model and leaves the chat default alone", () => {
-    const { setup } = walk(["groq-voice", "gsk-secret"], ctx, { voice: true })
+    const { setup } = walk(["groq-voice", "gsk-secret"], ctx, { kind: "transcribe" })
     const writes = planWrites(setup.draft, { setDefaultModel: true })
     expect(writes).toEqual([
       { kind: "secret", name: "groq-voice-api-key", value: "gsk-secret" },
@@ -313,7 +314,7 @@ describe("voice setup", () => {
   test("it goes through the one package that can transcribe, and hides the key", () => {
     // @ai-sdk/openai-compatible exposes no transcription model, so the Groq chat preset's
     // package would resolve to a provider that cannot do this at all.
-    const { entry } = draftEntry(walk(["groq-voice", "gsk-secret"], ctx, { voice: true }).setup.draft)
+    const { entry } = draftEntry(walk(["groq-voice", "gsk-secret"], ctx, { kind: "transcribe" }).setup.draft)
     expect(entry.npm).toBe("@ai-sdk/openai")
     expect(entry.options.baseURL).toBe("https://api.groq.com/openai/v1")
     expect(entry.options.apiKey).toBe("{secret:groq-voice-api-key}")
@@ -322,7 +323,7 @@ describe("voice setup", () => {
   })
 
   test("only the transcription providers are offered", () => {
-    const spec = stepSpec(beginSetup(ctx, { voice: true }), ctx)
+    const spec = stepSpec(beginSetup(ctx, { kind: "transcribe" }), ctx)
     expect(spec.choices?.map((choice) => choice.value)).toEqual(["groq-voice", "openai-voice"])
   })
 })

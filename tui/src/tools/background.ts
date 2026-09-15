@@ -44,6 +44,13 @@ const alive = (job: Job) => job.proc.exitCode === null && job.proc.signalCode ==
 const state = (job: Job) =>
   alive(job) ? "running" : job.proc.signalCode ? `killed (${job.proc.signalCode})` : `exited ${job.proc.exitCode}`
 
+/**
+ * Whether anything has been started in the background at all. Drives `bash_output`'s place
+ * in the loadout: before the first background command there is nothing for it to read, and
+ * after one there is no sense making the model go and look the tool up.
+ */
+export const startedBackground = () => jobs.size > 0
+
 /** Running jobs, for the status line. */
 export function runningJobs(): number {
   let count = 0

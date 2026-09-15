@@ -3,7 +3,7 @@ import type { Write } from "../config/provider-plan.ts"
 import { envName } from "../config/provider-status.ts"
 import { secretName, secretRef } from "../config/secrets.ts"
 import type { Choice } from "./components/dialog.tsx"
-import { findPreset, presetChoices, voicePresetChoices, type Preset } from "./provider-presets.ts"
+import { findPreset, presetChoices, speakPresetChoices, voicePresetChoices, type Preset } from "./provider-presets.ts"
 
 /**
  * The provider setup flow, as a reducer over a draft. Deliberately free of React and of I/O:
@@ -39,12 +39,15 @@ export type Draft = {
   models: string[]
   catalogKeys: readonly string[]
   /**
-   * Setting up transcription rather than chat. The same flow with three questions dropped: the
-   * preset already names the only model that matters, and the check step sends a text
-   * generation that a whisper model cannot answer.
+   * What this provider is being added for. `transcribe` and `speak` run the same flow with
+   * three questions dropped: the preset already names the only model that matters, and the
+   * check step sends a text generation that an audio model cannot answer.
    */
-  voice: boolean
+  kind: SetupKind
 }
+
+/** Chat is the default; the two audio kinds differ only in which config key they land in. */
+export type SetupKind = "chat" | "transcribe" | "speak"
 
 export type Setup = {
   draft: Draft
@@ -72,11 +75,11 @@ const EMPTY_DRAFT: Draft = {
   envName: "",
   models: [],
   catalogKeys: [],
-  voice: false,
+  kind: "chat",
 }
 
-export function beginSetup(_ctx: SetupCtx, { voice = false }: { voice?: boolean } = {}): Setup {
-  return { draft: { ...EMPTY_DRAFT, voice }, step: "preset", history: [] }
+export function beginSetup(_ctx: SetupCtx, { kind = "chat" }: { kind?: SetupKind } = {}): Setup {
+  return { draft: { ...EMPTY_DRAFT, kind }, step: "preset", history: [] }
 }
 
 /** The draft a chosen preset starts from. Everything a preset knows, nothing it has to ask. */
@@ -108,9 +111,9 @@ const ORDER: StepKind[] = ["preset", "id", "npm", "baseURL", "keyMode", "key", "
 /** Whether a step has anything to ask, given what the preset already decided. */
 function asks(step: StepKind, draft: Draft): boolean {
   const preset = findPreset(draft.presetID)
-  // Voice asks two questions: which provider, and the key. The name is the preset's, the model
-  // is the preset's only one, and the check step cannot check a transcription model.
-  if (draft.voice && (step === "id" || step === "models" || step === "test")) return false
+  // Audio asks two questions: which provider, and the key. The name is the preset's, the model
+  // is the preset's only one, and the check step cannot check an audio model.
+  if (draft.kind !== "chat" && (step === "id" || step === "models" || step === "test")) return false
   switch (step) {
     case "npm":
       return preset?.askNpm ?? true
@@ -205,9 +208,13 @@ export function stepSpec(setup: Setup, ctx: SetupCtx): StepSpec {
 
   switch (step) {
     case "preset":
-      return draft.voice
-        ? { ...base, prompt: "Which provider should transcribe?", choices: voicePresetChoices() }
-        : { ...base, choices: presetChoices({ paired: ctx.paired }) }
+      if (draft.kind === "transcribe") {
+        return { ...base, prompt: "Which provider should transcribe?", choices: voicePresetChoices() }
+      }
+      if (draft.kind === "speak") {
+        return { ...base, prompt: "Which provider should speak?", choices: speakPresetChoices() }
+      }
+      return { ...base, choices: presetChoices({ paired: ctx.paired }) }
     case "keyMode":
       return { ...base, choices: KEY_MODE_CHOICES }
     case "models":
@@ -393,10 +400,14 @@ export function planWrites(draft: Draft, { setDefaultModel }: { setDefaultModel:
   const writes: Write[] = []
   if (draft.keyMode === "store") writes.push({ kind: "secret", name: secretName(id), value: draft.key })
   writes.push({ kind: "config", path: ["provider", id], value: entry })
-  // A transcription provider is never the chat default: it points `voice.model` at itself and
+  // An audio provider is never the chat default: it points its own `voice.*` key at itself and
   // leaves whatever model the reader was already talking to alone.
-  if (draft.voice && draft.models[0]) {
-    writes.push({ kind: "config", path: ["voice", "model"], value: `${id}/${draft.models[0]}` })
+  if (draft.kind !== "chat" && draft.models[0]) {
+    const key = draft.kind === "speak" ? "speakModel" : "model"
+    writes.push({ kind: "config", path: ["voice", key], value: `${id}/${draft.models[0]}` })
+    // Turning it on is the point of having answered the questions. Transcription has a key to
+    // press; speech has nothing that would otherwise switch it from configured to audible.
+    if (draft.kind === "speak") writes.push({ kind: "config", path: ["voice", "speak"], value: true })
   } else if (setDefaultModel && draft.models[0]) {
     writes.push({ kind: "config", path: ["model"], value: `${id}/${draft.models[0]}` })
   }
