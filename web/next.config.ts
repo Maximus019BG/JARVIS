@@ -13,6 +13,9 @@ import type { NextConfig } from "next";
  * If you need custom Babel config, use a `babel.config.js` or `.babelrc` in this `web/` folder.
  */
 const config: NextConfig = {
+  /** Self-contained server for the Docker image (web/Dockerfile). Traced from the repo root. */
+  output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, ".."),
   /**
    * The blueprint engine lives in `../tui/src/blueprint` and is imported as `@blueprint/*`.
    * It is shared *source*, not a published package: the TUI, this app and the Pi must agree

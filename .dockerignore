@@ -1,0 +1,9 @@
+**/node_modules
+**/.next
+.git
+mobile
+hardware
+doc
+k8s
+**/.env*
+tui/dist
