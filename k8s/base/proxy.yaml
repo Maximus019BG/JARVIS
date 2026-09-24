@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reverse-proxy
+  labels:
+    app: reverse-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: reverse-proxy
+  template:
+    metadata:
+      labels:
+        app: reverse-proxy
+    spec:
+      containers:
+        - name: reverse-proxy
+          image: nginx:1.27-alpine
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/templates
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: reverse-proxy
+---
+# The public entry point. LoadBalancer works on Docker Desktop and cloud clusters;
+# on kind/minikube use `kubectl port-forward -n <ns> svc/reverse-proxy 8080:80`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverse-proxy
+spec:
+  type: LoadBalancer
+  # Keep the real client IP (no SNAT to a node IP) — nginx rate-limits on $remote_addr.
+  externalTrafficPolicy: Local
+  selector:
+    app: reverse-proxy
+  ports:
+    - port: 80
+      targetPort: 80

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  labels:
+    app: api-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+        - name: api-server
+          # Built from the repo root: docker build -f web/Dockerfile -t jarvis-web:<tag> .
+          # Tag is set per overlay.
+          image: jarvis-web
+          # Runtime vars from web/src/env.js. DATABASE_URL host must be `db-server`:
+          #   kubectl create secret generic web-env -n <ns> --from-env-file=web/.env
+          envFrom:
+            - secretRef:
+                name: web-env
+          ports:
+            - containerPort: 3000
+          # ponytail: TCP check only, web/src/app/api/health has no route yet — switch to httpGet when it does.
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+---
+# Internal only — traffic comes in through reverse-proxy (proxy.yaml).
+# Headless: DNS lists every ready pod so nginx does the balancing, not kube-proxy.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server
+spec:
+  clusterIP: None
+  selector:
+    app: api-server
+  ports:
+    - port: 3000
+      targetPort: 3000

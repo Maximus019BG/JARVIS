@@ -1,0 +1,63 @@
+# StatefulSet, not Deployment: a rolling update on an RWO volume deadlocks (new pod can't mount it).
+#   kubectl create secret generic db-env -n <ns> \
+#     --from-literal=POSTGRES_USER=postgres --from-literal=POSTGRES_PASSWORD=... --from-literal=POSTGRES_DB=web
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-server
+  labels:
+    app: db-server
+spec:
+  serviceName: db-server
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-server
+  template:
+    metadata:
+      labels:
+        app: db-server
+    spec:
+      containers:
+        - name: db-server
+          image: postgres:15-alpine
+          envFrom:
+            - secretRef:
+                name: db-env
+          env:
+            # Subdir: initdb refuses a volume root that contains lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: db-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-server
+spec:
+  clusterIP: None
+  selector:
+    app: db-server
+  ports:
+    - port: 5432
+      targetPort: 5432
