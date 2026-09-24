@@ -157,6 +157,18 @@ export const PRESETS: readonly Preset[] = [
  */
 export const VOICE_PRESETS: readonly Preset[] = [
   {
+    id: "jarvis-voice",
+    label: "JARVIS (hosted)",
+    hint: "default — no key needed, uses this paired device",
+    npm: "@ai-sdk/openai",
+    askBaseURL: false,
+    askNpm: false,
+    auth: "device-token",
+    discovery: { kind: "none" },
+    models: ["whisper-large-v3-turbo"],
+    requiresPairing: true,
+  },
+  {
     id: "groq-voice",
     label: "Groq",
     hint: "fast, free tier — console.groq.com/keys",
@@ -188,6 +200,18 @@ export const VOICE_PRESETS: readonly Preset[] = [
  * OpenAI because it is already configured on most machines that got this far.
  */
 export const SPEAK_PRESETS: readonly Preset[] = [
+  {
+    id: "jarvis-speech",
+    label: "JARVIS (hosted)",
+    hint: "default — no key needed, uses this paired device",
+    npm: "@ai-sdk/openai",
+    askBaseURL: false,
+    askNpm: false,
+    auth: "device-token",
+    discovery: { kind: "none" },
+    models: ["canopylabs/orpheus-v1-english"],
+    requiresPairing: true,
+  },
   {
     id: "openai-speech",
     label: "OpenAI",
@@ -235,12 +259,21 @@ export function presetChoices({ paired }: { paired: boolean }): Choice[] {
   }))
 }
 
-/** The transcription providers offered on first use of the mic. */
-export function voicePresetChoices(): Choice[] {
-  return VOICE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))
+/**
+ * Audio presets to offer. Unlike chat, the hosted one is hidden until paired: on first use of
+ * the mic an unpaired device has nowhere to send audio, and the pairing detour belongs to chat.
+ */
+const audioChoices = (presets: readonly Preset[], paired: boolean): Choice[] =>
+  presets
+    .filter((preset) => paired || !preset.requiresPairing)
+    .map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))
+
+/** The transcription providers offered on first use of the mic, or from `/voice`. */
+export function voicePresetChoices({ paired }: { paired: boolean }): Choice[] {
+  return audioChoices(VOICE_PRESETS, paired)
 }
 
-/** The speech providers offered when `/speak` finds nothing that can talk. */
-export function speakPresetChoices(): Choice[] {
-  return SPEAK_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint }))
+/** The speech providers offered from `/speak setup`, or when `/speak` finds nothing that can talk. */
+export function speakPresetChoices({ paired }: { paired: boolean }): Choice[] {
+  return audioChoices(SPEAK_PRESETS, paired)
 }

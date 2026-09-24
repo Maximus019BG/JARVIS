@@ -30,7 +30,12 @@ export const BUILTIN_COMMANDS: Command[] = [
     kind: "builtin",
   },
   { name: "stats", description: "Spend and tokens by model, agent and session — /stats <days>", kind: "builtin" },
-  { name: "speak", description: "Read answers out loud — /speak on, /speak off, /speak test", kind: "builtin" },
+  { name: "voice", description: "Choose who transcribes your voice — hosted, or your own key", kind: "builtin" },
+  {
+    name: "speak",
+    description: "Read answers out loud — /speak on, /speak off, /speak test, /speak setup",
+    kind: "builtin",
+  },
   { name: "tutorial", description: "Show what everything on screen does", kind: "builtin" },
   { name: "extensions", description: "Show loaded custom tools, skills and plugins", kind: "builtin" },
   { name: "exit", description: "Quit jarvis", kind: "builtin" },

@@ -23,8 +23,14 @@ export function speakAction(args: string, config: Config, able: boolean): SpeakA
   const argument = args.trim().toLowerCase()
 
   if (argument === "test") return able ? { kind: "test" } : { kind: "setup" }
+  // The way to swap hosted speech for your own key, or back, once something can already talk.
+  if (argument === "setup") return { kind: "setup" }
   if (argument && !["on", "off", "toggle"].includes(argument)) {
-    return { kind: "note", text: `unknown argument "${argument}" — /speak on, /speak off, /speak test`, level: "error" }
+    return {
+      kind: "note",
+      text: `unknown argument "${argument}" — /speak on, /speak off, /speak test, /speak setup`,
+      level: "error",
+    }
   }
 
   const wanted = argument === "on" ? true : argument === "off" ? false : !on

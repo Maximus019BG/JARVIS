@@ -800,6 +800,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         openSetup,
         openPair,
         openSpeakSetup,
+        openVoiceSetup,
         reload: reloadConfig,
         testProvider: runTest,
         quit: () => process.exit(0),
@@ -815,6 +816,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       openPair,
       openSetup,
       openSpeakSetup,
+      openVoiceSetup,
       reloadConfig,
       runTest,
       turn,
@@ -1496,6 +1498,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           root={blueprints}
           name={blueprint.name}
           theme={theme}
+          gestures={config.blueprint?.pi?.gestures}
+          fitTuning={config.blueprint?.pi?.fit}
           onClose={() => setBlueprintView("hidden")}
         />
       )}

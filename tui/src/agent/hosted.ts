@@ -30,24 +30,60 @@ export function hostedEntry(credentials: Credentials): ProviderConfig {
 }
 
 /**
- * Gives an otherwise-empty config one working provider, so a freshly paired install can send a
- * message before configuring anything.
+ * Provider ids for hosted voice, one per wizard preset (`jarvis-voice` transcribes,
+ * `jarvis-speech` speaks), so whichever the reader picks lands on an entry that has the token.
+ */
+export const HOSTED_VOICE_IDS = ["jarvis-voice", "jarvis-speech"] as const
+const HOSTED_TRANSCRIBE = "jarvis-voice/whisper-large-v3-turbo"
+const HOSTED_SPEECH = "jarvis-speech/canopylabs/orpheus-v1-english"
+
+/**
+ * The gateway's audio endpoints as a provider entry. `@ai-sdk/openai` rather than the chat
+ * entry's openai-compatible package, because only it has `.transcription()` and `.speech()` —
+ * and it already calls `/audio/transcriptions` and `/audio/speech` under whatever base URL it
+ * is given. No models listed, so it never shows up in the chat model picker.
+ */
+export function hostedVoiceEntry(credentials: Credentials): ProviderConfig {
+  return { ...hostedEntry(credentials), name: "JARVIS voice (hosted)", npm: "@ai-sdk/openai", models: {} }
+}
+
+/**
+ * Gives a paired device hosted voice by default, and an otherwise-empty config one working chat
+ * provider, so a freshly paired install can talk and send a message before configuring anything.
  *
  * Injected at the CLI boundary rather than inside `loadConfig` — config loading stays
  * device-agnostic, and it is what the tests exercise — and rather than inside `provider.ts`,
  * where resolution runs per turn and a provider that blinks in and out would be unreadable.
  *
  * Never persisted. The token lives only in this process's memory, so it cannot reach
- * jarvis.jsonc, a session transcript, or anything `/export` produces.
+ * jarvis.jsonc, a session transcript, or anything `/export` produces. The hosted voice entries
+ * are written over any persisted ones for the same reason: the wizard saves them keyless.
  */
 export function withHostedFallback(config: Config, credentials = safeCredentials()): Config {
-  // Somebody who configured their own provider gets what they configured. This is a floor, not
-  // a default that competes.
-  if (!credentials || listModels(config).length > 0) return config
-  const provider = { ...config.provider, [HOSTED_ID]: hostedEntry(credentials) }
-  return {
+  if (!credentials) return config
+
+  const voiceEntry = hostedVoiceEntry(credentials)
+  // Hosted unless the reader picked their own transcription provider. The backend has no
+  // realtime socket, so hosted dictation is always the push-to-talk upload.
+  const hostedListen = !config.voice?.model || config.voice.model.startsWith(`${HOSTED_VOICE_IDS[0]}/`)
+  const voiced: Config = {
     ...config,
-    provider,
+    provider: { ...config.provider, ...Object.fromEntries(HOSTED_VOICE_IDS.map((id) => [id, voiceEntry])) },
+    voice: {
+      stream: true,
+      speak: false,
+      ...config.voice,
+      ...(hostedListen ? { model: config.voice?.model ?? HOSTED_TRANSCRIBE, stream: false } : {}),
+      speakModel: config.voice?.speakModel ?? HOSTED_SPEECH,
+    },
+  }
+
+  // Somebody who configured their own chat provider gets what they configured. This is a floor,
+  // not a default that competes.
+  if (listModels(config).length > 0) return voiced
+  return {
+    ...voiced,
+    provider: { ...voiced.provider, [HOSTED_ID]: hostedEntry(credentials) },
     // Only if they had no preference. A `model` naming a provider they are about to add back
     // must survive us passing through.
     model: config.model ?? `${HOSTED_ID}/${HOSTED_MODELS[0]}`,

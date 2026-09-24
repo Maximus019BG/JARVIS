@@ -322,8 +322,22 @@ describe("voice setup", () => {
     expect(checkEntry(entry).ok).toBe(true)
   })
 
-  test("only the transcription providers are offered", () => {
-    const spec = stepSpec(beginSetup(ctx, { kind: "transcribe" }), ctx)
-    expect(spec.choices?.map((choice) => choice.value)).toEqual(["groq-voice", "openai-voice"])
+  test("only the transcription providers are offered, hosted first once paired", () => {
+    const offered = (paired: boolean) =>
+      stepSpec(beginSetup({ ...ctx, paired }, { kind: "transcribe" }), { ...ctx, paired }).choices?.map((c) => c.value)
+    expect(offered(true)).toEqual(["jarvis-voice", "groq-voice", "openai-voice"])
+    expect(offered(false)).toEqual(["groq-voice", "openai-voice"])
+  })
+
+  test("hosted voice asks nothing, keeps its id, and writes no key", () => {
+    // `jarvis-voice` is already in the config at runtime (injected with the token), and a
+    // renamed `jarvis-voice-2` would be an entry nothing ever gives a token to.
+    const taken = { existing: ["jarvis-voice"], paired: true }
+    const { steps, setup } = walk(["jarvis-voice"], taken, { kind: "transcribe" })
+    expect(steps).toEqual(["preset", "done"])
+    const writes = planWrites(setup.draft, { setDefaultModel: true })
+    expect(writes).toContainEqual({ kind: "config", path: ["voice", "model"], value: "jarvis-voice/whisper-large-v3-turbo" })
+    expect(writes.some((write) => write.kind === "secret")).toBe(false)
+    expect(draftEntry(setup.draft).entry.options.apiKey).toBeUndefined()
   })
 })

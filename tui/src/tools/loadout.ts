@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai"
-import { normalize } from "../agent/repair.ts"
+import { normalize, resolveToolName } from "../agent/repair.ts"
 import type { ToolSet } from "./index.ts"
 
 /**
@@ -141,12 +141,18 @@ export function createLoadout(
     const term = query.trim()
     if (!term) return []
     if (deferred.includes(term)) return [term]
-    const wanted = normalize(term)
-    const drift = deferred.filter((name) => normalize(name) === wanted)
-    if (drift.length > 0) return drift
-    // Substring over the name and the summary both, so "symbol" and "draw" each land
-    // somewhere useful. Ordered by name so the answer does not depend on registration order.
-    return deferred.filter((name) => normalize(name).includes(wanted) || normalize(summary(name)).includes(wanted))
+    // The same aliases and spelling drift the call repair uses, so `blueprint_create` loads
+    // `blueprint` here too instead of coming back empty.
+    const resolved = resolveToolName(term, deferred)
+    if (resolved) return [resolved.tool]
+    // Every word over the name and the summary both, so "symbol", "draw" and "create
+    // blueprint" each land somewhere useful. Ordered by name so the answer does not depend
+    // on registration order.
+    const words = term.split(/\s+/).map(normalize).filter(Boolean)
+    return deferred.filter((name) => {
+      const haystack = normalize(name) + normalize(summary(name))
+      return words.every((word) => haystack.includes(word))
+    })
   }
 
   for (const name of eager) if (deferred.includes(name)) loaded.add(name)

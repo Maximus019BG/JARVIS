@@ -85,9 +85,10 @@ export function beginSetup(_ctx: SetupCtx, { kind = "chat" }: { kind?: SetupKind
 /** The draft a chosen preset starts from. Everything a preset knows, nothing it has to ask. */
 function applyPreset(draft: Draft, preset: Preset, ctx: SetupCtx): Draft {
   // A preset id that is already taken becomes `openai-2`, so picking "OpenAI" twice is a
-  // rename rather than a refusal.
+  // rename rather than a refusal. Not for a hosted preset: its entry is filled in at startup
+  // under exactly this id, so a renamed copy would be one that never gets a token.
   let id = preset.id === "custom" ? "" : preset.id
-  if (id && ctx.existing.includes(id)) {
+  if (id && preset.auth !== "device-token" && ctx.existing.includes(id)) {
     let n = 2
     while (ctx.existing.includes(`${preset.id}-${n}`)) n += 1
     id = `${preset.id}-${n}`
@@ -209,10 +210,10 @@ export function stepSpec(setup: Setup, ctx: SetupCtx): StepSpec {
   switch (step) {
     case "preset":
       if (draft.kind === "transcribe") {
-        return { ...base, prompt: "Which provider should transcribe?", choices: voicePresetChoices() }
+        return { ...base, prompt: "Which provider should transcribe?", choices: voicePresetChoices({ paired: ctx.paired }) }
       }
       if (draft.kind === "speak") {
-        return { ...base, prompt: "Which provider should speak?", choices: speakPresetChoices() }
+        return { ...base, prompt: "Which provider should speak?", choices: speakPresetChoices({ paired: ctx.paired }) }
       }
       return { ...base, choices: presetChoices({ paired: ctx.paired }) }
     case "keyMode":

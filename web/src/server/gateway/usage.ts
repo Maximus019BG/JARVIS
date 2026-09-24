@@ -1,3 +1,5 @@
+import { AUDIO } from "./upstreams";
+
 export type TokenUsage = { inputTokens: number; outputTokens: number };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -90,3 +92,13 @@ export function makeUsageSniffer(cost?: { input: number; output: number }): {
     },
   };
 }
+
+/** 16 kHz mono signed 16-bit — what every TUI recorder writes. Other formats are estimated as if. */
+const WAV_BYTES_PER_SECOND = 16_000 * 2;
+
+/** Estimated micros for a clip of `bytes`. Rounded up so a one-second clip is never free. */
+export const transcribeCostMicros = (bytes: number): number =>
+  Math.ceil((bytes / WAV_BYTES_PER_SECOND / 60) * AUDIO.transcribe.usdPerMinute * 1_000_000);
+
+/** Micros for speaking `chars` characters. */
+export const speechCostMicros = (chars: number): number => Math.ceil(chars * AUDIO.speech.usdPerMillionChars);

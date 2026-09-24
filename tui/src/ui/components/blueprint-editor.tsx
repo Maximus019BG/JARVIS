@@ -1,7 +1,9 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { checkDoc, type CheckDomain } from "../../blueprint/check.ts"
+import { readCredentials } from "../../blueprint/credentials.ts"
 import { shapeFrom, TOOLS, type Tool } from "../../blueprint/draw.ts"
+import { DEFAULT_FIT, fitStroke, type StrokePoint, type Tool as FitTool } from "../../blueprint/fit.ts"
 import { applyOps, type Op } from "../../blueprint/ops.ts"
 import { entitiesWithin, hitTest } from "../../blueprint/pick.ts"
 import { bbox } from "../../blueprint/geom.ts"
@@ -10,8 +12,12 @@ import { BlueprintError, type BlueprintDoc, type Pt } from "../../blueprint/sche
 import { searchSymbols, GRID } from "../../blueprint/symbols/index.ts"
 import { writeDoc } from "../../blueprint/store.ts"
 import type { Theme } from "../../config/theme.ts"
+import { DEFAULT_GESTURES, type GestureConfig, type GestureEvent } from "../../pi/gestures.ts"
+import { remoteSource, type Camera } from "../../pi/hand-source.ts"
+import { endpointsOf, TOOLS as FIT_TOOLS } from "../../pi/index.ts"
 import { Cells, palette, useDoc } from "./blueprint-view.tsx"
 import { Modal } from "./dialog.tsx"
+import { useHandPen, type HandSourceFactory } from "./use-hand-pen.ts"
 
 /**
  * The blueprint editor, fullscreen, in the terminal.
@@ -49,6 +55,28 @@ const zoom = (view: Viewport, factor: number): Viewport => {
 
 const pan = (view: Viewport, by: Pt): Viewport => [view[0] + by[0], view[1] + by[1], view[2], view[3]]
 
+/**
+ * Camera edge ignored on every side. Landmarks get unreliable as the hand leaves the frame,
+ * so the inner 70% is what maps onto the view — the edge of the drawing is reachable
+ * without the hand half out of shot.
+ */
+const HAND_MARGIN = 0.15
+
+/**
+ * Camera pixels to sheet coordinates. One scale for both axes, or a circle drawn in the air
+ * lands as an ellipse; "cover" rather than "fit", so every part of the view is reachable
+ * and the overshoot is clamped.
+ */
+export function cameraToSheet(at: [number, number], camera: Camera, view: Viewport): Pt {
+  const zoneW = camera.width * (1 - 2 * HAND_MARGIN)
+  const zoneH = camera.height * (1 - 2 * HAND_MARGIN)
+  const scale = Math.max(view[2] / zoneW, view[3] / zoneH)
+  const cx = view[0] + view[2] / 2 + (at[0] - camera.width / 2) * scale
+  const cy = view[1] + view[3] / 2 + (at[1] - camera.height / 2) * scale
+  const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value))
+  return [clamp(cx, view[0], view[0] + view[2]), clamp(cy, view[1], view[1] + view[3])]
+}
+
 /** Nearest port to a point, as the `"REF.PORT"` address `connect` takes. */
 function nearestPort(doc: BlueprintDoc, to: Pt): { address: string; at: Pt } | undefined {
   let best: { address: string; at: Pt; distance: number } | undefined
@@ -69,12 +97,20 @@ export function BlueprintEditor({
   theme,
   domain = "general",
   onClose,
+  gestures,
+  fitTuning,
+  handSource,
 }: {
   root: string
   name: string
   theme: Theme
   domain?: CheckDomain
   onClose: () => void
+  /** `blueprint.pi.gestures` / `.fit` from config: the same tuning knobs as the Pi rig. */
+  gestures?: Partial<GestureConfig>
+  fitTuning?: Partial<typeof DEFAULT_FIT>
+  /** Where hands come from. Defaults to the paired web API; tests pass a scripted source. */
+  handSource?: HandSourceFactory
 }) {
   const { width, height } = useTerminalDimensions()
   /** Bumped after a save, so the base document is re-read from disk. */
@@ -93,6 +129,11 @@ export function BlueprintEditor({
   /** Undefined means "fit the drawing"; set once the user zooms or pans. */
   const [view, setView] = useState<Viewport | undefined>(undefined)
   const [status, setStatus] = useState<string>("")
+  /** Set while drawing by hand; the factory starts the camera, clearing it stops it. */
+  const [hand, setHand] = useState<HandSourceFactory | undefined>(undefined)
+  const [handTool, setHandTool] = useState<FitTool>("auto")
+  /** A ref, not state: several pen events can land between two renders. */
+  const stroke = useRef<StrokePoint[]>([])
 
   // Every op was validated against this exact prefix when it was pushed, so the replay
   // cannot fail — but a throw here would blank the drawing, so it falls back to the base.
@@ -152,6 +193,89 @@ export function BlueprintEditor({
 
   const layerId = doc?.layers[Math.min(layer, (doc.layers.length ?? 1) - 1)]?.id ?? "l0"
 
+  const undo = () =>
+    setJournal((current) => {
+      const last = current.at(-1)
+      if (!last) return current
+      setRedoable((stack) => [...stack, last])
+      return current.slice(0, -1)
+    })
+
+  const tuning = useMemo(() => ({ ...DEFAULT_GESTURES, lostFrames: 3, ...gestures }), [gestures])
+  const fitting = { ...DEFAULT_FIT, ...fitTuning }
+
+  const stopHand = (message?: string) => {
+    setHand(undefined)
+    stroke.current = []
+    if (message !== undefined) setStatus(message)
+  }
+
+  const startHand = (current: Viewport) => {
+    let factory = handSource
+    if (!factory) {
+      let credentials: ReturnType<typeof readCredentials>
+      try {
+        credentials = readCredentials()
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error))
+        return
+      }
+      if (!credentials) {
+        setStatus("pair first (jarvis pair) — the hand model runs on your cloud")
+        return
+      }
+      factory = (onStats) => remoteSource({ baseUrl: credentials.baseUrl, token: credentials.token, onStats })
+    }
+    // Frozen while the hand is up: the fitted view follows the cursor, and a view that moves
+    // under a stroke moves the stroke.
+    setView(current)
+    setHand(() => factory)
+    setStatus("hand on — pinch to draw")
+  }
+
+  const pen = useHandPen({
+    source: hand,
+    tuning,
+    onEvent: (event: GestureEvent, t: number, camera: Camera) => {
+      if (!doc || !rendered) return
+      const toSheet = (at: [number, number]) => cameraToSheet(at, camera, rendered.view)
+      if (event.type === "pen-down" || event.type === "pen-move") {
+        const [x, y] = toSheet(event.at)
+        if (event.type === "pen-down") stroke.current = []
+        stroke.current.push({ x, y, t })
+      } else if (event.type === "pen-up") {
+        const points = stroke.current
+        stroke.current = []
+        // The fix-up step. Tolerance is one terminal cell: wobble smaller than that is
+        // invisible here, so keeping it would only add vertices nobody asked for.
+        const cell = rendered.view[2] / cols
+        const entity = fitStroke(points, {
+          tool: handTool,
+          snapPoints: endpointsOf(doc),
+          tolerance: Math.max(fitting.tolerance, cell),
+          smoothing: fitting.smoothing,
+          snapGrid: fitting.snapGrid,
+          snapRadius: Math.max(fitting.snapRadius, cell * 2),
+        })
+        if (entity) push({ op: "add", entity: { ...entity, layer: layerId } })
+        else if (points.length > 1) setStatus("too small to be a shape")
+      } else if (event.type === "cancel") {
+        stroke.current = []
+        setStatus("stroke cancelled")
+      } else if (event.type === "undo") {
+        undo()
+        setStatus("undone")
+      } else if (event.type === "palette") {
+        const next = FIT_TOOLS[(FIT_TOOLS.indexOf(handTool) + 1) % FIT_TOOLS.length]!
+        setHandTool(next)
+        setStatus(`hand tool: ${next}`)
+      } else if (event.type === "zoom") {
+        setView(zoom(rendered.view, 1 / event.scale))
+      }
+    },
+  })
+  if (hand && pen.error) stopHand(pen.error)
+
   useKeyboard((key) => {
     if (!doc || !rendered) return
     const stop = () => key.stopPropagation()
@@ -192,7 +316,8 @@ export function BlueprintEditor({
     // byte of every arrow key — so a terminal that waits to disambiguate makes escape feel
     // sticky, and there should always be a way out that does not.
     if (key.name === "escape" || (key.name === "q" && !key.ctrl)) {
-      if (mode.kind !== "draw") setMode({ kind: "draw" })
+      if (hand) stopHand("hand off")
+      else if (mode.kind !== "draw") setMode({ kind: "draw" })
       else if (selection.length > 0) setSelection([])
       else onClose()
       return stop()
@@ -261,7 +386,10 @@ export function BlueprintEditor({
 
     const picked = TOOLS.find((entry) => entry.key === key.name && !key.ctrl && !key.shift)
     if (picked) {
-      if (picked.pointer) setStatus(`${picked.label} needs a pointer — use the web editor`)
+      if (picked.id === "freehand") {
+        if (hand) stopHand("hand off")
+        else startHand(view ?? rendered.view)
+      } else if (picked.pointer) setStatus(`${picked.label} needs a pointer — use the web editor`)
       else if (picked.id === "symbol") setMode({ kind: "symbols", query: "", index: 0 })
       else {
         setTool(picked.id)
@@ -272,12 +400,7 @@ export function BlueprintEditor({
     }
 
     if (key.name === "u" && !key.ctrl) {
-      setJournal((current) => {
-        const last = current.at(-1)
-        if (!last) return current
-        setRedoable((stack) => [...stack, last])
-        return current.slice(0, -1)
-      })
+      undo()
       return stop()
     }
     if (key.name === "r" && key.ctrl) {
@@ -363,6 +486,12 @@ export function BlueprintEditor({
   }
   if (mode.kind === "drag") mark(mode.from, "┌")
   mark(at, mode.kind === "drag" ? "┘" : "┼")
+  // The live stroke is raw samples — what the hand did — and snaps to a clean shape on release.
+  for (const point of stroke.current) mark([point.x, point.y], "•")
+  if (hand && pen.cursor && pen.camera) mark(cameraToSheet(pen.cursor, pen.camera, rendered.view), pen.drawing ? "●" : "◎")
+  const handLine = hand
+    ? ` hand ${pen.stats ? `${pen.stats.state === "live" ? "●" : "○"} ${pen.stats.state} ${pen.stats.fps}fps ${pen.stats.rttMs}ms` : "●"} · tool ${handTool} · pinch draw · palm cancel · fist undo · point-hold tool · f stop`
+    : undefined
 
   const report = checkDoc(doc, domain)
   const errors = report.findings.filter((finding) => finding.severity === "error")
@@ -381,9 +510,19 @@ export function BlueprintEditor({
             {TOOLS.map((entry) => (
               <text
                 key={entry.id}
-                fg={entry.pointer ? theme.dim : entry.id === tool ? theme.accent : theme.muted}
+                fg={
+                  entry.id === "freehand"
+                    ? hand
+                      ? theme.accent
+                      : theme.muted
+                    : entry.pointer
+                      ? theme.dim
+                      : entry.id === tool
+                        ? theme.accent
+                        : theme.muted
+                }
               >
-                {`${entry.id === tool ? "▸" : " "} ${entry.key}  ${entry.label}`}
+                {`${entry.id === tool || (entry.id === "freehand" && hand) ? "▸" : " "} ${entry.key}  ${entry.label}`}
               </text>
             ))}
             <box style={{ height: 1 }} />
@@ -444,9 +583,13 @@ export function BlueprintEditor({
           </box>
         </box>
 
-        <text fg={theme.dim}>
-          {` [${at[0].toFixed(1)}, ${at[1].toFixed(1)}] ${doc.units} · ${doc.entities.length} entities · ${doc.parts.length} parts · ${journal.length > 0 ? `${journal.length} unsaved` : "saved"} · enter draw · +/- zoom · ctrl+arrows pan · 0 fit · esc/q close`}
-        </text>
+        {handLine ? (
+          <text fg={!pen.stats || pen.stats.state === "live" ? theme.accent : theme.warning}>{handLine}</text>
+        ) : (
+          <text fg={theme.dim}>
+            {` [${at[0].toFixed(1)}, ${at[1].toFixed(1)}] ${doc.units} · ${doc.entities.length} entities · ${doc.parts.length} parts · ${journal.length > 0 ? `${journal.length} unsaved` : "saved"} · enter draw · +/- zoom · ctrl+arrows pan · 0 fit · esc/q close`}
+          </text>
+        )}
         <text fg={status ? theme.warning : theme.dim}>{` ${status}`}</text>
       </box>
     </Modal>

@@ -3,7 +3,8 @@ import { mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { constantAsker, PermissionGate, resolvePermission, type PermissionRequest } from "../src/permission.ts"
-import { builtinTools, filterTools, resolvePath, ToolError, type ToolContext } from "../src/tools/index.ts"
+import { asSchema } from "ai"
+import { builtinTools, filterTools, portableSchemas, resolvePath, ToolError, type ToolContext } from "../src/tools/index.ts"
 import { textFromHtml } from "../src/tools/webfetch.ts"
 
 function setup(allow = true) {
@@ -24,6 +25,23 @@ function setup(allow = true) {
 /** Tool.execute is optional in the AI SDK types; every built-in defines it. */
 const call = async (tool: unknown, input: unknown) =>
   (await (tool as { execute: (i: unknown, o: unknown) => Promise<string> }).execute(input, {})) as string
+
+describe("portableSchemas", () => {
+  test("no tool schema uses the draft-07 tuple form vLLM rejects", async () => {
+    const tools = portableSchemas(setup().tools)
+    for (const [name, definition] of Object.entries(tools)) {
+      const json = JSON.stringify(await asSchema(definition.inputSchema).jsonSchema)
+      expect({ name, tuple: /"items":\[/.test(json) }).toEqual({ name, tuple: false })
+    }
+  })
+
+  test("zod still validates the exact tuple", async () => {
+    const schema = asSchema(portableSchemas(setup().tools).blueprint!.inputSchema)
+    const ok = await schema.validate!({ action: "create", name: "a", viewBox: [0, 0, 1, 1] })
+    const bad = await schema.validate!({ action: "create", name: "a", viewBox: [0, 0, 1] })
+    expect([ok.success, bad.success]).toEqual([true, false])
+  })
+})
 
 describe("resolvePath", () => {
   test("refuses paths that escape the workspace", () => {

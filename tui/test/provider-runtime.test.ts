@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { hostedEntry, hostedGuidance, HOSTED_ID, withHostedFallback } from "../src/agent/hosted.ts"
+import { hostedEntry, hostedGuidance, HOSTED_ID, HOSTED_VOICE_IDS, withHostedFallback } from "../src/agent/hosted.ts"
 import {
   discoveryArgs,
   mergeDiscovered,
@@ -67,15 +67,55 @@ describe("withHostedFallback", () => {
 
   test("a paired device with nothing configured gets one working provider", () => {
     const after = withHostedFallback(config(), credentials)
-    expect(Object.keys(after.provider)).toEqual([HOSTED_ID])
+    expect(Object.keys(after.provider).sort()).toEqual([HOSTED_ID, ...HOSTED_VOICE_IDS].sort())
+    expect(listModels(after).every((model) => model.id.startsWith(`${HOSTED_ID}/`))).toBe(true)
     expect(listModels(after).length).toBeGreaterThan(0)
     // The whole point: this is what stops a fresh install from throwing on its first message.
     expect(() => defaultModelID(after)).not.toThrow()
   })
 
   test("somebody who configured their own provider is not second-guessed", () => {
-    const mine = config({ provider: { mine: entry() } })
-    expect(withHostedFallback(mine, credentials)).toBe(mine)
+    const mine = config({ provider: { mine: entry() }, model: "mine/m-1" })
+    const after = withHostedFallback(mine, credentials)
+    expect(after.provider[HOSTED_ID]).toBeUndefined()
+    expect(after.model).toBe("mine/m-1")
+    // Hosted voice adds no chat models, so the picker shows exactly what they configured.
+    expect(listModels(after)).toEqual(listModels(mine))
+  })
+
+  test("a paired device talks through the backend by default, on push-to-talk", () => {
+    const after = withHostedFallback(config(), credentials)
+    expect(after.voice?.model).toBe("jarvis-voice/whisper-large-v3-turbo")
+    expect(after.voice?.speakModel).toBe("jarvis-speech/canopylabs/orpheus-v1-english")
+    // The backend has no realtime socket to stream to.
+    expect(after.voice?.stream).toBe(false)
+    expect(after.voice?.speak).toBe(false)
+    for (const id of HOSTED_VOICE_IDS) {
+      expect(after.provider[id]?.npm).toBe("@ai-sdk/openai")
+      expect(after.provider[id]?.options.apiKey).toBe(credentials.token)
+      expect(after.provider[id]?.options.baseURL).toBe("https://cloud.example.com/api/gateway/v1")
+    }
+  })
+
+  test("a voice picked with your own key is left alone", () => {
+    const own = config({
+      provider: { "groq-voice": entry({ npm: "@ai-sdk/openai" }) },
+      voice: { model: "groq-voice/whisper-large-v3-turbo", speakModel: "openai/gpt-4o-mini-tts", stream: true, speak: false },
+    })
+    const after = withHostedFallback(own, credentials)
+    expect(after.voice?.model).toBe("groq-voice/whisper-large-v3-turbo")
+    expect(after.voice?.speakModel).toBe("openai/gpt-4o-mini-tts")
+    expect(after.voice?.stream).toBe(true)
+  })
+
+  test("a saved keyless hosted entry gets the token at startup", () => {
+    const saved = config({
+      provider: { "jarvis-voice": entry({ npm: "@ai-sdk/openai", options: {} }) },
+      voice: { model: "jarvis-voice/whisper-large-v3-turbo", stream: true, speak: false },
+    })
+    const after = withHostedFallback(saved, credentials)
+    expect(after.provider["jarvis-voice"]?.options.apiKey).toBe(credentials.token)
+    expect(after.voice?.stream).toBe(false)
   })
 
   test("an explicit model choice survives the fallback", () => {

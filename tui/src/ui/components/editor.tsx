@@ -140,6 +140,9 @@ export function Editor({
         paddingTop: 1,
         paddingBottom: 1,
         width: "100%",
+        // Once the transcript overflows, the column would otherwise squeeze the prompt as
+        // well as the scrollback: the padding goes and the text overwrites the bottom rail.
+        flexShrink: 0,
         // The prompt and the mic button sit side by side; the button is the only thing to
         // the right of the text, so a row is the whole layout.
         flexDirection: "row",

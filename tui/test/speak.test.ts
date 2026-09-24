@@ -183,6 +183,10 @@ describe("speakAction", () => {
     expect(speakAction("test", off, false)).toEqual({ kind: "setup" })
   })
 
+  test("/speak setup always opens the setup, so a working voice can still be swapped", () => {
+    expect(speakAction("setup", on, true)).toEqual({ kind: "setup" })
+  })
+
   test("turning it off never needs a provider", () => {
     expect(speakAction("off", on, false)).toEqual({ kind: "toggle", on: false })
   })

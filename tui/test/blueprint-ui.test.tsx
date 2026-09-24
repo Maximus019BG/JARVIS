@@ -8,6 +8,7 @@ import { applyOps } from "../src/blueprint/ops.ts"
 import { emptyDoc, parseDoc } from "../src/blueprint/schema.ts"
 import { ensureRepo, readDoc, writeDoc } from "../src/blueprint/store.ts"
 import { loadTheme } from "../src/config/theme.ts"
+import { scriptedSource } from "../src/pi/hand-source.ts"
 import { BlueprintEditor } from "../src/ui/components/blueprint-editor.tsx"
 import { BlueprintPane } from "../src/ui/components/blueprint-view.tsx"
 
@@ -95,6 +96,67 @@ describe("blueprint editor", () => {
     expect(frame).toContain("2 parts")
     // The cursor: without it there is no way to tell where the next click lands.
     expect(frame).toContain("┼")
+    renderer.destroy()
+  })
+
+  test("f draws by hand: a scripted square snaps to one clean rect", async () => {
+    const root = store()
+    const before = readDoc(root, "circuit").entities.length
+    const camera = { width: 640, height: 480, fps: 30 }
+    const inset = 150
+    const hold = (to: [number, number], frames: number, pinch: number, fingers = 1) => ({ to, frames, pinch, fingers })
+    const { renderer, mockInput, captureCharFrame, flush } = await testRender(
+      <BlueprintEditor
+        root={root}
+        name="circuit"
+        theme={theme}
+        onClose={() => {}}
+        handSource={() =>
+          scriptedSource(
+            [
+              hold([inset, inset], 8, 1),
+              hold([inset, inset], 4, 0.2),
+              hold([camera.width - inset, inset], 20, 0.2),
+              hold([camera.width - inset, camera.height - inset], 20, 0.2),
+              hold([inset, camera.height - inset], 20, 0.2),
+              hold([inset, inset], 20, 0.2),
+              hold([inset, inset], 6, 1),
+            ],
+            camera,
+          )
+        }
+      />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    const press = presser(mockInput, flush)
+
+    await press("f")
+    await act(async () => {
+      await Bun.sleep(50)
+    })
+    await flush()
+    expect(captureCharFrame()).toContain("add rect")
+    expect(captureCharFrame()).toContain("pinch draw")
+
+    await press("f") // hand off
+    expect(captureCharFrame()).toContain("1 unsaved")
+    await press("w")
+    const entities = readDoc(root, "circuit").entities
+    expect(entities).toHaveLength(before + 1)
+    expect(entities.at(-1)!.type).toBe("rect")
+    renderer.destroy()
+  })
+
+  test("f without a paired cloud says how to pair instead of failing", async () => {
+    const root = store()
+    const { renderer, mockInput, captureCharFrame, flush } = await testRender(
+      <BlueprintEditor root={root} name="circuit" theme={theme} onClose={() => {}} />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    await presser(mockInput, flush)("f")
+    expect(captureCharFrame()).toContain("jarvis pair")
     renderer.destroy()
   })
 

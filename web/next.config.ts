@@ -23,6 +23,20 @@ const config: NextConfig = {
    * `externalDir` lets Next compile TypeScript from outside `web/`.
    */
   experimental: { externalDir: true },
+  /**
+   * Hand tracking (`/api/device/hand`). onnxruntime-node is a native addon, loaded from
+   * node_modules rather than bundled. It picks its `.node` binary from a path computed at
+   * runtime, which file tracing cannot follow, so the linux-x64 build (what Vercel and the
+   * Docker image run, ~34MB) is included by hand — the package's other platforms (~270MB)
+   * never make it in. The models are read from disk at runtime, so they are listed too.
+   */
+  serverExternalPackages: ["onnxruntime-node"],
+  outputFileTracingIncludes: {
+    "/api/device/hand": [
+      "./models/hand/*.onnx",
+      "../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v*/linux/x64/*",
+    ],
+  },
   turbopack: { root: path.join(__dirname, "..") },
 };
 

@@ -17,6 +17,8 @@ export function keyFor(name: GatewayKeyName): string | undefined {
       return env.GATEWAY_KEY_B;
     case "GATEWAY_KEY_C":
       return env.GATEWAY_KEY_C;
+    case "GATEWAY_KEY_D":
+      return env.GATEWAY_KEY_D;
   }
 }
 

@@ -88,6 +88,8 @@ export type CommandDeps = {
   openPair: () => void
   /** Opens the provider flow set to add something that can speak. */
   openSpeakSetup: () => void
+  /** Opens the provider flow set to add something that can transcribe. */
+  openVoiceSetup: () => void
   /**
    * Re-reads the config after a command wrote to it. Returns false if the result did not parse,
    * in which case the running session keeps the config it had.
@@ -163,6 +165,8 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
     case "stats":
       return openPanel(statsCommand(args, { width: panelBody(width) }))
+    case "voice":
+      return deps.openVoiceSetup()
     case "speak":
       return runSpeak(args, {
         config,

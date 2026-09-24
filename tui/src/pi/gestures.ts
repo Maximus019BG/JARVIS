@@ -41,6 +41,12 @@ export type GestureConfig = {
   minScore: number
   /** Two-hand pinch distance change, as a fraction, before it reads as a zoom. */
   zoomDeadZone: number
+  /**
+   * Empty frames tolerated mid-stroke before the pen lifts. 0 lifts on the first miss,
+   * which is right for a local camera; over a network one dropped detection is common and
+   * should not snap a stroke in two.
+   */
+  lostFrames?: number
 }
 
 export const DEFAULT_GESTURES: GestureConfig = {
@@ -163,6 +169,7 @@ export class GestureReader {
   private paletteFired = false
   private twoHandBase?: number
   private drawing = false
+  private lost = 0
 
   constructor(private readonly config: GestureConfig = DEFAULT_GESTURES) {
     this.pinch = new Debounced(config.debounce)
@@ -182,6 +189,11 @@ export class GestureReader {
     // Losing the hand mid-stroke has to end the stroke, or the next time it reappears the
     // line jumps across the sheet to wherever it came back.
     if (hands.length === 0) {
+      // Inside the grace window nothing is pushed, so the pinch state survives the gap.
+      if (this.drawing && this.lost < (this.config.lostFrames ?? 0)) {
+        this.lost += 1
+        return events
+      }
       this.pinch.push(false)
       this.palm.push(false)
       this.fist.push(false)
@@ -194,6 +206,7 @@ export class GestureReader {
       }
       return events
     }
+    this.lost = 0
 
     if (hands.length >= 2) {
       const [first, second] = hands as [Hand, Hand]
@@ -280,5 +293,43 @@ export class GestureReader {
     }
 
     return events
+  }
+}
+
+/**
+ * One Euro filter for a 2D point (Casiez et al.): heavy smoothing while the hand is still,
+ * almost none while it moves fast. That is the trade a pen needs — no tremor on a held
+ * point, no lag behind a quick stroke. `minCutoff` (Hz) is the calm-hand smoothing,
+ * `beta` how quickly speed opens it up; both are tuning knobs for a real camera.
+ */
+export function oneEuro(options: { minCutoff?: number; beta?: number } = {}) {
+  const minCutoff = options.minCutoff ?? 1.2
+  const beta = options.beta ?? 0.03
+  const alpha = (cutoff: number, dt: number) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt))
+  let last: { x: [number, number]; dx: [number, number]; t: number } | undefined
+  return {
+    reset() {
+      last = undefined
+    },
+    /** `t` in milliseconds. */
+    push(at: [number, number], t: number): [number, number] {
+      if (!last) {
+        last = { x: at, dx: [0, 0], t }
+        return at
+      }
+      if (t <= last.t) return last.x
+      const prev = last
+      const dt = (t - prev.t) / 1000
+      const lerp = (a: number, b: number, k: number) => a + k * (b - a)
+      const ad = alpha(1, dt)
+      const dx: [number, number] = [
+        lerp(prev.dx[0], (at[0] - prev.x[0]) / dt, ad),
+        lerp(prev.dx[1], (at[1] - prev.x[1]) / dt, ad),
+      ]
+      const a = alpha(minCutoff + beta * Math.hypot(dx[0], dx[1]), dt)
+      const x: [number, number] = [lerp(prev.x[0], at[0], a), lerp(prev.x[1], at[1], a)]
+      last = { x, dx, t }
+      return x
+    },
   }
 }

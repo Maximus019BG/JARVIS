@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs"
+import type { Roi } from "./detect.ts"
 import type { Frame, Hand } from "./gestures.ts"
+import { cameraCommand } from "./vision-worker.ts"
 
 export type Camera = { width: number; height: number; fps: number }
 
@@ -97,6 +99,247 @@ export function onnxSource(options: {
     },
     close() {
       child.kill()
+    },
+  }
+}
+
+/** Smaller than the local default: every frame crosses the internet. */
+export const REMOTE_CAMERA: Camera = { width: 480, height: 360, fps: 30 }
+
+export type RemoteStats = { state: "connecting" | "live" | "reconnecting"; fps: number; rttMs: number }
+
+/** Index of the next `FF <marker>` pair at or after `from`, or -1. */
+function findMarker(buffer: Uint8Array, marker: number, from: number): number {
+  for (let i = from; i < buffer.length - 1; i++) if (buffer[i] === 0xff && buffer[i + 1] === marker) return i
+  return -1
+}
+
+/**
+ * Cuts an MJPEG byte stream into single JPEGs on SOI (FFD8) / EOI (FFD9). Safe without a
+ * real parser: inside entropy-coded data a literal FF is always stuffed as FF00, so FFD9
+ * only ever appears as the end marker, and ffmpeg writes no EXIF thumbnails.
+ */
+export async function* splitJpegs(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array<ArrayBuffer>> {
+  const reader = stream.getReader()
+  let buffer: Uint8Array<ArrayBuffer> = new Uint8Array(0)
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return
+      const joined = new Uint8Array(buffer.length + value.length)
+      joined.set(buffer)
+      joined.set(value, buffer.length)
+      buffer = joined
+      let start = findMarker(buffer, 0xd8, 0)
+      while (start >= 0) {
+        const end = findMarker(buffer, 0xd9, start + 2)
+        if (end < 0) break
+        yield buffer.slice(start, end + 2)
+        buffer = buffer.subarray(end + 2)
+        start = findMarker(buffer, 0xd8, 0)
+      }
+      // Keep a partial frame; with no SOI at all keep only a trailing FF that may be half of one.
+      buffer = start >= 0 ? buffer.subarray(start) : buffer.subarray(Math.max(0, buffer.length - 1))
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+/** A camera feed goes over the wire, so anything but localhost must be TLS. */
+export function assertSecureUrl(baseUrl: string): URL {
+  const url = new URL(baseUrl)
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+  if (url.protocol !== "https:" && !local) {
+    throw new Error(`refusing to stream the camera to ${url.origin} — hand drawing needs https`)
+  }
+  return url
+}
+
+class Unauthorized extends Error {}
+
+/**
+ * Hands from the web API: the webcam is captured here, the model runs on the server.
+ *
+ * Latency is the whole game, so nothing ever queues. Capture overwrites one "latest frame"
+ * slot; `inFlight` sender loops each POST the newest frame nobody has sent yet; a response
+ * older than one already yielded is dropped. Worst-case lag is therefore one round trip,
+ * whatever the network does — a slow link lowers the frame rate instead of building delay.
+ *
+ * The device token is exchanged once for a short-lived ticket, because checking the token
+ * is a database query and a frame cannot afford one. The server is stateless: the ROI from
+ * the last answer is sent back with the next frame, so any instance can serve any frame.
+ */
+export function remoteSource(options: {
+  baseUrl: string
+  token: string
+  camera?: Camera
+  inFlight?: number
+  onStats?: (stats: RemoteStats) => void
+  /** Test seam: an MJPEG byte stream in place of ffmpeg. */
+  capture?: () => ReadableStream<Uint8Array>
+}): HandSource {
+  const base = assertSecureUrl(options.baseUrl).origin
+  const camera = options.camera ?? REMOTE_CAMERA
+  const inFlight = options.inFlight ?? 2
+  const abort = new AbortController()
+  let child: ReturnType<typeof Bun.spawn> | undefined
+  let stopped = false
+
+  let ticket: { value: string; expiresAt: number } | undefined
+  let ticketRequest: Promise<string> | undefined
+  /** `stale` is the ticket that was just refused: refresh only if nobody else already has. */
+  const getTicket = (stale?: string): Promise<string> => {
+    if (ticket && ticket.value !== stale && ticket.expiresAt - Date.now() > 60_000) return Promise.resolve(ticket.value)
+    ticketRequest ??= (async () => {
+      const response = await fetch(`${base}/api/device/hand/ticket`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${options.token}` },
+        signal: abort.signal,
+      })
+      if (response.status === 401) throw new Unauthorized("this device is no longer authorised — run `jarvis pair`")
+      if (!response.ok) throw new Error(`ticket request failed: ${response.status}`)
+      const body = (await response.json()) as { ticket: string; expiresAt: number }
+      ticket = { value: body.ticket, expiresAt: body.expiresAt }
+      return body.ticket
+    })().finally(() => {
+      ticketRequest = undefined
+    })
+    return ticketRequest
+  }
+
+  const capture = (): ReadableStream<Uint8Array> => {
+    if (options.capture) return options.capture()
+    try {
+      child = Bun.spawn(cameraCommand({ ...camera, source: "ffmpeg" }, "mjpeg"), { stdout: "pipe", stderr: "ignore" })
+    } catch {
+      throw new Error("ffmpeg not found — install it (brew install ffmpeg) to draw with your hand")
+    }
+    return child.stdout as ReadableStream<Uint8Array>
+  }
+
+  return {
+    camera,
+    async *frames() {
+      const waiters: (() => void)[] = []
+      const wait = () => new Promise<void>((resolve) => waiters.push(resolve))
+      const wake = () => {
+        for (const resolve of waiters.splice(0)) resolve()
+      }
+
+      let latest: { jpeg: Uint8Array<ArrayBuffer>; t: number; seq: number } | undefined
+      let taken = -1
+      let yielded = -1
+      let roi: Roi | undefined
+      let sinceDetect = 0
+      let fatal: Error | undefined
+      const ready: Frame[] = []
+      const started = performance.now()
+      let rtt = 0
+      const answered: number[] = []
+      let state: RemoteStats["state"] = "connecting"
+      const report = () => {
+        const now = performance.now()
+        while (answered.length > 0 && now - answered[0]! > 1000) answered.shift()
+        options.onStats?.({ state, fps: answered.length, rttMs: Math.round(rtt) })
+      }
+      report()
+
+      const captureLoop = async () => {
+        let seq = 0
+        try {
+          for await (const jpeg of splitJpegs(capture())) {
+            if (stopped) return
+            latest = { jpeg, t: Math.round(performance.now() - started), seq: seq++ }
+            wake()
+          }
+          if (!stopped) fatal = new Error("the camera stopped — check the terminal has camera permission")
+        } catch (error) {
+          fatal = error instanceof Error ? error : new Error(String(error))
+        }
+        wake()
+      }
+
+      const send = async (frame: { jpeg: Uint8Array<ArrayBuffer>; t: number; seq: number }) => {
+        const detect = roi === undefined || sinceDetect >= 15
+        sinceDetect = detect ? 0 : sinceDetect + 1
+        const headers: Record<string, string> = { "content-type": "image/jpeg", "x-hand-detect": detect ? "1" : "0" }
+        if (roi && !detect) headers["x-hand-roi"] = [roi.x, roi.y, roi.w, roi.h].map((n) => n.toFixed(1)).join(",")
+        const post = async (value: string) =>
+          fetch(`${base}/api/device/hand`, {
+            method: "POST",
+            headers: { ...headers, authorization: `Bearer ${value}` },
+            body: frame.jpeg,
+            signal: abort.signal,
+          })
+        const sentAt = performance.now()
+        let value = await getTicket()
+        let response = await post(value)
+        if (response.status === 401) {
+          value = await getTicket(value)
+          response = await post(value)
+          if (response.status === 401) throw new Unauthorized("the server refused a fresh ticket — run `jarvis pair`")
+        }
+        if (!response.ok) throw new Error(`hand server: ${response.status}`)
+        const body = (await response.json()) as { hands: Hand[]; roi?: Roi }
+        rtt = rtt === 0 ? performance.now() - sentAt : rtt * 0.8 + (performance.now() - sentAt) * 0.2
+        answered.push(performance.now())
+        state = "live"
+        report()
+        // An answer that arrives after a newer one is history; yielding it would jump backwards.
+        if (frame.seq <= yielded) return
+        yielded = frame.seq
+        roi = body.roi
+        ready.push({ t: frame.t, hands: body.hands })
+        wake()
+      }
+
+      const sender = async () => {
+        let failures = 0
+        while (!stopped && !fatal) {
+          if (!latest || latest.seq <= taken) {
+            await wait()
+            continue
+          }
+          const frame = latest
+          taken = frame.seq
+          try {
+            await send(frame)
+            failures = 0
+          } catch (error) {
+            if (stopped) return
+            if (error instanceof Unauthorized) {
+              fatal = error
+              wake()
+              return
+            }
+            // Network trouble: say so, back off, and carry on with whatever frame is newest then.
+            failures += 1
+            roi = undefined
+            state = "reconnecting"
+            report()
+            await Bun.sleep(Math.min(4000, 250 * 2 ** (failures - 1)))
+          }
+        }
+      }
+
+      void captureLoop()
+      for (let i = 0; i < inFlight; i++) void sender()
+
+      while (!stopped) {
+        const next = ready.shift()
+        if (next) {
+          yield next
+          continue
+        }
+        if (fatal) throw fatal
+        await wait()
+      }
+    },
+    close() {
+      stopped = true
+      abort.abort()
+      child?.kill()
     },
   }
 }

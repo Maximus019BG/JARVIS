@@ -15,6 +15,7 @@ module.exports = {
     // shared *source* in ../tui, not a package, so Jest has to be told the same thing
     // TypeScript already knows. The `.ts` suffix is how the TUI writes its imports.
     '^@blueprint/(.*)$': '<rootDir>/../tui/src/blueprint/$1',
+    '^@pi/(.*)$': '<rootDir>/../tui/src/pi/$1',
     '^~/(.*)$': '<rootDir>/src/$1'
   },
   // pnpm nests deps under node_modules/.pnpm/..., so match that structure too.

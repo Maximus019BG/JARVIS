@@ -10,20 +10,9 @@
  * anything else. Neither is our code, both are already installed on their platform, and
  * both hand us raw RGB on stdout.
  */
-import {
-  assertAnchorCount,
-  clampRoi,
-  cropToTensor,
-  decodeDetections,
-  generateAnchors,
-  landmarksToCamera,
-  nms,
-  PALM_ANCHORS,
-  roiFromPalm,
-  type Box,
-  type Roi,
-} from "./detect.ts"
+import type { Roi } from "./detect.ts"
 import { modelPaths } from "./models.ts"
+import { createTracker, type Ort } from "./track.ts"
 
 type Args = { width: number; height: number; fps: number; source: string }
 
@@ -49,7 +38,7 @@ const die = (message: string): never => {
  * laptop webcam so the whole pipeline is developable without a Pi. Both are asked for
  * packed RGB24 so no colour conversion happens in TypeScript.
  */
-function cameraCommand(args: Args): string[] {
+export function cameraCommand(args: Args, output: "rgb" | "mjpeg" = "rgb"): string[] {
   if (args.source === "rpicam") {
     return [
       "rpicam-vid",
@@ -72,9 +61,11 @@ function cameraCommand(args: Args): string[] {
     "-hide_banner",
     "-loglevel", "error",
     ...input,
-    "-vf", `scale=${args.width}:${args.height}`,
-    "-pix_fmt", "rgb24",
-    "-f", "rawvideo",
+    ...(output === "mjpeg"
+      ? // Mirrored, so moving your hand right moves the pen right; JPEG, because raw RGB at
+        // 30fps is ~27MB/s and this is going over the internet.
+        ["-vf", `scale=${args.width}:${args.height},hflip`, "-c:v", "mjpeg", "-q:v", "6", "-f", "image2pipe"]
+      : ["-vf", `scale=${args.width}:${args.height}`, "-pix_fmt", "rgb24", "-f", "rawvideo"]),
     "-",
   ]
 }
@@ -158,22 +149,13 @@ async function main() {
     }
   }
 
-  const palm = await ort.InferenceSession.create(models.palm)
-  const landmark = await ort.InferenceSession.create(models.landmark)
-  const anchors = generateAnchors(PALM_ANCHORS)
-
-  const PALM_INPUT = PALM_ANCHORS.inputSize
-  const LANDMARK_INPUT = 224
-
-  const palmBuffer = new Float32Array(3 * PALM_INPUT * PALM_INPUT)
-  const landmarkBuffer = new Float32Array(3 * LANDMARK_INPUT * LANDMARK_INPUT)
+  const tracker = await createTracker(ort as unknown as Ort, models)
   const rgb = new Uint8Array(args.width * args.height * 3)
 
   const yuv = args.source === "rpicam"
   const child = Bun.spawn(cameraCommand(args), { stdout: "pipe", stderr: "inherit" })
   emit({ ready: true, camera: { ...camera, fps: args.fps } })
 
-  let checked = false
   let roi: Roi | undefined
   let sinceDetect = 0
   const started = performance.now()
@@ -184,59 +166,11 @@ async function main() {
 
     // Detect only when the hand is lost or every half second: the landmark model tracks
     // fine on its own, and re-detecting every frame is what makes this too slow for a Pi.
-    const needDetect = roi === undefined || sinceDetect >= Math.max(1, Math.round(args.fps / 2))
-    if (needDetect) {
-      sinceDetect = 0
-      cropToTensor(frame, camera, { x: 0, y: 0, w: args.width, h: args.height }, PALM_INPUT, palmBuffer)
-      const output = await palm.run({
-        [palm.inputNames[0]!]: new ort.Tensor("float32", palmBuffer, [1, 3, PALM_INPUT, PALM_INPUT]),
-      })
-      const tensors = palm.outputNames.map((name) => output[name]!)
-      // Scores are the single-channel output; regressors are the wider one.
-      const [scoresTensor, boxesTensor] =
-        (tensors[0]!.dims.at(-1) ?? 1) === 1 ? [tensors[0]!, tensors[1]!] : [tensors[1]!, tensors[0]!]
-
-      const scores = scoresTensor.data as Float32Array
-      if (!checked) {
-        assertAnchorCount(scores.length, anchors)
-        checked = true
-      }
-      const found: Box[] = nms(
-        decodeDetections(boxesTensor.data as Float32Array, scores, anchors, {
-          inputSize: PALM_INPUT,
-          threshold: 0.5,
-        }),
-        0.3,
-        2,
-      )
-      roi = found[0] ? clampRoi(roiFromPalm(found[0], camera), camera) : undefined
-    } else {
-      sinceDetect += 1
-    }
-
-    if (!roi) {
-      emit({ t, hands: [] })
-      continue
-    }
-
-    cropToTensor(frame, camera, roi, LANDMARK_INPUT, landmarkBuffer)
-    const output = await landmark.run({
-      [landmark.inputNames[0]!]: new ort.Tensor("float32", landmarkBuffer, [1, 3, LANDMARK_INPUT, LANDMARK_INPUT]),
-    })
-    // The landmark model emits a 63-value tensor plus a presence score; pick them by size
-    // rather than by name, since the exported names differ between conversions.
-    const outputs = landmark.outputNames.map((name) => output[name]!)
-    const coords = outputs.find((tensor) => tensor.data.length >= 63)
-    const presence = outputs.find((tensor) => tensor.data.length === 1)
-    if (!coords) die("the landmark model produced no coordinate tensor")
-
-    const score = presence ? Math.min(1, Math.max(0, (presence.data as Float32Array)[0] ?? 1)) : 1
-    const landmarks = landmarksToCamera(coords!.data as Float32Array, roi, { inputSize: LANDMARK_INPUT })
-
-    // A confident hand keeps its ROI for the next frame; a lost one forces a re-detect.
-    if (score < 0.5) roi = undefined
-
-    emit({ t, hands: score >= 0.5 ? [{ score, landmarks }] : [] })
+    const detect = roi === undefined || sinceDetect >= Math.max(1, Math.round(args.fps / 2))
+    sinceDetect = detect ? 0 : sinceDetect + 1
+    const result = await tracker.step(frame, camera, { roi, detect })
+    roi = result.roi
+    emit({ t, hands: result.hands })
   }
 }
 

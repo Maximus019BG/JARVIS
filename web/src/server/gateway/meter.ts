@@ -77,8 +77,10 @@ export async function settleUsage(
   id: string,
   fields: {
     status: string;
-    target?: ResolvedTarget;
+    target?: { upstream: Pick<ResolvedTarget["upstream"], "name" | "cost">; model: string };
     usage?: TokenUsage | null;
+    /** A cost worked out by the caller (audio is not priced in tokens). Always `estimated`. */
+    costMicros?: number;
     upstreamStatus?: number;
     latencyMs?: number;
     attempts?: number;
@@ -95,10 +97,10 @@ export async function settleUsage(
           : {}),
         inputTokens: usage?.inputTokens ?? 0,
         outputTokens: usage?.outputTokens ?? 0,
-        costMicros: usage ? costMicros(usage, fields.target?.upstream.cost) : 0,
+        costMicros: fields.costMicros ?? (usage ? costMicros(usage, fields.target?.upstream.cost) : 0),
         // No usage block, or an upstream with no price list, means the number is not a real bill.
         // The usage page can say so rather than quietly overstating or understating it.
-        estimated: !usage || !fields.target?.upstream.cost,
+        estimated: fields.costMicros !== undefined || !usage || !fields.target?.upstream.cost,
         ...(fields.upstreamStatus !== undefined ? { upstreamStatus: fields.upstreamStatus } : {}),
         ...(fields.latencyMs !== undefined ? { latencyMs: fields.latencyMs } : {}),
         ...(fields.attempts !== undefined ? { attempts: fields.attempts } : {}),

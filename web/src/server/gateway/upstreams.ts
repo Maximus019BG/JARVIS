@@ -15,7 +15,7 @@
  * flexible and would quietly leave the t3-env guarantee behind. Adding a fourth key means one
  * edit here, one in env.js and one in keys.ts.
  */
-export type GatewayKeyName = "GATEWAY_KEY_A" | "GATEWAY_KEY_B" | "GATEWAY_KEY_C";
+export type GatewayKeyName = "GATEWAY_KEY_A" | "GATEWAY_KEY_B" | "GATEWAY_KEY_C" | "GATEWAY_KEY_D";
 
 export type Upstream = {
   /** Stable slug. Lands in gateway_usage.upstream_name and in the x-gateway-upstream header. */
@@ -105,4 +105,44 @@ export const LIMITS = {
   maxAttempts: 3,
   /** Shared wall clock, so a three-upstream chain of timeouts cannot add up. */
   totalDeadlineMs: 240_000,
+} as const;
+
+/**
+ * Voice: speech-to-text and text-to-speech for the TUI, on the owner's keys.
+ *
+ * One upstream per direction, not a routing table: audio endpoints are not interchangeable the
+ * way chat ones are, and a fallback chain that re-uploads 10 MB of wav is not worth building
+ * until it is needed. Both hosts are OpenAI-shaped, so moving either is a `baseUrl` + `keyName`
+ * + `models` edit.
+ */
+export const AUDIO = {
+  transcribe: {
+    name: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    keyName: "GATEWAY_KEY_D" satisfies GatewayKeyName,
+    models: ["whisper-large-v3-turbo", "whisper-large-v3"],
+    /** Estimate for metering; rows are written `estimated`. The pricier of the two models. */
+    usdPerMinute: 0.00185,
+  },
+  speech: {
+    name: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    keyName: "GATEWAY_KEY_D" satisfies GatewayKeyName,
+    models: ["canopylabs/orpheus-v1-english"],
+    /**
+     * Orpheus's voices. OpenAI SDKs send "alloy" when none is set, which Orpheus would reject,
+     * so anything not listed here is swapped for `defaultVoice`.
+     */
+    voices: ["autumn", "diana", "hannah", "austin", "daniel", "troy"],
+    defaultVoice: "troy",
+    /** Orpheus answers in wav; the TUI sniffs the bytes, so asking for mp3 would only fail. */
+    responseFormat: "wav",
+    /** Estimate for metering; rows are written `estimated`. Deliberately on the high side. */
+    usdPerMillionChars: 50,
+  },
+  /** Matches nginx's client_max_body_size, so nothing larger ever reaches us anyway. */
+  maxAudioBytes: 10 * 1024 * 1024,
+  /** Ceiling for one /audio/speech call. The TUI sends a sentence at a time. */
+  maxSpeechChars: 4096,
+  timeoutMs: 60_000,
 } as const;

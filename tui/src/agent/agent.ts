@@ -12,7 +12,7 @@ import { toolCallRepair } from "./repair.ts"
 import { defaultModelID, resolveModel, type ResolvedModel } from "./provider.ts"
 import { customTools } from "../extend/custom-tools.ts"
 import { skillTool } from "../extend/skill-tool.ts"
-import { builtinTools, filterTools, gateTools, MAX_DEPTH, ToolError, type ToolSet } from "../tools/index.ts"
+import { builtinTools, filterTools, gateTools, MAX_DEPTH, portableSchemas, ToolError, type ToolSet } from "../tools/index.ts"
 import { createLoadout, toolsUsedIn } from "../tools/loadout.ts"
 import { toolSearchTool } from "../tools/tool-search.ts"
 import { startedBackground } from "../tools/background.ts"
@@ -242,7 +242,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // always was, at the point it actually runs. Prompting for the lookup would be theatre.
   const selfGated = new Set([...Object.keys(builtins), ...Object.keys(custom), "skill", "tool_search"])
   const gated = gateTools(filterTools(available, agent.tools, agent.defaultTools), agentGate, selfGated)
-  const tools = wrapTools(gated, plugins, { sessionID, agent: agent.name })
+  const tools = wrapTools(portableSchemas(gated), plugins, { sessionID, agent: agent.name })
 
   // Which of those tools actually ride along in each request. Every tool stays registered —
   // registration is free, only serialization is not — and `prepareStep` names the subset.

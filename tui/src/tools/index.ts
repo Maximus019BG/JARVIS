@@ -1,4 +1,4 @@
-import type { Tool } from "ai"
+import { asSchema, jsonSchema, type JSONSchema7, type Tool } from "ai"
 import { blueprintTools } from "../blueprint/tools.ts"
 import { MCP_PREFIX } from "../extend/mcp.ts"
 import type { PermissionGate } from "../permission.ts"
@@ -91,4 +91,44 @@ export function filterTools(tools: ToolSet, policy: Record<string, boolean>, fal
     return fallback
   }
   return Object.fromEntries(Object.entries(tools).filter(([name]) => decide(name)))
+}
+
+/**
+ * Rewrites draft-07 tuples (`items: [a, b]`) as `items: a` plus a fixed length. vLLM checks
+ * tool schemas against 2020-12, where an `items` array is invalid and fails the whole
+ * request — and every blueprint point and viewBox is a tuple. Zod still validates the exact
+ * tuple on the way in, so the model loses a little precision and nothing else.
+ */
+export function portableSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(portableSchema)
+  if (!node || typeof node !== "object") return node
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(node)) out[key] = portableSchema(value)
+  if (Array.isArray(out.items)) {
+    const items = out.items as unknown[]
+    const unique = [...new Map(items.map((item) => [JSON.stringify(item), item])).values()]
+    out.items = unique.length === 1 ? unique[0] : { anyOf: unique }
+    out.minItems = items.length
+    out.maxItems = items.length
+    delete out.additionalItems
+  }
+  return out
+}
+
+export function portableSchemas(tools: ToolSet): ToolSet {
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, definition]) => {
+      if (!definition.inputSchema) return [name, definition]
+      const schema = asSchema(definition.inputSchema)
+      return [
+        name,
+        {
+          ...definition,
+          inputSchema: jsonSchema(async () => portableSchema(await schema.jsonSchema) as JSONSchema7, {
+            validate: schema.validate,
+          }),
+        },
+      ]
+    }),
+  )
 }

@@ -68,6 +68,13 @@ describe("createLoadout", () => {
     expect(loadout.find("")).toEqual([])
   })
 
+  test("finds the blueprint creation tool by alias and by query", () => {
+    const loadout = createLoadout(tools())
+    expect(loadout.find("blueprint_create")).toEqual(["blueprint"])
+    expect(loadout.find("create blueprint")).toEqual(["blueprint"])
+    expect(loadout.load(["blueprint_create"])).toEqual(["blueprint"])
+  })
+
   test("an unknown name resolves to nothing rather than to the nearest tool", () => {
     // Same rule as repair.ts: a wrong guess runs the wrong tool, and two blueprint tools differ
     // by a few characters while one of them commits to git.

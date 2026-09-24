@@ -34,7 +34,7 @@ export type PiOptions = {
   modelsOnly?: boolean
 }
 
-const TOOLS: Tool[] = ["auto", "line", "polyline", "rect", "circle", "arc", "path"]
+export const TOOLS: Tool[] = ["auto", "line", "polyline", "rect", "circle", "arc", "path"]
 
 type Client = ServerWebSocket<undefined>
 
@@ -339,7 +339,7 @@ function sceneOf(doc: BlueprintDoc): Scene {
 }
 
 /** Existing endpoints worth snapping a new stroke to. */
-function endpointsOf(doc: BlueprintDoc): Pt[] {
+export function endpointsOf(doc: BlueprintDoc): Pt[] {
   const points: Pt[] = []
   for (const entity of doc.entities) {
     if (entity.type === "line") points.push(entity.a, entity.b)

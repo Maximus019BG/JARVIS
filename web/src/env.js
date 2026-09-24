@@ -60,6 +60,7 @@ export const env = createEnv({
     GATEWAY_KEY_A: z.string().min(8).optional(),
     GATEWAY_KEY_B: z.string().min(8).optional(),
     GATEWAY_KEY_C: z.string().min(8).optional(),
+    GATEWAY_KEY_D: z.string().min(8).optional(),
   },
 
   /**
@@ -97,6 +98,7 @@ export const env = createEnv({
     GATEWAY_KEY_A: process.env.GATEWAY_KEY_A,
     GATEWAY_KEY_B: process.env.GATEWAY_KEY_B,
     GATEWAY_KEY_C: process.env.GATEWAY_KEY_C,
+    GATEWAY_KEY_D: process.env.GATEWAY_KEY_D,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

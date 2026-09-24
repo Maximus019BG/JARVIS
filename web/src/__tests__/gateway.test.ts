@@ -2,7 +2,13 @@ import { classifyUpstream, isRetryable, openAiErrorBody, redactSecrets, sseError
 import { clientHeaders, upstreamHeaders } from "~/server/gateway/headers";
 import { catalog, resolveAlias, resolveChain } from "~/server/gateway/resolve";
 import type { Upstream } from "~/server/gateway/upstreams";
-import { costMicros, makeUsageSniffer, usageFromSseEvent } from "~/server/gateway/usage";
+import {
+  costMicros,
+  makeUsageSniffer,
+  speechCostMicros,
+  transcribeCostMicros,
+  usageFromSseEvent,
+} from "~/server/gateway/usage";
 
 const upstream = (over: Partial<Upstream> & { name: string }): Upstream => ({
   baseUrl: `https://${over.name}.example.com/v1`,
@@ -228,5 +234,18 @@ describe("usage metering", () => {
 
   test("an upstream with no price list costs nothing, and the caller marks it estimated", () => {
     expect(costMicros({ inputTokens: 100, outputTokens: 100 })).toBe(0);
+  });
+});
+
+describe("audio metering", () => {
+  test("a minute of 16 kHz wav costs the per-minute price, and a second is never free", () => {
+    expect(transcribeCostMicros(16_000 * 2 * 60)).toBe(1_850);
+    expect(transcribeCostMicros(16_000 * 2)).toBeGreaterThan(0);
+    expect(Number.isInteger(transcribeCostMicros(12_345))).toBe(true);
+  });
+
+  test("speech is priced per character", () => {
+    expect(speechCostMicros(1_000_000)).toBe(50_000_000);
+    expect(speechCostMicros(1000)).toBe(50_000);
   });
 });

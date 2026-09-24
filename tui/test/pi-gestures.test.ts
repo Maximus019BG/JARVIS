@@ -17,6 +17,7 @@ import {
   isOpenPalm,
   isPointing,
   pinchRatio,
+  oneEuro,
   type Frame,
   type Hand,
 } from "../src/pi/gestures.ts"
@@ -298,5 +299,44 @@ describe("calibration", () => {
 
   test("missing calibration is reported rather than guessed", () => {
     expect(usableCalibration(camera, join(tmpdir(), "definitely-not-here.json"))).toHaveProperty("stale")
+  })
+})
+
+describe("network tolerance", () => {
+  const pinched = (t: number) => frame(t, hand({ pinch: 0.1, fingers: 1 }))
+  const types = (events: { type: string }[]) => events.map((event) => event.type)
+
+  test("a stroke survives a short gap and lifts once the gap outlasts lostFrames", () => {
+    const reader = new GestureReader({ ...DEFAULT_GESTURES, lostFrames: 3 })
+    let t = 0
+    const events: string[] = []
+    for (let i = 0; i < DEFAULT_GESTURES.debounce + 1; i++) events.push(...types(reader.push(pinched((t += 33)))))
+    expect(events).toContain("pen-down")
+
+    // Two missed detections mid-stroke: still drawing, and the pen keeps moving after.
+    expect(reader.push(frame((t += 33)))).toEqual([])
+    expect(reader.push(frame((t += 33)))).toEqual([])
+    expect(types(reader.push(pinched((t += 33))))).toEqual(["pen-move"])
+
+    // A real loss: the fourth empty frame in a row ends it.
+    for (let i = 0; i < 3; i++) expect(reader.push(frame((t += 33)))).toEqual([])
+    expect(types(reader.push(frame((t += 33))))).toEqual(["pen-up"])
+  })
+
+  test("the default still lifts on the first miss, as the Pi expects", () => {
+    const reader = new GestureReader(DEFAULT_GESTURES)
+    for (let i = 0; i < DEFAULT_GESTURES.debounce + 1; i++) reader.push(pinched(i * 33))
+    expect(types(reader.push(frame(500)))).toEqual(["pen-up"])
+  })
+
+  test("one-euro filter: calm hand stays put, fast hand is not left behind", () => {
+    const still = oneEuro()
+    let out: [number, number] = [0, 0]
+    for (let i = 0; i < 30; i++) out = still.push([100 + (i % 2 ? 2 : -2), 100], i * 33)
+    expect(Math.abs(out[0] - 100)).toBeLessThan(1)
+
+    const moving = oneEuro()
+    for (let i = 0; i <= 20; i++) out = moving.push([i * 33, 0], i * 33) // 1000 px/s
+    expect(660 - out[0]).toBeLessThan(15)
   })
 })
