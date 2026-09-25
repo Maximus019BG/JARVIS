@@ -15,7 +15,7 @@ import {
   Calendar,
   FileText,
   Activity,
-  X,
+  Trash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -30,6 +30,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Separator } from "~/components/ui/separator";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import {
   Card,
   CardContent,
@@ -48,6 +53,7 @@ interface BlueprintDetailModalProps {
   onRun?: (blueprint: Blueprint) => void;
   onDownload?: (blueprint: Blueprint) => void;
   onShare?: (blueprint: Blueprint) => void;
+  onDelete?: (blueprint: Blueprint) => void;
 }
 
 export function BlueprintDetailModal({
@@ -59,6 +65,7 @@ export function BlueprintDetailModal({
   onRun,
   onDownload,
   onShare,
+  onDelete,
 }: BlueprintDetailModalProps) {
   if (!blueprint) return null;
 
@@ -130,6 +137,22 @@ export function BlueprintDetailModal({
                     <Edit3 className="mr-2 h-4 w-4" />
                     Edit
                   </Button>
+                )}
+                {onDelete && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label="Delete blueprint"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => onDelete(blueprint)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete blueprint</TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>

@@ -55,11 +55,10 @@ src/
 - Responsive layout with proper spacing
 
 ### BlueprintFiltersComponent
-- Advanced search functionality
-- Multi-criteria filtering (tags, author, workstation)
-- Sort options with visual indicators
-- Filter badges with clear actions
-- Responsive filter panel
+- Search by name/description
+- Filter by sync status (synced/pending) and modified window (7/30 days)
+- Sort by name, created or modified date
+- Filtering, sorting and paging run client-side via `applyBlueprintFilters` (`~/lib/api/blueprints`)
 
 ### BlueprintDetailModal
 - Tabbed interface for organized information

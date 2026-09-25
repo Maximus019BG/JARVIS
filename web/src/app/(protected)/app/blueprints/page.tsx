@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AlertCircle } from "lucide-react";
@@ -16,7 +16,6 @@ import {
   PaginationPrevious,
 } from "~/components/ui/pagination";
 
-import { BlueprintCard } from "~/components/blueprints/blueprint-card";
 import { BlueprintCreateDialog } from "~/components/blueprints/blueprint-create-dialog";
 import { BlueprintFiltersComponent } from "~/components/blueprints/blueprint-filters";
 import { BlueprintDetailModal } from "~/components/blueprints/blueprint-detail-modal";
@@ -26,11 +25,16 @@ import { BlueprintStats } from "~/components/blueprints/blueprint-stats";
 import { BlueprintsGrid } from "~/components/blueprints/blueprint-grid";
 
 import {
+  applyBlueprintFilters,
   blueprintsApi,
+  hasActiveBlueprintFilters,
   type Blueprint,
   type BlueprintFilters,
 } from "~/lib/api/blueprints";
+import { typeToConfirm } from "~/lib/type-to-confirm-store";
 import { useActiveWorkstation } from "~/lib/workstation-hooks";
+
+const PAGE_SIZE = 12;
 
 export default function BlueprintsPage() {
   const router = useRouter();
@@ -41,8 +45,6 @@ export default function BlueprintsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
   const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(
     null,
   );
@@ -58,32 +60,19 @@ export default function BlueprintsPage() {
   // Filter state
   const [filters, setFilters] = useState<BlueprintFilters>({
     search: "",
-    tags: [],
     sortBy: "createdAt",
     sortOrder: "desc",
   });
 
-  // Mock data for filters (in real app, fetch from API)
-  const availableTags = [
-    "automation",
-    "workflow",
-    "data-processing",
-    "ml",
-    "analytics",
-    "testing",
-  ];
-  const availableAuthors = [
-    { id: "1", name: "John Doe" },
-    { id: "2", name: "Jane Smith" },
-    { id: "3", name: "Mike Johnson" },
-  ];
-  const availableWorkstations = [
-    { id: "1", name: "Development Station" },
-    { id: "2", name: "Production Station" },
-    { id: "3", name: "Testing Station" },
-  ];
-
-  // No client-side mock generator in use anymore
+  const filtered = useMemo(
+    () => applyBlueprintFilters(blueprints, filters),
+    [blueprints, filters],
+  );
+  const totalCount = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  // Clamped so deleting the last card on the last page doesn't strand the user on an empty page.
+  const page = Math.min(currentPage, totalPages);
+  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Load stats
   const loadStats = React.useCallback(async () => {
@@ -103,22 +92,10 @@ export default function BlueprintsPage() {
       setError(null);
       if (!activeWorkstation?.id) {
         setBlueprints([]);
-        setTotalPages(1);
-        setTotalCount(0);
-        setLoading(false);
         return;
       }
 
-      const response = await blueprintsApi.getBlueprints(
-        activeWorkstation.id,
-        currentPage,
-        12,
-        filters,
-        true,
-      );
-      setBlueprints(response.blueprints);
-      setTotalPages(response.totalPages);
-      setTotalCount(response.total);
+      setBlueprints(await blueprintsApi.listBlueprints(activeWorkstation.id));
     } catch (error) {
       console.error("Error loading blueprints:", error);
       setError("Failed to load blueprints. Please try again.");
@@ -126,7 +103,7 @@ export default function BlueprintsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeWorkstation?.id, currentPage, filters]);
+  }, [activeWorkstation?.id]);
 
   // Effects
   useEffect(() => {
@@ -158,15 +135,32 @@ export default function BlueprintsPage() {
     );
   };
 
-  const handleDeleteBlueprint = async (blueprint: Blueprint) => {
-    try {
-      await blueprintsApi.deleteBlueprint(blueprint.id);
-      toast.success(`Blueprint "${blueprint.name}" deleted successfully`);
-      void loadBlueprints(); // Refresh the list
-    } catch (error) {
-      console.error("Error deleting blueprint:", error);
-      toast.error("Failed to delete blueprint");
-    }
+  // Card menu and detail modal both land here, so neither can delete without confirming.
+  const handleDeleteBlueprint = (blueprint: Blueprint) => {
+    void typeToConfirm.show({
+      title: `Delete ${blueprint.name}?`,
+      description:
+        "The blueprint and its whole version history are removed for everyone on this workstation.",
+      confirmText: blueprint.name,
+      confirmButtonText: "Delete blueprint",
+      confirmButtonVariant: "destructive",
+      onConfirm: async () => {
+        typeToConfirm.setIsLoading(true);
+        try {
+          await blueprintsApi.deleteBlueprint(blueprint.id);
+          toast.success(`Blueprint "${blueprint.name}" deleted`);
+          typeToConfirm.close(true);
+          setIsDetailModalOpen(false);
+          void loadBlueprints();
+          void loadStats();
+        } catch (error) {
+          console.error("Error deleting blueprint:", error);
+          toast.error("Failed to delete blueprint");
+        } finally {
+          typeToConfirm.setIsLoading(false);
+        }
+      },
+    });
   };
 
   const handleCloneBlueprint = async (blueprint: Blueprint) => {
@@ -209,7 +203,7 @@ export default function BlueprintsPage() {
     const maxVisiblePages = 5;
     const startPage = Math.max(
       1,
-      currentPage - Math.floor(maxVisiblePages / 2),
+      page - Math.floor(maxVisiblePages / 2),
     );
     const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
 
@@ -218,9 +212,9 @@ export default function BlueprintsPage() {
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
-              onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+              onClick={() => handlePageChange(Math.max(1, page - 1))}
               className={
-                currentPage === 1 ? "pointer-events-none opacity-50" : ""
+                page === 1 ? "pointer-events-none opacity-50" : ""
               }
             />
           </PaginationItem>
@@ -243,13 +237,13 @@ export default function BlueprintsPage() {
           {Array.from(
             { length: endPage - startPage + 1 },
             (_, i) => startPage + i,
-          ).map((page) => (
-            <PaginationItem key={page}>
+          ).map((n) => (
+            <PaginationItem key={n}>
               <PaginationLink
-                onClick={() => handlePageChange(page)}
-                isActive={page === currentPage}
+                onClick={() => handlePageChange(n)}
+                isActive={n === page}
               >
-                {page}
+                {n}
               </PaginationLink>
             </PaginationItem>
           ))}
@@ -272,10 +266,10 @@ export default function BlueprintsPage() {
           <PaginationItem>
             <PaginationNext
               onClick={() =>
-                handlePageChange(Math.min(totalPages, currentPage + 1))
+                handlePageChange(Math.min(totalPages, page + 1))
               }
               className={
-                currentPage === totalPages
+                page === totalPages
                   ? "pointer-events-none opacity-50"
                   : ""
               }
@@ -301,9 +295,6 @@ export default function BlueprintsPage() {
         filters={filters}
         onFiltersChange={handleFiltersChange}
         onCreateNew={handleCreateNew}
-        availableTags={availableTags}
-        availableAuthors={availableAuthors}
-        availableWorkstations={availableWorkstations}
         totalCount={totalCount}
       />
 
@@ -322,8 +313,8 @@ export default function BlueprintsPage() {
       {!loading && !error && (
         <>
           <BlueprintsGrid
-            blueprints={blueprints}
-            filters={filters}
+            blueprints={visible}
+            hasActiveFilters={hasActiveBlueprintFilters(filters)}
             onCreateNew={handleCreateNew}
             onView={handleViewBlueprint}
             onEdit={handleEditBlueprint}
@@ -352,6 +343,7 @@ export default function BlueprintsPage() {
         onEdit={handleEditBlueprint}
         onClone={handleCloneBlueprint}
         onRun={handleRunBlueprint}
+        onDelete={handleDeleteBlueprint}
         onDownload={(blueprint) => {
           toast.info(`Downloading blueprint "${blueprint.name}"...`);
         }}

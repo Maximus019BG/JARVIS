@@ -5,11 +5,11 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Zap } from "lucide-react";
 import { BlueprintCard } from "~/components/blueprints/blueprint-card";
-import type { Blueprint, BlueprintFilters } from "~/lib/api/blueprints";
+import type { Blueprint } from "~/lib/api/blueprints";
 
 type Props = {
   blueprints: Blueprint[];
-  filters: BlueprintFilters;
+  hasActiveFilters: boolean;
   onCreateNew: () => void;
   onView: (b: Blueprint) => void;
   onEdit: (b: Blueprint) => void;
@@ -21,7 +21,7 @@ type Props = {
 
 export function BlueprintsGrid({
   blueprints,
-  filters,
+  hasActiveFilters,
   onCreateNew,
   onView,
   onEdit,
@@ -37,17 +37,16 @@ export function BlueprintsGrid({
           <Zap className="text-muted-foreground mx-auto mb-4 h-12 w-12" />
           <h3 className="mb-2 text-lg font-semibold">No blueprints found</h3>
           <p className="text-muted-foreground mb-4">
-            {Object.values(filters).some(
-              (value) =>
-                value && (Array.isArray(value) ? value.length > 0 : true),
-            )
+            {hasActiveFilters
               ? "No blueprints match your current filters. Try adjusting your search criteria."
               : "Get started by creating your first blueprint."}
           </p>
-          <Button onClick={onCreateNew}>
-            <Zap className="mr-2 h-4 w-4" />
-            Create Your First Blueprint
-          </Button>
+          {!hasActiveFilters && (
+            <Button onClick={onCreateNew}>
+              <Zap className="mr-2 h-4 w-4" />
+              Create Your First Blueprint
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

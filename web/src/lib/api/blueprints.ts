@@ -17,23 +17,57 @@ export interface Blueprint {
   isActive?: boolean;
   lastModified?: string;
   version?: string;
+  syncStatus?: string | null;
 }
 
 export interface BlueprintFilters {
   search?: string;
-  workstationId?: string;
-  tags?: string[];
-  author?: string;
+  syncStatus?: "synced" | "pending";
+  modifiedWithinDays?: 7 | 30;
   sortBy?: "name" | "createdAt" | "lastModified";
   sortOrder?: "asc" | "desc";
 }
 
-export interface BlueprintsResponse {
-  blueprints: Blueprint[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
+export const hasActiveBlueprintFilters = (f: BlueprintFilters) =>
+  Boolean(f.search || f.syncStatus || f.modifiedWithinDays);
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Search, filter and sort a workstation's blueprints in memory. The list route returns every
+ * row in one query; doing this client-side avoids a ~230ms round trip per keystroke.
+ */
+export function applyBlueprintFilters(
+  blueprints: Blueprint[],
+  filters: BlueprintFilters,
+  now = Date.now(),
+): Blueprint[] {
+  const q = filters.search?.trim().toLowerCase();
+  const cutoff = filters.modifiedWithinDays
+    ? now - filters.modifiedWithinDays * DAY_MS
+    : undefined;
+  const modified = (b: Blueprint) => Date.parse(b.lastModified ?? b.createdAt);
+
+  const rows = blueprints.filter(
+    (b) =>
+      (!q ||
+        b.name.toLowerCase().includes(q) ||
+        Boolean(b.description?.toLowerCase().includes(q))) &&
+      (!filters.syncStatus || (b.syncStatus ?? "synced") === filters.syncStatus) &&
+      (cutoff === undefined || modified(b) >= cutoff),
+  );
+
+  const sortBy = filters.sortBy ?? "createdAt";
+  const dir = filters.sortOrder === "asc" ? 1 : -1;
+  return rows.sort((a, b) => {
+    const diff =
+      sortBy === "name"
+        ? a.name.localeCompare(b.name)
+        : sortBy === "lastModified"
+          ? modified(a) - modified(b)
+          : Date.parse(a.createdAt) - Date.parse(b.createdAt);
+    return diff * dir;
+  });
 }
 
 const api = axios.create({
@@ -52,46 +86,12 @@ api.interceptors.request.use((config) => {
 });
 
 export const blueprintsApi = {
-  // Get all blueprints with pagination and filters
-  getBlueprints: async (
-    workstationId: string,
-    page = 1,
-    limit = 12,
-    filters: BlueprintFilters = {},
-    recentOnly = false,
-  ): Promise<BlueprintsResponse> => {
-    const params = new URLSearchParams({
-      page: page.toString(),
-      limit: limit.toString(),
-    });
-
-    if (recentOnly) params.append("recentOnly", "true");
-
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        if (Array.isArray(value)) {
-          value.forEach((v) => params.append(key, v));
-        } else {
-          params.append(key, value.toString());
-        }
-      }
-    });
-
-    const response = await api.get(
-      `/workstation/blueprint/list/${workstationId}?${params}`,
+  // Every blueprint in a workstation; the page searches/sorts/pages them with applyBlueprintFilters.
+  listBlueprints: async (workstationId: string): Promise<Blueprint[]> => {
+    const response = await api.get<Blueprint[]>(
+      `/workstation/blueprint/list/${workstationId}`,
     );
-    const data = response.data;
-    if (Array.isArray(data)) {
-      const blueprints = data as Blueprint[];
-      return {
-        blueprints,
-        total: blueprints.length,
-        page,
-        limit,
-        totalPages: Math.max(1, Math.ceil(blueprints.length / limit)),
-      };
-    }
-    return data as BlueprintsResponse;
+    return response.data;
   },
 
   // Create a new blueprint. Returns the id to route the user straight into the editor.
