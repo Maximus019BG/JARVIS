@@ -48,14 +48,15 @@ export function blueprintRoot(config: Config): string {
 
 const filePath = (root: string, name: string) => join(root, `${safeName(name)}${SUFFIX}`)
 
-type GitResult = { ok: boolean; out: string; err: string }
+export type GitResult = { ok: boolean; out: string; err: string }
 
-function git(root: string, args: string[]): GitResult {
+/** Also used by `code/`, whose projects are ordinary git repos rather than one store. */
+export function git(root: string, args: string[]): GitResult {
   const result = Bun.spawnSync(["git", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" })
   return { ok: result.exitCode === 0, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() }
 }
 
-function gitOrThrow(root: string, args: string[]): string {
+export function gitOrThrow(root: string, args: string[]): string {
   const result = git(root, args)
   if (!result.ok) throw new BlueprintError(`git ${args[0]} failed: ${result.err || result.out}`)
   return result.out

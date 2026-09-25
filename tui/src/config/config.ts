@@ -378,6 +378,13 @@ export const ConfigSchema = z
      */
     syncSessions: z.boolean().default(false),
     /**
+     * Code projects (`/code`, `jarvis init`). `autoSync` commits every project in the
+     * workspace after each turn and pushes it to the cloud when paired and to `origin` when
+     * there is one. Off by default: it uploads source code, and pairing was consent to sync
+     * blueprints — the device also needs code access granted in the web app.
+     */
+    code: z.object({ autoSync: z.boolean().default(false) }).default({ autoSync: false }),
+    /**
      * Accept prompts typed into the paired web app and run them in this session, so a session
      * can be steered from a phone.
      *

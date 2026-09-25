@@ -45,6 +45,7 @@ const SUMMARIES: Record<string, string> = {
   blueprint_symbol: "Find and place standard IEC electrical, architectural and IoT symbols",
   blueprint_sync: "Push or pull a blueprint's history to the paired cloud account",
   blueprint_view: "Render a blueprint as braille, SVG or JSON, at any commit",
+  code_project: "Create code projects and push or pull them to the JARVIS cloud or a git remote such as GitHub",
   engineering_calc: "Electrical, structural, building-physics and IoT formulas, to EU standards",
 }
 

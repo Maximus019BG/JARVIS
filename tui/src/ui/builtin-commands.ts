@@ -1,4 +1,5 @@
 import { blueprintCommand } from "./blueprint-command.ts"
+import { codeCommand } from "./code-command.ts"
 import { blueprintRoot, listBlueprints } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
@@ -163,6 +164,8 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       // still gets the panel — the picker's "no matches" would lose the how-to-make-one hint.
       if (!args.trim() && listBlueprints(blueprintRoot(config)).length > 0) return openPicker("blueprint")
       return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
+    case "code":
+      return codeCommand(args, cwd, (text, level) => turn.note(text, level))
     case "stats":
       return openPanel(statsCommand(args, { width: panelBody(width) }))
     case "voice":

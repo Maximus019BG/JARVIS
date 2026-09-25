@@ -22,6 +22,11 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: "redo", description: "Re-apply the changes that /undo reverted", kind: "builtin" },
   { name: "theme", description: "Pick the color theme", kind: "builtin" },
   { name: "blueprint", description: "Pick a blueprint to view", kind: "builtin" },
+  {
+    name: "code",
+    description: "Code projects — /code new <name>, list, status, push [name] [remote], pull, clone <name>",
+    kind: "builtin",
+  },
   { name: "pair", description: "Pair this device with the JARVIS cloud, or unpair it", kind: "builtin" },
   { name: "mcp", description: "Show MCP server status", kind: "builtin" },
   {

@@ -9,6 +9,7 @@
 export const MCP_AREAS = [
   "workstations",
   "blueprints",
+  "code",
   "automations",
   "sessions",
   "approvals",

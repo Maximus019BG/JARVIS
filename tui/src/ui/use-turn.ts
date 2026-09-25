@@ -6,6 +6,7 @@ import { compactSession, generateTitle, isOverflow, NothingToCompact } from "../
 import { providerOf, record } from "../agent/metrics.ts"
 import { remoteAnswer } from "../agent/remote-approval.ts"
 import { pushSession } from "../agent/session-sync.ts"
+import { autoSync } from "../code/sync.ts"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -452,6 +453,11 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           void pushSession(config, active).catch(() => {
             // A failed mirror is not the user's problem; the startup sweep will catch up.
           })
+          // Same fire-and-forget, but a failed code push is worth a note: it is the user's
+          // work that did not make it off the machine.
+          void autoSync(config, cwd)
+            .then((problems) => problems.forEach((problem) => note(problem, "error")))
+            .catch(() => {})
         }
       })()
     },

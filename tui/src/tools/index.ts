@@ -1,5 +1,6 @@
 import { asSchema, jsonSchema, type JSONSchema7, type Tool } from "ai"
 import { blueprintTools } from "../blueprint/tools.ts"
+import { codeProjectTool } from "../code/tools.ts"
 import { MCP_PREFIX } from "../extend/mcp.ts"
 import type { PermissionGate } from "../permission.ts"
 import { askTool } from "./ask.ts"
@@ -41,6 +42,7 @@ export function builtinTools(ctx: ToolContext, agents: { name: string; descripti
     bash_output: bashOutputTool(ctx),
     engineering_calc: calcTool(ctx),
     ...blueprintTools(ctx, ctx.blueprints),
+    code_project: codeProjectTool(ctx),
   }
   if (ctx.ask) tools.ask = askTool(ctx)
   if (ctx.spawn && agents.length > 0) tools.task = taskTool(ctx, agents)

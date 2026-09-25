@@ -15,7 +15,7 @@ usage:
   jarvis                       start the interactive TUI
   jarvis run <prompt...>       run one prompt headlessly and print the result
   jarvis work [--root <dir>]   run automation agent jobs from the cloud in this directory
-  jarvis init                  scaffold a .jarvis directory in this project
+  jarvis init                  scaffold .jarvis and make this directory a code project
   jarvis models                list configured models
   jarvis config                show config files, agents, tools, skills and plugins
   jarvis pair [email] [url]    pair this device with the jarvis cloud
@@ -101,9 +101,12 @@ async function main() {
   switch (command) {
     case "init": {
       const { init } = await import("./cli/init.ts")
+      const { initProject } = await import("./code/project.ts")
       const { created, skipped } = init()
       for (const name of created) process.stdout.write(`created .jarvis/${name}\n`)
       for (const name of skipped) process.stdout.write(`kept    .jarvis/${name}\n`)
+      const project = initProject(process.cwd())
+      process.stdout.write(`code project ${project.name} (${project.dir}) — \`/code push\` syncs it\n`)
       process.stdout.write(
         created.length > 0
           ? "\nedit the examples or delete them. `cd .jarvis && bun install` if your tools need dependencies.\n"

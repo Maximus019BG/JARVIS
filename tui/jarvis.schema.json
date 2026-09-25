@@ -603,6 +603,18 @@
       "default": false,
       "type": "boolean"
     },
+    "code": {
+      "default": {
+        "autoSync": false
+      },
+      "type": "object",
+      "properties": {
+        "autoSync": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
     "remoteSteering": {
       "default": false,
       "type": "boolean"

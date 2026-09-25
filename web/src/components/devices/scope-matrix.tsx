@@ -22,6 +22,7 @@ type Level = (typeof LEVELS)[number];
 const DESCRIPTIONS: Record<McpArea, string> = {
   workstations: "Which workstation the token is bound to.",
   blueprints: "Read drawings and history; write applies edits and restores versions.",
+  code: "Code projects the TUI syncs; write lets the device push its source code here.",
   automations: "Read runs and graphs; write runs, publishes, and edits automations.",
   sessions: "Agent session transcripts.",
   approvals: "Pending permission prompts.",

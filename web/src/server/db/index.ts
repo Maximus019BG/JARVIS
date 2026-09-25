@@ -22,6 +22,7 @@ import * as syncLog from "~/server/db/schemas/sync_log";
 import * as idempotencyKey from "~/server/db/schemas/idempotency_key";
 import * as scriptFile from "~/server/db/schemas/script_file";
 import * as blueprintVersion from "~/server/db/schemas/blueprint_version";
+import * as codeProject from "~/server/db/schemas/code_project";
 import * as approval from "~/server/db/schemas/approval";
 import * as agentSession from "~/server/db/schemas/agent_session";
 import * as sessionPrompt from "~/server/db/schemas/session_prompt";
@@ -56,6 +57,7 @@ export const schema = {
   ...idempotencyKey,
   ...scriptFile,
   ...blueprintVersion,
+  ...codeProject,
   ...approval,
   ...agentSession,
   ...sessionPrompt,

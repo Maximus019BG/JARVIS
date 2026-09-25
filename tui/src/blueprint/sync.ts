@@ -18,7 +18,8 @@ type DivergedResponse = {
   serverDoc: unknown
 }
 
-async function call<T>(
+/** Also used by `code/sync.ts` — same bearer token, same error shape. */
+export async function call<T>(
   credentials: Credentials,
   path: string,
   init: RequestInit & { idempotencyKey?: string } = {},

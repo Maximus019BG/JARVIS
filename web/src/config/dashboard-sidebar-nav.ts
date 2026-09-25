@@ -3,7 +3,7 @@ import { ChartColumn } from "~/components/animate-ui/icons/chart-column";
 import { GalleryVerticalEnd } from "~/components/animate-ui/icons/gallery-horizontal-end";
 import { Fingerprint } from "~/components/animate-ui/icons/fingerprint";
 import { Hammer } from "~/components/animate-ui/icons/hammer";
-import { DollarSign } from "lucide-react";
+import { Code, DollarSign } from "lucide-react";
 
 export const dashboardSidebarNav = [
   {
@@ -20,6 +20,14 @@ export const dashboardSidebarNav = [
     href: "/app/blueprints",
     isActive: (href: string) => {
       return href.startsWith("/app/blueprints");
+    },
+  },
+  {
+    title: "Code",
+    icon: Code,
+    href: "/app/code",
+    isActive: (href: string) => {
+      return href.startsWith("/app/code");
     },
   },
   {
