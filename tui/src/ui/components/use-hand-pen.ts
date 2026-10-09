@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import { GestureReader, oneEuro, pinchPoint, type GestureConfig, type GestureEvent } from "../../pi/gestures.ts"
+import { GestureReader, isFist, isOpenPalm, isPointing, oneEuro, pinchPoint, type GestureConfig, type GestureEvent, type Hand } from "../../pi/gestures.ts"
 import type { Camera, HandSource, RemoteStats } from "../../pi/hand-source.ts"
+import { GLYPHS } from "../use-gestures.ts"
 
 export type HandSourceFactory = (onStats: (stats: RemoteStats) => void) => HandSource
 
@@ -9,8 +10,30 @@ export type HandPen = {
   /** Smoothed pinch point in camera pixels; null with no hand in view. */
   cursor: [number, number] | null
   drawing: boolean
+  /** What the camera reads right now — "no hand", "👆 point", "👍 thumbs_up" — so a pose that does nothing is visibly not seen. */
+  seen?: string
   stats?: RemoteStats
   error?: string
+}
+
+/** What each pose does to the drawing, in the glyphs `readHand` reports, for the editor to list. */
+export const HAND_LEGEND: [glyph: string, does: string][] = [
+  ["🤏", "draw"],
+  ["✋", "cancel"],
+  ["✊", "undo"],
+  ["👆", "hold: tool"],
+  ["🤏🤏", "zoom"],
+]
+
+/** The pose the pen acts on, or the learned label when the server has the gesture model. */
+export function readHand(hand: Hand | undefined, drawing: boolean): string {
+  if (drawing) return "🤏 drawing"
+  if (!hand) return "no hand"
+  if (hand.gesture) return `${GLYPHS[hand.gesture.name] ?? ""} ${hand.gesture.name}`.trim()
+  if (isFist(hand)) return "✊ fist"
+  if (isOpenPalm(hand)) return "✋ palm"
+  if (isPointing(hand)) return "👆 point"
+  return "hand"
 }
 
 /**
@@ -61,7 +84,7 @@ export function useHandPen(options: {
             const smoothed = (event.type === "pen-down" || event.type === "pen-move") && cursor ? { ...event, at: cursor } : event
             onEvent.current(smoothed, frame.t, source.camera)
           }
-          setPen({ camera: source.camera, cursor, drawing: reader.isDrawing, stats })
+          setPen({ camera: source.camera, cursor, drawing: reader.isDrawing, seen: readHand(hand, reader.isDrawing), stats })
         }
       } catch (error) {
         if (!stopped) setPen((current) => ({ ...current, error: error instanceof Error ? error.message : String(error) }))

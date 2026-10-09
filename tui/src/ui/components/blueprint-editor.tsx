@@ -1,5 +1,5 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { checkDoc, type CheckDomain } from "../../blueprint/check.ts"
 import { readCredentials } from "../../blueprint/credentials.ts"
 import { shapeFrom, TOOLS, type Tool } from "../../blueprint/draw.ts"
@@ -17,7 +17,7 @@ import { remoteSource, type Camera } from "../../pi/hand-source.ts"
 import { endpointsOf, TOOLS as FIT_TOOLS } from "../../pi/index.ts"
 import { Cells, palette, useDoc } from "./blueprint-view.tsx"
 import { Modal } from "./dialog.tsx"
-import { useHandPen, type HandSourceFactory } from "./use-hand-pen.ts"
+import { HAND_LEGEND, useHandPen, type HandSourceFactory } from "./use-hand-pen.ts"
 
 /**
  * The blueprint editor, fullscreen, in the terminal.
@@ -100,6 +100,7 @@ export function BlueprintEditor({
   gestures,
   fitTuning,
   handSource,
+  handOnOpen,
 }: {
   root: string
   name: string
@@ -111,6 +112,8 @@ export function BlueprintEditor({
   fitTuning?: Partial<typeof DEFAULT_FIT>
   /** Where hands come from. Defaults to the paired web API; tests pass a scripted source. */
   handSource?: HandSourceFactory
+  /** Start drawing by hand at once: the camera was already on for gestures, so it stays on. */
+  handOnOpen?: boolean
 }) {
   const { width, height } = useTerminalDimensions()
   /** Bumped after a save, so the base document is re-read from disk. */
@@ -128,6 +131,7 @@ export function BlueprintEditor({
   const [layer, setLayer] = useState(0)
   /** Undefined means "fit the drawing"; set once the user zooms or pans. */
   const [view, setView] = useState<Viewport | undefined>(undefined)
+  const [grid, setGrid] = useState(true)
   const [status, setStatus] = useState<string>("")
   /** Set while drawing by hand; the factory starts the camera, clearing it stops it. */
   const [hand, setHand] = useState<HandSourceFactory | undefined>(undefined)
@@ -172,8 +176,8 @@ export function BlueprintEditor({
     return [x0, y0, Math.max(vx + vw, at[0]) - x0, Math.max(vy + vh, at[1]) - y0]
   }, [doc, at])
   const rendered = useMemo(
-    () => (doc ? renderCells(doc, { cols, rows, view: view ?? fitted, grid: STEP * 4, scaleBar: true }) : undefined),
-    [doc, cols, rows, view, fitted],
+    () => (doc ? renderCells(doc, { cols, rows, view: view ?? fitted, grid: grid ? STEP * 4 : undefined, scaleBar: true }) : undefined),
+    [doc, cols, rows, view, fitted, grid],
   )
 
   /** Applies ops optimistically, refusing the batch rather than storing something invalid. */
@@ -200,6 +204,32 @@ export function BlueprintEditor({
       setRedoable((stack) => [...stack, last])
       return current.slice(0, -1)
     })
+
+  /** Commits the journal. False, with the reason on the status line, if the write failed. */
+  const save = () => {
+    if (!doc) return false
+    try {
+      const sha = writeDoc(root, name, doc, `edit ${name} in the terminal`)
+      setJournal([])
+      setRedoable([])
+      setRevision((n) => n + 1)
+      setStatus(`saved ${sha}`)
+      return true
+    } catch (error) {
+      setStatus(error instanceof BlueprintError ? error.message : String(error))
+      return false
+    }
+  }
+
+  /**
+   * Leaving keeps what was drawn. It used to drop the journal without a word, so a stroke
+   * that was on screen a moment ago was simply gone; every save is a commit, so `u` before
+   * leaving is the way to throw work away.
+   */
+  const close = () => {
+    if (journal.length > 0 && !save()) return
+    onClose()
+  }
 
   const tuning = useMemo(() => ({ ...DEFAULT_GESTURES, lostFrames: 3, ...gestures }), [gestures])
   const fitting = { ...DEFAULT_FIT, ...fitTuning }
@@ -276,6 +306,14 @@ export function BlueprintEditor({
   })
   if (hand && pen.error) stopHand(pen.error)
 
+  // Once, as soon as there is a view to draw into.
+  const handStarted = useRef(false)
+  useEffect(() => {
+    if (!handOnOpen || handStarted.current || !rendered) return
+    handStarted.current = true
+    startHand(rendered.view)
+  }, [handOnOpen, rendered])
+
   useKeyboard((key) => {
     if (!doc || !rendered) return
     const stop = () => key.stopPropagation()
@@ -315,11 +353,13 @@ export function BlueprintEditor({
     // `q` as well as escape, like `Panel`: a bare ESC is ambiguous — it is also the first
     // byte of every arrow key — so a terminal that waits to disambiguate makes escape feel
     // sticky, and there should always be a way out that does not.
+    // Innermost first. The hand used to go first, so backing out of a half-drawn line
+    // switched the camera off and left the line half drawn.
     if (key.name === "escape" || (key.name === "q" && !key.ctrl)) {
-      if (hand) stopHand("hand off")
-      else if (mode.kind !== "draw") setMode({ kind: "draw" })
+      if (mode.kind !== "draw") setMode({ kind: "draw" })
       else if (selection.length > 0) setSelection([])
-      else onClose()
+      else if (hand) stopHand("hand off")
+      else close()
       return stop()
     }
 
@@ -393,8 +433,12 @@ export function BlueprintEditor({
       else if (picked.id === "symbol") setMode({ kind: "symbols", query: "", index: 0 })
       else {
         setTool(picked.id)
+        // The shape picked is the shape the hand draws, now or once `f` turns it on —
+        // otherwise `l` then a pinch still fits whatever `auto` guesses.
+        const shape = (FIT_TOOLS as string[]).includes(picked.id) ? (picked.id as FitTool) : "auto"
+        setHandTool(shape)
         setMode({ kind: "draw" })
-        setStatus(picked.hint)
+        setStatus(hand ? `hand draws: ${shape}` : picked.hint)
       }
       return stop()
     }
@@ -432,17 +476,7 @@ export function BlueprintEditor({
     }
     if (key.name === "w") {
       if (journal.length === 0) setStatus("nothing to save")
-      else {
-        try {
-          const sha = writeDoc(root, name, doc, `edit ${name} in the terminal`)
-          setJournal([])
-          setRedoable([])
-          setRevision((n) => n + 1)
-          setStatus(`saved ${sha}`)
-        } catch (error) {
-          setStatus(error instanceof BlueprintError ? error.message : String(error))
-        }
-      }
+      else save()
       return stop()
     }
     if (key.sequence === "+" || key.sequence === "=") {
@@ -451,6 +485,11 @@ export function BlueprintEditor({
     }
     if (key.sequence === "-" || key.sequence === "_") {
       setView(zoom(view ?? rendered.view, 1.25))
+      return stop()
+    }
+    if (key.name === "g" && !key.ctrl) {
+      setGrid((shown) => !shown)
+      setStatus(grid ? "grid off" : "grid on")
       return stop()
     }
     if (key.name === "0") {
@@ -489,8 +528,9 @@ export function BlueprintEditor({
   // The live stroke is raw samples — what the hand did — and snaps to a clean shape on release.
   for (const point of stroke.current) mark([point.x, point.y], "•")
   if (hand && pen.cursor && pen.camera) mark(cameraToSheet(pen.cursor, pen.camera, rendered.view), pen.drawing ? "●" : "◎")
+  // What the camera sees goes first: on a narrow terminal the tail is what gets cut.
   const handLine = hand
-    ? ` hand ${pen.stats ? `${pen.stats.state === "live" ? "●" : "○"} ${pen.stats.state} ${pen.stats.fps}fps ${pen.stats.rttMs}ms` : "●"} · tool ${handTool} · pinch draw · palm cancel · fist undo · point-hold tool · f stop`
+    ? ` ${pen.seen ?? "starting camera…"} · hand ${pen.stats ? `${pen.stats.state === "live" ? "●" : "○"} ${pen.stats.state} ${pen.stats.fps}fps ${pen.stats.rttMs}ms` : "●"} · tool ${handTool} · ${HAND_LEGEND.map(([glyph, does]) => `${glyph} ${does}`).join(" · ")} · f stop`
     : undefined
 
   const report = checkDoc(doc, domain)
@@ -503,9 +543,13 @@ export function BlueprintEditor({
   return (
     <Modal>
       <box style={{ width: "100%", height: "100%", backgroundColor: theme.bg, flexDirection: "column" }}>
-        <box style={{ flexDirection: "row", flexGrow: 1 }}>
+        {/* Basis 0 and clipped, so a tall rail on a short terminal loses its tail rather than
+            pushing the hand line and the status off the bottom. */}
+        <box style={{ flexDirection: "row", flexGrow: 1, flexBasis: 0, overflow: "hidden" }}>
           {/* Tools, same ids and same keys as the web toolbar. */}
-          <box style={{ width: RAIL, flexDirection: "column", flexShrink: 0, paddingLeft: 1 }}>
+          <box style={{ width: RAIL, flexDirection: "column", flexShrink: 0, paddingLeft: 1, overflow: "hidden" }}>
+          {/* Its own height, never squeezed: squeezed, the rows draw over each other. */}
+          <box style={{ flexDirection: "column", flexShrink: 0 }}>
             <text fg={theme.accent}>{name}</text>
             {TOOLS.map((entry) => (
               <text
@@ -531,6 +575,17 @@ export function BlueprintEditor({
             <text fg={theme.muted}>{"  x  delete"}</text>
             <text fg={theme.muted}>{"  u  undo"}</text>
             <text fg={theme.muted}>{"  w  save"}</text>
+            <text fg={theme.muted}>{"  g  grid"}</text>
+            <box style={{ height: 1 }} />
+            {/* Listed with the hand off too: the way to learn them is before the camera is on.
+                The pose the camera sees right now lights up. */}
+            <text fg={hand ? theme.accent : theme.muted}>{" hand  (f)"}</text>
+            {HAND_LEGEND.map(([glyph, does]) => (
+              <text key={glyph} fg={hand && pen.seen?.split(" ")[0] === glyph ? theme.accent : theme.muted}>
+                {`  ${glyph} ${does}`}
+              </text>
+            ))}
+          </box>
           </box>
 
           {/* The drawing. */}
@@ -587,7 +642,7 @@ export function BlueprintEditor({
           <text fg={!pen.stats || pen.stats.state === "live" ? theme.accent : theme.warning}>{handLine}</text>
         ) : (
           <text fg={theme.dim}>
-            {` [${at[0].toFixed(1)}, ${at[1].toFixed(1)}] ${doc.units} · ${doc.entities.length} entities · ${doc.parts.length} parts · ${journal.length > 0 ? `${journal.length} unsaved` : "saved"} · enter draw · +/- zoom · ctrl+arrows pan · 0 fit · esc/q close`}
+            {` [${at[0].toFixed(1)}, ${at[1].toFixed(1)}] ${doc.units} · ${doc.entities.length} entities · ${doc.parts.length} parts · ${journal.length > 0 ? `${journal.length} unsaved` : "saved"} · enter draw · f hand · +/- zoom · ctrl+arrows pan · 0 fit · esc/q close`}
           </text>
         )}
         <text fg={status ? theme.warning : theme.dim}>{` ${status}`}</text>

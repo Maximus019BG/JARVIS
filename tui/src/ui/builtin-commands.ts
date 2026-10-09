@@ -104,6 +104,8 @@ export type CommandDeps = {
   openVision: (mode: VisionMode) => void
   /** Turns hand gestures on or off; `undefined` flips them. */
   setGestures: (on?: boolean) => void
+  /** Opens a blueprint in the fullscreen editor, creating it if it does not exist. */
+  openBlueprint: (name: string) => void
   quit: () => void
 }
 
@@ -166,10 +168,12 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
     case "pair":
       return openPair()
     case "blueprint":
-      // Bare `/blueprint` picks one rather than printing names to retype. An empty store
+      // `/blueprint <name>` opens the editor, creating the sheet if it is new — the way to draw
+      // (by keys or by hand) without asking the agent first. Bare, it picks one; an empty store
       // still gets the panel — the picker's "no matches" would lose the how-to-make-one hint.
-      if (!args.trim() && listBlueprints(blueprintRoot(config)).length > 0) return openPicker("blueprint")
-      return openPanel(blueprintCommand(args, { config, width: panelBody(width) }))
+      if (args.trim()) return deps.openBlueprint(args.trim().split(/\s+/)[0]!)
+      if (listBlueprints(blueprintRoot(config)).length > 0) return openPicker("blueprint")
+      return openPanel(blueprintCommand(blueprintRoot(config)))
     case "code":
       return codeCommand(args, cwd, (text, level) => turn.note(text, level))
     case "stats":

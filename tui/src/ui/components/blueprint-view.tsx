@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { renderCells, type Cell, type Viewport } from "../../blueprint/render-braille.ts"
 import { BlueprintError, type BlueprintDoc } from "../../blueprint/schema.ts"
 import { readDoc } from "../../blueprint/store.ts"
@@ -111,16 +111,22 @@ export function BlueprintPane({
   revision,
   theme,
   width,
-  height,
+  hint,
 }: {
   root: string
   name: string
   revision: unknown
   theme: Theme
   width: number
-  height: number
+  /** The way into the editor. A read-only pane that never says so reads as a broken canvas. */
+  hint?: string
 }) {
   const loaded = useDoc(root, name, revision)
+  /**
+   * Measured, not passed in: what is left over depends on everything under the transcript
+   * (suggestions, a multi-line prompt, the activity line), which only the layout knows.
+   */
+  const [height, setHeight] = useState(0)
   // Two for the border, two for the padding; two rows for the border and one for the footer.
   const cols = Math.max(10, width - 4)
   const rows = Math.max(4, height - 4)
@@ -129,6 +135,9 @@ export function BlueprintPane({
     <box
       title={name}
       titleColor={theme.accent}
+      onSizeChange={function () {
+        setHeight(this.height)
+      }}
       style={{
         border: true,
         borderStyle: "rounded",
@@ -136,7 +145,8 @@ export function BlueprintPane({
         backgroundColor: theme.bg,
         flexDirection: "column",
         width,
-        height,
+        height: "100%",
+        overflow: "hidden",
         paddingLeft: 1,
         paddingRight: 1,
         flexShrink: 0,
@@ -148,7 +158,7 @@ export function BlueprintPane({
         <>
           <Picture doc={loaded.doc} theme={theme} cols={cols} rows={rows} scaleBar />
           <text fg={theme.dim}>
-            {`${loaded.doc.entities.length} entities${loaded.doc.parts.length > 0 ? ` · ${loaded.doc.parts.length} parts` : ""}`}
+            {`${loaded.doc.entities.length} entities${loaded.doc.parts.length > 0 ? ` · ${loaded.doc.parts.length} parts` : ""}${hint ? ` · ${hint}` : ""}`}
           </text>
         </>
       )}

@@ -21,7 +21,7 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: "undo", description: "Revert the file changes from the last turn", kind: "builtin" },
   { name: "redo", description: "Re-apply the changes that /undo reverted", kind: "builtin" },
   { name: "theme", description: "Pick the color theme", kind: "builtin" },
-  { name: "blueprint", description: "Pick a blueprint to view", kind: "builtin" },
+  { name: "blueprint", description: "Open a blueprint in the editor — /blueprint <name> creates it if new", kind: "builtin" },
   {
     name: "code",
     description: "Code projects — /code new <name>, list, status, push [name] [remote], pull, clone <name>",

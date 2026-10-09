@@ -495,28 +495,30 @@ describe("runCommand /blueprint", () => {
   const run = (args: string, dir: string) => {
     const picked: string[] = []
     const panels: string[] = []
+    const opened: string[] = []
     const deps = {
       config: { blueprint: { dir } },
       width: 80,
       openPicker: (kind: string) => picked.push(kind),
       openPanel: (content: { title: string }) => panels.push(content.title),
+      openBlueprint: (name: string) => opened.push(name),
     }
     runCommand({ name: "blueprint", description: "", kind: "builtin" }, args, deps as never)
-    return { picked, panels }
+    return { picked, panels, opened }
   }
 
-  test("bare /blueprint picks; a name still draws", () => {
+  test("bare /blueprint picks; a name opens the editor", () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-cmd-"))
     ensureRepo(root)
     writeDoc(root, "plate", emptyDoc("plate"), "create")
 
-    expect(run("", root)).toEqual({ picked: ["blueprint"], panels: [] })
-    expect(run("plate", root).panels[0]).toContain("plate")
+    expect(run("", root)).toEqual({ picked: ["blueprint"], panels: [], opened: [] })
+    expect(run("plate", root)).toEqual({ picked: [], panels: [], opened: ["plate"] })
   })
 
   test("an empty store keeps the panel — the picker would hide how to make one", () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-cmd-empty-"))
     ensureRepo(root)
-    expect(run("", root)).toEqual({ picked: [], panels: ["blueprints"] })
+    expect(run("", root)).toEqual({ picked: [], panels: ["blueprints"], opened: [] })
   })
 })

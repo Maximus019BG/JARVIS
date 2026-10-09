@@ -18,7 +18,7 @@ export const GLYPHS: Record<string, string> = {
   thumbs_down: "👎",
   palm: "✋",
   fist: "✊",
-  point: "☝",
+  point: "👆",
   peace: "✌",
   ok: "👌",
   call: "🤙",

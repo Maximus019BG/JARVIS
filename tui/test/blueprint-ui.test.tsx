@@ -49,7 +49,7 @@ describe("blueprint pane", () => {
   test("draws the blueprint, its name and what is in it", async () => {
     const root = store()
     const { renderer, captureCharFrame, flush } = await testRender(
-      <BlueprintPane root={root} name="circuit" revision={0} theme={theme} width={44} height={24} />,
+      <BlueprintPane root={root} name="circuit" revision={0} theme={theme} width={44} />,
       { width: 44, height: 24 },
     )
     await flush()
@@ -68,7 +68,7 @@ describe("blueprint pane", () => {
     const root = store()
     writeFileSync(join(root, "circuit.blueprint.json"), '{"schema": 1, "name": "circuit"}')
     const { renderer, captureCharFrame, flush } = await testRender(
-      <BlueprintPane root={root} name="circuit" revision={0} theme={theme} width={44} height={16} />,
+      <BlueprintPane root={root} name="circuit" revision={0} theme={theme} width={44} />,
       { width: 44, height: 16 },
     )
     await flush()
@@ -96,6 +96,21 @@ describe("blueprint editor", () => {
     expect(frame).toContain("2 parts")
     // The cursor: without it there is no way to tell where the next click lands.
     expect(frame).toContain("┼")
+    // The hand gestures, listed before the camera is ever on.
+    expect(frame).toContain("✊ undo")
+    expect(frame).toContain("🤏 draw")
+    renderer.destroy()
+  })
+
+  test("a short terminal clips the key list, not the status lines", async () => {
+    const root = store()
+    const { renderer, captureCharFrame, flush } = await testRender(
+      <BlueprintEditor root={root} name="circuit" theme={theme} onClose={() => {}} />,
+      { width: 120, height: 20 },
+    )
+    await flush()
+    expect(captureCharFrame()).toContain("enter draw")
+    expect(captureCharFrame()).toContain("v  Select") // rows clipped, not drawn over each other
     renderer.destroy()
   })
 
@@ -137,7 +152,7 @@ describe("blueprint editor", () => {
     })
     await flush()
     expect(captureCharFrame()).toContain("add rect")
-    expect(captureCharFrame()).toContain("pinch draw")
+    expect(captureCharFrame()).toContain("f stop")
 
     await press("f") // hand off
     expect(captureCharFrame()).toContain("1 unsaved")
@@ -145,6 +160,133 @@ describe("blueprint editor", () => {
     const entities = readDoc(root, "circuit").entities
     expect(entities).toHaveLength(before + 1)
     expect(entities.at(-1)!.type).toBe("rect")
+    renderer.destroy()
+  })
+
+  test("a shape picked before f is the shape the hand draws", async () => {
+    const root = store()
+    const camera = { width: 640, height: 480, fps: 30 }
+    const hold = (to: [number, number], frames: number, pinch: number) => ({ to, frames, pinch, fingers: 1 })
+    const { renderer, mockInput, flush } = await testRender(
+      <BlueprintEditor
+        root={root}
+        name="circuit"
+        theme={theme}
+        onClose={() => {}}
+        // A square: `auto` would make it a rect, so a line proves the pick reached the hand.
+        handSource={() =>
+          scriptedSource(
+            [hold([150, 150], 8, 1), hold([150, 150], 4, 0.2), hold([490, 150], 20, 0.2), hold([490, 330], 20, 0.2), hold([150, 330], 20, 0.2), hold([150, 150], 20, 0.2), hold([150, 150], 6, 1)],
+            camera,
+          )
+        }
+      />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    const press = presser(mockInput, flush)
+    await press("l")
+    await press("f")
+    await act(async () => {
+      await Bun.sleep(50)
+    })
+    await flush()
+    await press("w")
+    expect(readDoc(root, "circuit").entities.at(-1)!.type).toBe("line")
+    renderer.destroy()
+  })
+
+  test("q backs out of a half-drawn line before it turns the hand off", async () => {
+    const root = store()
+    let closed = false
+    const { renderer, mockInput, captureCharFrame, flush } = await testRender(
+      <BlueprintEditor
+        root={root}
+        name="circuit"
+        theme={theme}
+        onClose={() => (closed = true)}
+        handSource={() => scriptedSource([{ to: [320, 240], frames: 2, pinch: 1, fingers: 1 }])}
+      />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    const press = presser(mockInput, flush)
+    await press("f")
+    await press("l")
+    await press("RETURN") // first end of a keyboard line
+    await press("q")
+    expect(captureCharFrame()).toContain("f stop") // the hand, and the camera, stay on
+    await press("q")
+    expect(captureCharFrame()).toContain("hand off")
+    expect(closed).toBe(false)
+    await press("q")
+    expect(closed).toBe(true)
+    renderer.destroy()
+  })
+
+  test("with gestures already on it opens drawing by hand, and says what it sees", async () => {
+    const root = store()
+    const { renderer, captureCharFrame, flush } = await testRender(
+      <BlueprintEditor
+        root={root}
+        name="circuit"
+        theme={theme}
+        onClose={() => {}}
+        handOnOpen
+        // A held point, no pinch: the readout should name it rather than stay silent.
+        handSource={() => scriptedSource([{ to: [320, 240], frames: 6, pinch: 1, fingers: 1 }])}
+      />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    await act(async () => {
+      await Bun.sleep(50)
+    })
+    await flush()
+    const frame = captureCharFrame()
+    expect(frame).toContain("f stop")
+    expect(frame).toContain("👆 point")
+    renderer.destroy()
+  })
+
+  test("g hides and shows the grid", async () => {
+    const root = store()
+    const { renderer, mockInput, captureCharFrame, flush } = await testRender(
+      <BlueprintEditor root={root} name="circuit" theme={theme} onClose={() => {}} />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    const press = presser(mockInput, flush)
+    // The drawing rows only: the status line changes with every press.
+    const picture = () => captureCharFrame().split("\n").slice(0, 20).join("\n")
+    const dots = (text: string) => text.match(/[⠁-⣿]/g)?.length ?? 0
+    const withGrid = picture()
+    await press("g")
+    expect(captureCharFrame()).toContain("grid off")
+    expect(dots(picture())).toBeLessThan(dots(withGrid))
+    await press("g")
+    expect(picture()).toBe(withGrid)
+    renderer.destroy()
+  })
+
+  test("closing keeps what was drawn", async () => {
+    const root = store()
+    const before = readDoc(root, "circuit").entities.length
+    let closed = false
+    const { renderer, mockInput, flush } = await testRender(
+      <BlueprintEditor root={root} name="circuit" theme={theme} onClose={() => (closed = true)} />,
+      { width: 120, height: 30 },
+    )
+    await flush()
+    const press = presser(mockInput, flush)
+    await press("r")
+    await press("RETURN")
+    for (let i = 0; i < 3; i++) await press("ARROW_RIGHT")
+    for (let i = 0; i < 3; i++) await press("ARROW_DOWN")
+    await press("RETURN")
+    await press("q")
+    expect(closed).toBe(true)
+    expect(readDoc(root, "circuit").entities).toHaveLength(before + 1)
     renderer.destroy()
   })
 

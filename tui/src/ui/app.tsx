@@ -16,7 +16,8 @@ import type { McpSession } from "../extend/mcp.ts"
 import { discoverModels, discoveryArgs } from "../agent/model-discovery.ts"
 import { testProvider, testWillInstall } from "../agent/provider-test.ts"
 import { credentialsPath, isPaired, readCredentials, writeCredentials, type Credentials } from "../blueprint/credentials.ts"
-import { blueprintRoot } from "../blueprint/store.ts"
+import { emptyDoc } from "../blueprint/schema.ts"
+import { blueprintRoot, exists, safeName, writeDoc } from "../blueprint/store.ts"
 import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
 import { providerHealth } from "../config/provider-status.ts"
 import { globalConfigFile, persistConfig } from "../config/persist.ts"
@@ -249,6 +250,11 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
    * transcript, or filling the terminal — and they are steps along one axis.
    */
   const [blueprintView, setBlueprintView] = useState<"hidden" | "pane" | "full">("hidden")
+  /**
+   * A blueprint opened with `/blueprint <name>`, and how long the transcript was then — so a
+   * blueprint the agent touches afterwards takes over again, but one it touched before does not.
+   */
+  const [opened, setOpened] = useState<{ name: string; after: number }>()
   /** The camera overlay for /learn and /find, and the pairing it talks to. Another exclusive overlay. */
   const [vision, setVision] = useState<{ mode: VisionMode; credentials: Credentials } | null>(null)
   /** Hand gestures as commands. The camera runs only while this is on. */
@@ -323,7 +329,13 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
    * See `activeBlueprint` for why it is read out of the transcript rather than plumbed
    * through from the tools.
    */
-  const blueprint = useMemo(() => activeBlueprint(turn.items), [turn.items])
+  const blueprint = useMemo(
+    () =>
+      opened
+        ? (activeBlueprint(turn.items.slice(opened.after)) ?? { name: opened.name, revision: opened.name })
+        : activeBlueprint(turn.items),
+    [turn.items, opened],
+  )
 
   const blueprints = useMemo(() => blueprintRoot(config), [config])
   const { paneWidth, paneFits } = splitWidth(width)
@@ -829,6 +841,21 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
 
   const setGestures = useCallback((on?: boolean) => setGesturesOn((current) => on ?? !current), [])
 
+  const openBlueprint = useCallback(
+    (name: string) => {
+      try {
+        const safe = safeName(name)
+        if (!exists(blueprints, safe)) writeDoc(blueprints, safe, emptyDoc(safe), "created")
+        setOpened({ name: safe, after: turn.items.length })
+        offered.current = true
+        setBlueprintView("full")
+      } catch (error) {
+        turn.note(errorMessage(error), "error")
+      }
+    },
+    [blueprints, turn],
+  )
+
   const dispatch = useCallback(
     (name: string, args: string) => {
       const command = commands.find((entry) => entry.name === name)
@@ -851,6 +878,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         testProvider: runTest,
         openVision,
         setGestures,
+        openBlueprint,
         quit: () => process.exit(0),
       })
     },
@@ -861,6 +889,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       extensions,
       keymap,
       mcp,
+      openBlueprint,
       openPair,
       openSetup,
       openSpeakSetup,
@@ -1405,7 +1434,9 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           hugs its children, so there is no free space inside it to centre against. */}
       {/* A row only so the pane can sit beside the transcript; everything below — the
           activity line, the editor, the status bar — keeps the full width. */}
-      <box style={{ flexDirection: "row", flexGrow: 1 }}>
+      {/* Basis 0 and clipped: the row takes what the rows below leave, never the reverse. Sized
+          by its content, the pane pushed the suggestion strip and the status bar off the screen. */}
+      <box style={{ flexDirection: "row", flexGrow: 1, flexBasis: 0, overflow: "hidden" }}>
       {blueprint && blueprintView === "pane" && paneFits && (
         <BlueprintPane
           root={blueprints}
@@ -1413,7 +1444,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           revision={blueprint.revision}
           theme={theme}
           width={paneWidth}
-          height={height - 6}
+          hint={`${describe(keymap.blueprintView)} to draw`}
         />
       )}
       {empty ? (
@@ -1614,6 +1645,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           theme={theme}
           gestures={config.blueprint?.pi?.gestures}
           fitTuning={config.blueprint?.pi?.fit}
+          // Gestures stop while the editor is open; their camera carries on as the pen.
+          handOnOpen={gesturesOn}
           onClose={() => setBlueprintView("hidden")}
         />
       )}

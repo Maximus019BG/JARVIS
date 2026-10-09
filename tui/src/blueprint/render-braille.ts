@@ -147,15 +147,15 @@ export function renderCells(doc: BlueprintDoc, options: BrailleOptions): Rendere
 
   // Grid first, so anything real drawn on top of a grid dot claims the cell.
   //
-  // Only when the dots would land far enough apart to read as a grid. A cell is 2 dots wide
-  // and 4 tall, so a step that looks generous horizontally is half as generous vertically —
-  // below about eight cells the result is a field of speckle over the drawing, which is
-  // worse than no grid at all. Skipped rather than drawn badly.
-  const gridCells = options.grid ? (options.grid / (view[2] || 1)) * cols : 0
-  if (options.grid && options.grid > 0 && gridCells >= 8) {
+  // Only when the dots land far enough apart to read as a grid. A cell is 2 dots wide and 4
+  // tall, so a step that looks generous horizontally is half as generous vertically — below
+  // about eight cells the result is a field of speckle over the drawing. Zoomed out, the step
+  // doubles until it reads; it used to be skipped, so a whole sheet never showed a grid.
+  if (options.grid && options.grid > 0) {
     layer = undefined
     const [vx, vy, vw, vh] = view
-    const step = options.grid
+    let step = options.grid
+    while ((step / (vw || 1)) * cols < 8) step *= 2
     for (let x = Math.ceil(vx / step) * step; x <= vx + vw; x += step) {
       for (let y = Math.ceil(vy / step) * step; y <= vy + vh; y += step) {
         const [px, py] = project([x, y])

@@ -23,6 +23,10 @@ makes the drawing checkable.
 `references/entities.md` has the full entity and op reference. Read it when you need a
 field name; the rest of this file is how to use them well.
 
+The person can draw too. `/blueprint <name>` opens (or creates) a sheet in the terminal
+editor, and ctrl+b steps the side pane → fullscreen editor → hidden. When someone wants to
+draw themselves, point them there; do not say the terminal has no canvas.
+
 ## Domain skills
 
 This file is the fundamentals and applies to every drawing. For a specific kind of
