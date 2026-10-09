@@ -27,11 +27,19 @@ export const maxDuration = 10;
 const MODEL_DIR = path.join(process.cwd(), "models", "hand");
 const MAX_BYTES = 300_000;
 
+/**
+ * One region per tracked hand, as the previous answer returned them: `x,y,w,h;…`. A single
+ * region is the header an older TUI sends, and still parses. Two is the tracker's limit.
+ */
 const roiSchema = z
   .string()
-  .transform((value) => value.split(",").map(Number))
-  .pipe(z.tuple([z.number().finite(), z.number().finite(), z.number().positive(), z.number().positive()]))
-  .transform(([x, y, w, h]) => ({ x, y, w, h }));
+  .transform((value) => value.split(";").map((roi) => roi.split(",").map(Number)))
+  .pipe(
+    z
+      .array(z.tuple([z.number().finite(), z.number().finite(), z.number().positive(), z.number().positive()]))
+      .max(2),
+  )
+  .transform((rois) => rois.map(([x, y, w, h]) => ({ x, y, w, h })));
 
 /**
  * The motion trail the previous answer returned, echoed back like the ROI: `x,y,span;…`.
@@ -102,8 +110,8 @@ export async function POST(request: Request) {
   }
 
   const roiHeader = request.headers.get("x-hand-roi");
-  const roi = roiHeader ? roiSchema.safeParse(roiHeader) : undefined;
-  if (roi && !roi.success) return NextResponse.json({ error: "invalid x-hand-roi" }, { status: 400 });
+  const rois = roiHeader ? roiSchema.safeParse(roiHeader) : undefined;
+  if (rois && !rois.success) return NextResponse.json({ error: "invalid x-hand-roi" }, { status: 400 });
   const trailHeader = request.headers.get("x-hand-trail");
   const trail = trailHeader ? trailSchema.safeParse(trailHeader) : undefined;
   if (trail && !trail.success) return NextResponse.json({ error: "invalid x-hand-trail" }, { status: 400 });
@@ -131,7 +139,7 @@ export async function POST(request: Request) {
   // frame is load, not model speed.
   const { result, ms } = await serial(async () => {
     const started = performance.now();
-    const result = await active.step(image.data, camera, { roi: roi?.data, detect, trail: trail?.data });
+    const result = await active.step(image.data, camera, { rois: rois?.data, detect, trail: trail?.data });
     return { result, ms: Math.round(performance.now() - started) };
   });
   return NextResponse.json(

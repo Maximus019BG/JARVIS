@@ -26,7 +26,8 @@ export const HAND_LEGEND: [glyph: string, does: string][] = [
 ]
 
 /** The pose the pen acts on, or the learned label when the server has the gesture model. */
-export function readHand(hand: Hand | undefined, drawing: boolean): string {
+export function readHand(hand: Hand | undefined, drawing: boolean, zooming = false): string {
+  if (zooming) return "🤏🤏 zooming"
   if (drawing) return "🤏 drawing"
   if (!hand) return "no hand"
   if (hand.gesture) return `${GLYPHS[hand.gesture.name] ?? ""} ${hand.gesture.name}`.trim()
@@ -84,7 +85,7 @@ export function useHandPen(options: {
             const smoothed = (event.type === "pen-down" || event.type === "pen-move") && cursor ? { ...event, at: cursor } : event
             onEvent.current(smoothed, frame.t, source.camera)
           }
-          setPen({ camera: source.camera, cursor, drawing: reader.isDrawing, seen: readHand(hand, reader.isDrawing), stats })
+          setPen({ camera: source.camera, cursor, drawing: reader.isDrawing, seen: readHand(hand, reader.isDrawing, reader.isZooming), stats })
         }
       } catch (error) {
         if (!stopped) setPen((current) => ({ ...current, error: error instanceof Error ? error.message : String(error) }))

@@ -41,14 +41,20 @@ export type Ort = {
 }
 
 export type Camera = { width: number; height: number }
-export type StepResult = { hands: Hand[]; roi?: Roi; trail?: TrailPoint[]; motion?: Label }
+/** `rois` line up with `hands`: the region each hand was found in, echoed back next frame. */
+export type StepResult = { hands: Hand[]; rois?: Roi[]; trail?: TrailPoint[]; motion?: Label }
 export type Tracker = {
   step(
     rgb: Uint8Array,
     camera: Camera,
-    options: { roi?: Roi; detect: boolean; trail?: readonly TrailPoint[] },
+    options: { rois?: readonly Roi[]; detect: boolean; trail?: readonly TrailPoint[] },
   ): Promise<StepResult>
 }
+
+/** Two, because the one gesture that needs more than one hand is the two-hand pinch zoom. */
+const MAX_HANDS = 2
+
+const centre = (roi: Roi): [number, number] => [roi.x + roi.w / 2, roi.y + roi.h / 2]
 
 /** `hand_gesture.json`, written next to the model by the notebook. */
 export type GestureLabels = { gesture: string[]; motion: string[]; window: number }
@@ -132,10 +138,28 @@ export async function createTracker(
   const landmarkLayout = layoutOf(landmark)
   let checked = false
 
+  /** Landmarks for the hand inside `roi`, or undefined when the model says nothing is there. */
+  const landmarksIn = async (rgb: Uint8Array, camera: Camera, roi: Roi): Promise<Hand | undefined> => {
+    cropToTensor(rgb, camera, roi, LANDMARK_INPUT, landmarkBuffer, landmarkLayout)
+    const output = await landmark.run({
+      [landmark.inputNames[0]!]: new ort.Tensor("float32", landmarkBuffer, inputDims(landmarkLayout, LANDMARK_INPUT)),
+    })
+    // The landmark model emits a 63-value tensor plus a presence score; pick them by size
+    // rather than by name, since the exported names differ between conversions.
+    const outputs = landmark.outputNames.map((name) => output[name]!)
+    const coords = outputs.find((tensor) => (tensor.data as ArrayLike<number>).length >= 63)
+    const presence = outputs.find((tensor) => (tensor.data as ArrayLike<number>).length === 1)
+    if (!coords) throw new Error("the landmark model produced no coordinate tensor")
+
+    const score = presence ? Math.min(1, Math.max(0, (presence.data as Float32Array)[0] ?? 1)) : 1
+    if (score < 0.5) return undefined
+    return { score, landmarks: landmarksToCamera(coords.data as Float32Array, roi, { inputSize: LANDMARK_INPUT }) }
+  }
+
   return {
     async step(rgb, camera, options) {
-      let roi = options.roi
-      if (options.detect || !roi) {
+      let rois = options.rois ?? []
+      if (options.detect || rois.length === 0) {
         // Letterboxed into a square, as MediaPipe feeds its detector: a 4:3 frame stretched
         // to 192×192 squashes every palm by a quarter.
         const side = Math.max(camera.width, camera.height)
@@ -156,38 +180,47 @@ export async function createTracker(
         const found = nms(
           decodeDetections(boxesTensor.data as Float32Array, scores, anchors, { inputSize: PALM_INPUT, threshold: 0.5 }),
           0.3,
-          2,
+          MAX_HANDS,
         )
         const region = { x: square.x, y: square.y, width: side, height: side }
         // Not clamped to the frame: a hand close to the camera needs a crop bigger than the
         // picture, and squeezing it in cuts fingers off (a palm then reads as "three").
         // cropToTensor pads the outside with black, as MediaPipe does.
-        roi = found[0] ? roiFromPalm(found[0], region) : undefined
+        const fresh = found.map((box) => roiFromPalm(box, region))
+        // The hand that was first stays first: the trail (so a swipe) follows it, and every
+        // one-hand gesture reads `hands[0]`. Detection order is by score, which flickers.
+        const lead = rois[0] && centre(rois[0])
+        const away = (roi: Roi) => (lead ? Math.hypot(centre(roi)[0] - lead[0], centre(roi)[1] - lead[1]) : 0)
+        rois = fresh.sort((a, b) => away(a) - away(b))
       }
-      if (!roi) return { hands: [] }
 
-      cropToTensor(rgb, camera, roi, LANDMARK_INPUT, landmarkBuffer, landmarkLayout)
-      const output = await landmark.run({
-        [landmark.inputNames[0]!]: new ort.Tensor("float32", landmarkBuffer, inputDims(landmarkLayout, LANDMARK_INPUT)),
-      })
-      // The landmark model emits a 63-value tensor plus a presence score; pick them by size
-      // rather than by name, since the exported names differ between conversions.
-      const outputs = landmark.outputNames.map((name) => output[name]!)
-      const coords = outputs.find((tensor) => (tensor.data as ArrayLike<number>).length >= 63)
-      const presence = outputs.find((tensor) => (tensor.data as ArrayLike<number>).length === 1)
-      if (!coords) throw new Error("the landmark model produced no coordinate tensor")
+      // One at a time: they share `landmarkBuffer`. A confident hand keeps its ROI for the
+      // next frame; once none is left, the empty list forces a re-detect.
+      const hands: Hand[] = []
+      const kept: Roi[] = []
+      for (const roi of rois.slice(0, MAX_HANDS)) {
+        const hand = await landmarksIn(rgb, camera, roi)
+        if (!hand) continue
+        hands.push(hand)
+        kept.push(roi)
+      }
+      const first = hands[0]
+      if (!first) return { hands: [] }
+      if (!classifier) return { hands, rois: kept }
 
-      const score = presence ? Math.min(1, Math.max(0, (presence.data as Float32Array)[0] ?? 1)) : 1
-      // A confident hand keeps its ROI for the next frame; a lost one forces a re-detect.
-      // A lost hand also drops the trail, so a reappearing hand never reads as a swipe.
-      if (score < 0.5) return { hands: [] }
-      const landmarks = landmarksToCamera(coords.data as Float32Array, roi, { inputSize: LANDMARK_INPUT })
-      const hand: Hand = { score, landmarks }
-      if (!classifier) return { hands: [hand], roi }
-
-      const trail = pushTrail(options.trail ?? [], [...palmCentre(landmarks), handSpan(hand)], classifier.window)
-      const { gesture, motion } = await classifier.classify(landmarks, trail)
-      return { hands: [{ ...hand, gesture }], roi, trail, motion }
+      // A lost hand drops the trail, so a reappearing hand never reads as a swipe — and nor
+      // does the other hand taking over as first.
+      const trailIn = kept[0] === rois[0] ? (options.trail ?? []) : []
+      const trail = pushTrail(trailIn, [...palmCentre(first.landmarks), handSpan(first)], classifier.window)
+      const labelled: Hand[] = []
+      let motion: Label | undefined
+      for (const hand of hands) {
+        // Motion is one hand's: the second is classified for its pose alone.
+        const result = await classifier.classify(hand.landmarks, hand === first ? trail : [])
+        labelled.push({ ...hand, gesture: result.gesture })
+        if (hand === first) motion = result.motion
+      }
+      return { hands: labelled, rois: kept, trail, motion }
     },
   }
 }

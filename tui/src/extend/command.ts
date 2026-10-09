@@ -43,6 +43,8 @@ export const BUILTIN_COMMANDS: Command[] = [
   },
   { name: "learn", description: "Teach JARVIS an item through the camera — /learn <name>", kind: "builtin" },
   { name: "find", description: "Find taught items live in the camera — /find [name]", kind: "builtin" },
+  { name: "items", description: "List items taught with /learn", kind: "builtin" },
+  { name: "forget", description: "Forget a taught item — /forget <name>", kind: "builtin" },
   { name: "gestures", description: "Hand gestures as commands — /gestures on, /gestures off", kind: "builtin" },
   { name: "tutorial", description: "Show what everything on screen does", kind: "builtin" },
   { name: "extensions", description: "Show loaded custom tools, skills and plugins", kind: "builtin" },

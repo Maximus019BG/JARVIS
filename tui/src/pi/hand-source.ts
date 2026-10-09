@@ -189,7 +189,8 @@ export function remoteSource(options: {
       let latest: { jpeg: Uint8Array<ArrayBuffer>; t: number; seq: number } | undefined
       let taken = -1
       let yielded = -1
-      let roi: Roi | undefined
+      /** One per tracked hand, echoed so any server instance can carry on tracking them. */
+      let rois: Roi[] | undefined
       // ponytail: echoed like the ROI, so with `inFlight` requests out the trail skips frames
       // (the model is trained on 0.5–2× speed for that). Make it client-built from the returned
       // landmarks if remote motion accuracy ever lags the local worker's.
@@ -224,10 +225,13 @@ export function remoteSource(options: {
       }
 
       const send = async (frame: { jpeg: Uint8Array<ArrayBuffer>; t: number; seq: number }) => {
-        const detect = roi === undefined || sinceDetect >= 15
+        const detect = !rois?.length || sinceDetect >= 15
         sinceDetect = detect ? 0 : sinceDetect + 1
         const headers: Record<string, string> = { "content-type": "image/jpeg", "x-hand-detect": detect ? "1" : "0" }
-        if (roi && !detect) headers["x-hand-roi"] = [roi.x, roi.y, roi.w, roi.h].map((n) => n.toFixed(1)).join(",")
+        // `;` between hands, so a single hand sends exactly the header an older server reads.
+        if (rois?.length && !detect) {
+          headers["x-hand-roi"] = rois.map((roi) => [roi.x, roi.y, roi.w, roi.h].map((n) => n.toFixed(1)).join(",")).join(";")
+        }
         if (trail) headers["x-hand-trail"] = trail
         const post = async (value: string) =>
           fetch(`${base}/api/device/hand`, {
@@ -246,7 +250,7 @@ export function remoteSource(options: {
         }
         if (response.status === 503) throw new Fatal("the hand model is not installed on the server — see web/models/hand/README.md")
         if (!response.ok) throw new Error(`hand server: ${response.status}`)
-        const body = (await response.json()) as { hands: Hand[]; roi?: Roi; trail?: string; motion?: Label }
+        const body = (await response.json()) as { hands: Hand[]; rois?: Roi[]; roi?: Roi; trail?: string; motion?: Label }
         rtt = rtt === 0 ? performance.now() - sentAt : rtt * 0.8 + (performance.now() - sentAt) * 0.2
         answered.push(performance.now())
         state = "live"
@@ -254,7 +258,8 @@ export function remoteSource(options: {
         // An answer that arrives after a newer one is history; yielding it would jump backwards.
         if (frame.seq <= yielded) return
         yielded = frame.seq
-        roi = body.roi
+        // `roi`: an older server, which only ever tracks one hand.
+        rois = body.rois ?? (body.roi ? [body.roi] : undefined)
         trail = body.trail
         ready.push({ t: frame.t, hands: body.hands, motion: body.motion })
         wake()
@@ -281,7 +286,7 @@ export function remoteSource(options: {
             }
             // Network trouble: say so, back off, and carry on with whatever frame is newest then.
             failures += 1
-            roi = undefined
+            rois = undefined
             trail = undefined
             state = "reconnecting"
             report()

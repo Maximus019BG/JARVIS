@@ -53,6 +53,27 @@ export async function teachItem(
   return result.body
 }
 
+export type Taught = { id: string; name: string; samples: number; updatedAt: string }
+
+/** Every item taught on this workstation, by name. */
+export async function listItems(credentials: Credentials): Promise<Taught[]> {
+  const result = await attempt(() => call<{ items: Taught[] }>(credentials, "/api/vision/items"))
+  if (!result.ok) throw new VisionError(problem(result.status, result.body))
+  return result.body.items
+}
+
+/** Forgets the item called `name`; false if nothing is. The route deletes by id, so this looks the name up first. */
+export async function forgetItem(credentials: Credentials, name: string): Promise<boolean> {
+  const item = (await listItems(credentials)).find((taught) => taught.name === name)
+  if (!item) return false
+  const result = await attempt(() =>
+    call(credentials, `/api/vision/items?id=${encodeURIComponent(item.id)}`, { method: "DELETE" }),
+  )
+  if (!result.ok && result.status === 404) return false
+  if (!result.ok) throw new VisionError(problem(result.status, result.body))
+  return true
+}
+
 /**
  * Taught items in one photo, boxes in its pixels. Authenticated with the hand ticket rather
  * than the device token, which saves the server a database round trip per find.

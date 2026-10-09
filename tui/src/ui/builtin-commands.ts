@@ -1,4 +1,7 @@
 import { blueprintCommand } from "./blueprint-command.ts"
+import { errorMessage } from "../agent/agent.ts"
+import { readCredentials } from "../blueprint/credentials.ts"
+import { forgetItem, listItems } from "../pi/items-client.ts"
 import { codeCommand } from "./code-command.ts"
 import { blueprintRoot, listBlueprints } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
@@ -71,6 +74,28 @@ function extensionReport(extensions: Extensions): string {
     ...extensions.skills.map((skill) => `skill  ${skill.name} — ${skill.description}`),
     ...extensions.errors.map((error) => `error  ${error}`),
   ].join("\n")
+}
+
+/** `/items` and `/forget <name>`. Over the network, so the answer arrives as a note. */
+function itemsCommand(command: "items" | "forget", name: string, note: (text: string, level?: "info" | "error") => void): void {
+  if (command === "forget" && !name) return note("usage: /forget <name> — /items lists what is taught", "error")
+  let credentials
+  try {
+    credentials = readCredentials()
+  } catch (error) {
+    return note(errorMessage(error), "error")
+  }
+  if (!credentials) return note("pair first (/pair) — items are taught and found on your cloud", "error")
+  const answer =
+    command === "items"
+      ? listItems(credentials).then((items) =>
+          items.length > 0 ? items.map((item) => `${item.name}  ${item.samples} shots`).join("\n") : "no items taught yet — /learn <name>",
+        )
+      : forgetItem(credentials, name).then((gone) => (gone ? `forgot ${name}` : `nothing called "${name}" has been taught — /items lists them`))
+  void answer.then(
+    (text) => note(text),
+    (error: unknown) => note(errorMessage(error), "error"),
+  )
 }
 
 export type CommandDeps = {
@@ -194,6 +219,9 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
     }
     case "find":
       return deps.openVision({ kind: "find", item: args.trim() || undefined })
+    case "items":
+    case "forget":
+      return itemsCommand(command.name, args.trim(), (text, level) => turn.note(text, level))
     case "gestures": {
       const arg = args.trim().toLowerCase()
       return deps.setGestures(arg === "on" ? true : arg === "off" ? false : undefined)

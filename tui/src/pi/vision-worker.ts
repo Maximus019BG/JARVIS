@@ -205,7 +205,7 @@ async function main() {
   const child = Bun.spawn(cameraCommand(args), { stdout: "pipe", stderr: "inherit" })
   emit({ ready: true, camera: { ...camera, fps: args.fps } })
 
-  let roi: Roi | undefined
+  let rois: Roi[] | undefined
   let trail: TrailPoint[] | undefined
   let sinceDetect = 0
   const started = performance.now()
@@ -216,10 +216,10 @@ async function main() {
 
     // Detect only when the hand is lost or every half second: the landmark model tracks
     // fine on its own, and re-detecting every frame is what makes this too slow for a Pi.
-    const detect = roi === undefined || sinceDetect >= Math.max(1, Math.round(args.fps / 2))
+    const detect = !rois?.length || sinceDetect >= Math.max(1, Math.round(args.fps / 2))
     sinceDetect = detect ? 0 : sinceDetect + 1
-    const result = await tracker.step(frame, camera, { roi, detect, trail })
-    roi = result.roi
+    const result = await tracker.step(frame, camera, { rois, detect, trail })
+    rois = result.rois
     trail = result.trail
     emit({ t, hands: result.hands, motion: result.motion })
   }

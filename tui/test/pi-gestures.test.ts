@@ -184,6 +184,10 @@ describe("GestureReader", () => {
     expect(zoom).toBeDefined()
     if (zoom?.type !== "zoom") return
     expect(zoom.scale).toBeGreaterThan(1)
+    // What the editor's readout lights the zoom row from.
+    expect(gestures.isZooming).toBe(true)
+    gestures.push(frame(32))
+    expect(gestures.isZooming).toBe(false)
   })
 
   test("small two-hand drift does not register as a zoom", () => {

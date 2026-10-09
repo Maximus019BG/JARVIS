@@ -115,6 +115,47 @@ describe("remoteSource", () => {
     expect(frames.length).toBeGreaterThan(0)
   })
 
+  test("two hands: both regions are echoed back, and both hands come through", async () => {
+    const headers: (string | null)[] = []
+    server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        if (new URL(request.url).pathname.endsWith("/ticket")) {
+          return Response.json({ ticket: "t", expiresAt: Date.now() + 300_000 })
+        }
+        headers.push(request.headers.get("x-hand-roi"))
+        return Response.json({
+          hands: [{ score: 1, landmarks: [] }, { score: 0.9, landmarks: [] }],
+          rois: [{ x: 1, y: 2, w: 30, h: 30 }, { x: 100, y: 2, w: 40, h: 40 }],
+        })
+      },
+    })
+    const { frames } = await collect(
+      remoteSource({ baseUrl: `http://localhost:${server.port}`, token: "jvd_x", inFlight: 1, capture: camera(3, 20) }),
+    )
+    expect(headers[0]).toBeNull() // the first frame detects
+    expect(headers[1]).toBe("1.0,2.0,30.0,30.0;100.0,2.0,40.0,40.0")
+    expect(frames.every((frame) => frame.hands.length === 2)).toBe(true)
+  })
+
+  test("an older server's single roi is still tracked", async () => {
+    const headers: (string | null)[] = []
+    server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        if (new URL(request.url).pathname.endsWith("/ticket")) {
+          return Response.json({ ticket: "t", expiresAt: Date.now() + 300_000 })
+        }
+        headers.push(request.headers.get("x-hand-roi"))
+        return Response.json({ hands: [{ score: 1, landmarks: [] }], roi: { x: 1, y: 2, w: 30, h: 30 } })
+      },
+    })
+    await collect(
+      remoteSource({ baseUrl: `http://localhost:${server.port}`, token: "jvd_x", inFlight: 1, capture: camera(3, 20) }),
+    )
+    expect(headers[1]).toBe("1.0,2.0,30.0,30.0")
+  })
+
   test("a revoked device stops with a message instead of retrying forever", async () => {
     server = Bun.serve({ port: 0, fetch: () => new Response("no", { status: 401 }) })
     const { error } = await collect(

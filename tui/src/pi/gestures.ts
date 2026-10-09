@@ -193,6 +193,11 @@ export class GestureReader {
     return this.drawing
   }
 
+  /** Both hands pinching: the zoom has a base spread to measure from. */
+  get isZooming(): boolean {
+    return this.twoHandBase !== undefined
+  }
+
   push(frame: Frame): GestureEvent[] {
     const events: GestureEvent[] = []
     const hands = frame.hands.filter((hand) => hand.score >= this.config.minScore)
