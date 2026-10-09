@@ -4,6 +4,7 @@ import { blueprintRoot, listBlueprints } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
 import { describe, type Keymap } from "../config/keybinds.ts"
 import { panelBody, type PanelContent } from "./components/panel.tsx"
+import type { VisionMode } from "./components/vision-view.tsx"
 import { providerCommand } from "./provider-command.ts"
 import { runSpeak } from "./speak-command.ts"
 import { statsCommand } from "./stats-command.ts"
@@ -38,6 +39,7 @@ export const KEY_HELP: [keyof Keymap, string][] = [
   ["toggleReasoning", "expand thinking"],
   ["blueprintView", "blueprint pane / fullscreen"],
   ["voice", "talk instead of typing"],
+  ["gestures", "hand gestures on / off"],
 ]
 
 export function help(keymap: Keymap): string {
@@ -98,6 +100,10 @@ export type CommandDeps = {
   reload: (changed?: string) => boolean
   /** Runs a connection test and shows the result. Async, so the caller owns the await. */
   testProvider: (id: string) => void
+  /** Opens the camera overlay to teach or find an item. */
+  openVision: (mode: VisionMode) => void
+  /** Turns hand gestures on or off; `undefined` flips them. */
+  setGestures: (on?: boolean) => void
   quit: () => void
 }
 
@@ -177,6 +183,17 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
         openSetup: deps.openSpeakSetup,
         reload: () => reload(),
       })
+    case "learn": {
+      const name = args.trim()
+      if (!name) return turn.note("usage: /learn <name> — e.g. /learn mug, then hold it up to the camera", "error")
+      return deps.openVision({ kind: "learn", name })
+    }
+    case "find":
+      return deps.openVision({ kind: "find", item: args.trim() || undefined })
+    case "gestures": {
+      const arg = args.trim().toLowerCase()
+      return deps.setGestures(arg === "on" ? true : arg === "off" ? false : undefined)
+    }
     case "tutorial":
       return openPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     case "extensions":

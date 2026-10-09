@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   assertAnchorCount,
-  clampRoi,
   cropToTensor,
   decodeDetections,
   generateAnchors,
@@ -10,9 +9,13 @@ import {
   nms,
   PALM_ANCHORS,
   PALM_ANCHORS_128,
+  palmCentre,
+  pushTrail,
   roiFromPalm,
   sigmoid,
+  trailToTensor,
   type Box,
+  type TrailPoint,
 } from "../src/pi/detect.ts"
 
 const camera = { width: 640, height: 480 }
@@ -125,18 +128,12 @@ describe("roi", () => {
     expect(roi.y + roi.h / 2).toBeLessThan((palm.y + palm.h / 2) * camera.height)
   })
 
-  test("stays square when clamped to the frame edge", () => {
-    const roi = clampRoi({ x: -80, y: -50, w: 200, h: 200 }, camera)
-    expect(roi.w).toBe(roi.h)
-    expect(roi.x).toBe(0)
-    expect(roi.y).toBe(0)
-  })
-
-  test("a crop bigger than the frame shrinks to fit rather than overflowing", () => {
-    const roi = clampRoi({ x: 0, y: 0, w: 2000, h: 2000 }, camera)
-    expect(roi.w).toBe(480)
-    expect(roi.x + roi.w).toBeLessThanOrEqual(camera.width)
-    expect(roi.y + roi.h).toBeLessThanOrEqual(camera.height)
+  test("a crop past the frame edge stays whole, and outside the frame is black", () => {
+    const frame = new Uint8Array(8 * 8 * 3).fill(200)
+    // Left half of this crop is outside an 8×8 frame.
+    const tensor = cropToTensor(frame, { width: 8, height: 8 }, { x: -8, y: 0, w: 16, h: 16 }, 4)
+    expect(tensor[0]).toBe(0) // top-left sample: outside
+    expect(tensor[3]).toBeCloseTo(200 / 255, 5) // top-right sample: inside
   })
 })
 
@@ -161,7 +158,7 @@ describe("landmarksToCamera", () => {
 
   test("a landmark at the crop centre lands at the crop centre in camera space", () => {
     // The invariant that matters: get this wrong and every stroke is displaced.
-    const roi = clampRoi(roiFromPalm({ x: 0.3, y: 0.5, w: 0.15, h: 0.15, score: 1 }, camera), camera)
+    const roi = roiFromPalm({ x: 0.3, y: 0.5, w: 0.15, h: 0.15, score: 1 }, camera)
     const raw = new Float32Array([96, 96, 0])
     const marks = landmarksToCamera(raw, roi, { inputSize: 192, count: 1 })
     expect(marks[0]!.x).toBeCloseTo(roi.x + roi.w / 2, 6)
@@ -215,9 +212,43 @@ describe("cropToTensor", () => {
     expect([...tensor].every((value) => Number.isFinite(value))).toBe(true)
   })
 
+  test("NHWC is the same pixels, channels interleaved", () => {
+    const region = { x: 0, y: 0, w: 64, h: 64 }
+    const planar = cropToTensor(ramp(64, 64), { width: 64, height: 64 }, region, 8)
+    const interleaved = cropToTensor(ramp(64, 64), { width: 64, height: 64 }, region, 8, undefined, "nhwc")
+    for (let pixel = 0; pixel < 64; pixel++)
+      for (let channel = 0; channel < 3; channel++) expect(interleaved[pixel * 3 + channel]).toBe(planar[channel * 64 + pixel]!)
+  })
+
   test("reuses the caller's buffer, so a 30fps loop allocates nothing", () => {
     const buffer = new Float32Array(3 * 8 * 8)
     const returned = cropToTensor(ramp(32, 32), { width: 32, height: 32 }, { x: 0, y: 0, w: 32, h: 32 }, 8, buffer)
     expect(returned).toBe(buffer)
+  })
+})
+
+describe("motion trail", () => {
+  test("palm centre is the mean of the wrist and the four knuckles", () => {
+    const marks = Array.from({ length: 21 }, () => ({ x: 999, y: 999 }))
+    for (const [i, x] of [[0, 0], [5, 10], [9, 20], [13, 30], [17, 40]] as const) marks[i] = { x, y: 2 * x }
+    expect(palmCentre(marks)).toEqual([20, 40])
+  })
+
+  test("keeps only the newest frames", () => {
+    let trail: TrailPoint[] = []
+    for (let i = 0; i < 20; i++) trail = pushTrail(trail, [i, i, 1], 16)
+    expect(trail).toHaveLength(16)
+    expect(trail[0]).toEqual([4, 4, 1])
+    expect(trail.at(-1)).toEqual([19, 19, 1])
+  })
+
+  test("a short trail is left-padded with its oldest frame, so it reads as no motion", () => {
+    const tensor = trailToTensor([[5, 6, 7], [8, 9, 10]], 4)
+    expect([...tensor]).toEqual([5, 6, 7, 5, 6, 7, 5, 6, 7, 8, 9, 10])
+  })
+
+  test("a full trail is written in order, oldest first", () => {
+    const trail: TrailPoint[] = [[1, 1, 1], [2, 2, 2], [3, 3, 3]]
+    expect([...trailToTensor(trail, 3)]).toEqual([1, 1, 1, 2, 2, 2, 3, 3, 3])
   })
 })

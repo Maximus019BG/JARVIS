@@ -721,6 +721,46 @@ bun add onnxruntime-node
 Swapping detection onto the IMX500's on-sensor accelerator later means writing one more
 `HandSource` and changing nothing else.
 
+## Vision: gestures and items
+
+The webcam, through the paired cloud. You need a paired device with Vision access and the models
+in `web/models/` on the server. Nothing to install for the camera:
+
+| | reads the camera with |
+|---|---|
+| Raspberry Pi 5 | `rpicam-vid` for a camera module (preinstalled), `ffmpeg` (v4l2) for a USB webcam |
+| macOS | `ffmpeg` (AVFoundation). Allow your terminal under Privacy & Security → Camera the first time |
+| Windows | `ffmpeg` (DirectShow, first camera) |
+
+An `ffmpeg` on PATH is used if there is one. Otherwise JARVIS fetches a static build once, the
+first time the camera starts: 19–30 MB from ffmpeg-static's pinned GitHub release, checked
+against its published sha256, into `~/.local/share/jarvis/bin`. Those builds are GPL. A tool that
+gets no picture falls through to the next one. For a different camera, set `vision.camera` to a
+command that writes MJPEG to stdout. Everything below shares one camera process.
+
+- **`ctrl+x`** or **`/gestures on|off`** turns hand gestures into commands. 👍 approves a
+  permission prompt, 👎 rejects it, a held ✋ stops the turn, 🤙 starts or stops voice, and
+  swiping up or down scrolls. The status line shows `✋ fps rtt` while gestures are on. Gestures
+  need `hand_gesture.onnx` from `models/hand_gestgures.ipynb` on the server.
+- **`/learn <name>`** opens a live preview with a box. Hold the item inside it and press space,
+  turn the item, and repeat about six times. Then press enter. Arrow keys move the box and +/-
+  resize it. Teaching an existing name replaces it.
+- **`/find [name]`** shows the live preview with boxes around the items it finds. Teaching opens
+  this view automatically.
+- **`find_item`** is the agent's tool for "where are my keys?". It takes one camera shot behind
+  the normal permission prompt.
+
+You can remap gestures and tune them under `vision` in `jarvis.jsonc`:
+
+```jsonc
+"vision": {
+  "gestures": { "thumbs_up": "approve", "palm": "interrupt", "ok": "voice" },
+  "holdMs": 400,      // how long a pose is held before it acts
+  "minScore": 0.8,    // classifier confidence needed
+  "threshold": 0.6    // item match strictness; lower finds more, and more wrongly
+}
+```
+
 ## Tools
 
 `read`, `write`, `edit`, `bash`, `glob`, `grep`, `list`, `todo`, `webfetch`,

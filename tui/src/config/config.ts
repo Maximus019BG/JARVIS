@@ -3,10 +3,24 @@ import { dirname, isAbsolute, join } from "node:path"
 import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 import { z } from "zod"
 import { ancestors } from "./discover.ts"
+import { DEFAULT_KEYBINDS, type Action } from "./keybinds.ts"
 import { configDir, configNames } from "./paths.ts"
 import { readSecrets } from "./secrets.ts"
 
 export const PermissionSchema = z.enum(["ask", "allow", "deny"])
+
+export type GestureAction = Action | "approve" | "reject"
+const GESTURE_ACTIONS: [GestureAction, ...GestureAction[]] = ["approve", "reject", ...(Object.keys(DEFAULT_KEYBINDS) as Action[])]
+
+/** Swipes scroll like a phone: up moves the page up, which shows what is below. */
+export const DEFAULT_GESTURE_MAP: Record<string, GestureAction> = {
+  thumbs_up: "approve",
+  thumbs_down: "reject",
+  palm: "interrupt",
+  call: "voice",
+  swipe_up: "scrollHalfDown",
+  swipe_down: "scrollHalfUp",
+}
 
 export const ModelConfigSchema = z
   .object({
@@ -341,6 +355,38 @@ export const ConfigSchema = z
         afterSeconds: z.number().default(20),
       })
       .optional(),
+    /**
+     * The webcam, through the paired cloud: hand gestures as commands (ctrl+x or `/gestures`),
+     * and items taught with `/learn` found with `/find` or the agent's `find_item`. Every
+     * number here is a tuning knob for a real camera and a real hand, not a derived value.
+     */
+    vision: z
+      .object({
+        /**
+         * Learned gesture label → a keybind action, or `approve`/`reject` for the permission
+         * prompt. Labels: none, pinch, palm, fist, point, peace, thumbs_up, thumbs_down, ok,
+         * three, call, rock, and the motions swipe_left/right/up/down and wave. The camera
+         * is mirrored, so swipe_right is towards your right. Setting it replaces these defaults.
+         */
+        gestures: z.record(z.string(), z.enum(GESTURE_ACTIONS)).default(DEFAULT_GESTURE_MAP),
+        /** Classifier probability a gesture needs. */
+        minScore: z.number().min(0).max(1).default(0.8),
+        /** How long a pose must be held before it acts. */
+        holdMs: z.number().default(400),
+        /** Quiet time after a swipe, so one swipe is one scroll. */
+        cooldownMs: z.number().default(800),
+        /** Turn gestures on at launch. */
+        autostart: z.boolean().default(false),
+        /** How alike a patch must be to count as the item; the server's default when unset. */
+        threshold: z.number().min(0).max(1).optional(),
+        /**
+         * Camera command writing MJPEG to stdout, replacing the probe (rpicam-vid on a Pi, then
+         * ffmpeg with AVFoundation, DirectShow or v4l2). For a second webcam, e.g. on macOS
+         * `ffmpeg -f avfoundation -framerate 30 -i 1 -vf scale=480:360,hflip -c:v mjpeg -f image2pipe -`.
+         */
+        camera: z.string().optional(),
+      })
+      .default({ gestures: DEFAULT_GESTURE_MAP, minScore: 0.8, holdMs: 400, cooldownMs: 800, autostart: false }),
     /** Max tool-call steps in one turn before the loop stops. */
     maxSteps: z.number().default(200),
     /**

@@ -146,28 +146,18 @@ export type Roi = { x: number; y: number; w: number; h: number }
  */
 export function roiFromPalm(
   box: Box,
-  camera: { width: number; height: number },
+  /** The region the detector saw, in camera pixels: the frame, or the letterbox square around it. */
+  region: { x?: number; y?: number; width: number; height: number },
   options: { scale?: number; shiftY?: number } = {},
 ): Roi {
   const scale = options.scale ?? 2.6
   const shiftY = options.shiftY ?? -0.5
 
-  const cx = (box.x + box.w / 2) * camera.width
-  const cy = (box.y + box.h / 2 + shiftY * box.h) * camera.height
-  const side = Math.max(box.w * camera.width, box.h * camera.height) * scale
+  const cx = (region.x ?? 0) + (box.x + box.w / 2) * region.width
+  const cy = (region.y ?? 0) + (box.y + box.h / 2 + shiftY * box.h) * region.height
+  const side = Math.max(box.w * region.width, box.h * region.height) * scale
 
   return { x: cx - side / 2, y: cy - side / 2, w: side, h: side };
-}
-
-/** Clamps an ROI to the frame while keeping it square, so the aspect never changes. */
-export function clampRoi(roi: Roi, camera: { width: number; height: number }): Roi {
-  const side = Math.min(roi.w, camera.width, camera.height)
-  return {
-    x: Math.max(0, Math.min(camera.width - side, roi.x)),
-    y: Math.max(0, Math.min(camera.height - side, roi.y)),
-    w: side,
-    h: side,
-  }
 }
 
 /**
@@ -200,7 +190,8 @@ export function landmarksToCamera(
 
 /**
  * Nearest-neighbour crop-and-resize from a packed RGB frame into the model's square input,
- * written straight into a Float32 NCHW tensor.
+ * written straight into a Float32 tensor: planar NCHW, or interleaved NHWC for models
+ * converted from TFLite without a transpose (OpenCV Zoo's are).
  *
  * Nearest neighbour rather than bilinear because the landmark model is trained on
  * low-resolution crops and is entirely insensitive to the difference, while bilinear costs
@@ -213,17 +204,23 @@ export function cropToTensor(
   roi: Roi,
   inputSize: number,
   out = new Float32Array(3 * inputSize * inputSize),
+  layout: "nchw" | "nhwc" = "nchw",
 ): Float32Array {
   const plane = inputSize * inputSize
+  // Where channel c of pixel i goes: three planes, or three neighbours.
+  const [pixel, channel] = layout === "nchw" ? [1, plane] : [3, 1]
   for (let y = 0; y < inputSize; y++) {
-    const sourceY = Math.min(camera.height - 1, Math.max(0, Math.round(roi.y + (y / inputSize) * roi.h)))
+    const sourceY = Math.round(roi.y + (y / inputSize) * roi.h)
     for (let x = 0; x < inputSize; x++) {
-      const sourceX = Math.min(camera.width - 1, Math.max(0, Math.round(roi.x + (x / inputSize) * roi.w)))
+      const sourceX = Math.round(roi.x + (x / inputSize) * roi.w)
+      const target = (y * inputSize + x) * pixel
+      // Outside the frame is black, as MediaPipe pads: a smeared edge pixel is a texture
+      // the models were never shown, and the letterboxed palm input is mostly that.
+      const inside = sourceX >= 0 && sourceY >= 0 && sourceX < camera.width && sourceY < camera.height
       const source = (sourceY * camera.width + sourceX) * 3
-      const target = y * inputSize + x
-      out[target] = (frame[source] ?? 0) / 255
-      out[plane + target] = (frame[source + 1] ?? 0) / 255
-      out[2 * plane + target] = (frame[source + 2] ?? 0) / 255
+      out[target] = inside ? (frame[source] ?? 0) / 255 : 0
+      out[target + channel] = inside ? (frame[source + 1] ?? 0) / 255 : 0
+      out[target + 2 * channel] = inside ? (frame[source + 2] ?? 0) / 255 : 0
     }
   }
   return out
@@ -231,3 +228,43 @@ export function cropToTensor(
 
 /** Mean confidence of the 21 landmarks, when the model reports one. */
 export const handednessOf = (value: number): "left" | "right" => (value > 0.5 ? "right" : "left")
+
+/** One frame of hand motion: palm centre x, y and hand span, all in camera pixels. */
+export type TrailPoint = [number, number, number]
+
+/**
+ * Mean of the wrist and the four finger knuckles. Steadier than any single landmark while
+ * the fingers move, which is what a motion trail needs. The notebook in `models/` computes
+ * the same thing; change one, change both.
+ */
+export function palmCentre(landmarks: readonly { x: number; y: number }[]): [number, number] {
+  let x = 0
+  let y = 0
+  for (const index of [0, 5, 9, 13, 17]) {
+    x += landmarks[index]?.x ?? 0
+    y += landmarks[index]?.y ?? 0
+  }
+  return [x / 5, y / 5]
+}
+
+/** Appends a frame and keeps only the newest `window`. Returns a new array. */
+export const pushTrail = (trail: readonly TrailPoint[], point: TrailPoint, window: number): TrailPoint[] =>
+  [...trail, point].slice(-window)
+
+/**
+ * Writes a trail into the motion model's [window, 3] input, oldest first. A short trail is
+ * left-padded by repeating its oldest frame: a hand that has not moved yet reads as no
+ * motion, which is exactly what the model was trained to see for it.
+ */
+export function trailToTensor(
+  trail: readonly TrailPoint[],
+  window: number,
+  out = new Float32Array(window * 3),
+): Float32Array {
+  const pad = window - trail.length
+  for (let i = 0; i < window; i++) {
+    const point = trail[Math.max(0, i - pad)] ?? [0, 0, 1]
+    out.set(point, i * 3)
+  }
+  return out
+}

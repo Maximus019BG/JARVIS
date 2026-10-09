@@ -27,6 +27,8 @@ export type Action =
   | "blueprintView"
   /** Starts push-to-talk, and stops it on the second press. Inert unless `voice` is configured. */
   | "voice"
+  /** Turns hand-gesture commands on and off. The camera runs only while they are on. */
+  | "gestures"
 
 export const DEFAULT_KEYBINDS: Record<Action, string> = {
   submit: "return",
@@ -65,6 +67,8 @@ export const DEFAULT_KEYBINDS: Record<Action, string> = {
   // XOFF under terminal flow control, which raw mode turns off — if a terminal insists on
   // keeping it, rebind rather than fight it.
   voice: "ctrl+s",
+  // x for the hand held up; the one ctrl letter left that neither the app nor the textarea uses.
+  gestures: "ctrl+x",
 }
 
 export type Chord = { name: string; ctrl: boolean; shift: boolean; meta: boolean }

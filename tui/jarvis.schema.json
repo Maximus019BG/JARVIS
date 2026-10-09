@@ -579,6 +579,95 @@
         }
       }
     },
+    "vision": {
+      "default": {
+        "gestures": {
+          "thumbs_up": "approve",
+          "thumbs_down": "reject",
+          "palm": "interrupt",
+          "call": "voice",
+          "swipe_up": "scrollHalfDown",
+          "swipe_down": "scrollHalfUp"
+        },
+        "minScore": 0.8,
+        "holdMs": 400,
+        "cooldownMs": 800,
+        "autostart": false
+      },
+      "type": "object",
+      "properties": {
+        "gestures": {
+          "default": {
+            "thumbs_up": "approve",
+            "thumbs_down": "reject",
+            "palm": "interrupt",
+            "call": "voice",
+            "swipe_up": "scrollHalfDown",
+            "swipe_down": "scrollHalfUp"
+          },
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "submit",
+              "newline",
+              "interrupt",
+              "exit",
+              "clear",
+              "palette",
+              "modelPicker",
+              "agentPicker",
+              "sessionPicker",
+              "filePicker",
+              "newSession",
+              "providerSetup",
+              "scrollUp",
+              "scrollDown",
+              "scrollHalfUp",
+              "scrollHalfDown",
+              "scrollBottom",
+              "acceptSuggestion",
+              "tutorial",
+              "toggleReasoning",
+              "blueprintView",
+              "voice",
+              "gestures"
+            ]
+          }
+        },
+        "minScore": {
+          "default": 0.8,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "holdMs": {
+          "default": 400,
+          "type": "number"
+        },
+        "cooldownMs": {
+          "default": 800,
+          "type": "number"
+        },
+        "autostart": {
+          "default": false,
+          "type": "boolean"
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "camera": {
+          "type": "string"
+        }
+      }
+    },
     "maxSteps": {
       "default": 200,
       "type": "number"

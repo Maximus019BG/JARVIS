@@ -28,6 +28,7 @@ const DESCRIPTIONS: Record<McpArea, string> = {
   approvals: "Pending permission prompts.",
   devices: "Paired machines and when they were last seen.",
   usage: "Gateway spend.",
+  vision: "Items taught from photos; read finds them in a new photo, write teaches and deletes them.",
 };
 
 export const levelOf = (scopes: readonly string[], area: McpArea): Level =>

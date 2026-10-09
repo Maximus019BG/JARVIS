@@ -93,6 +93,7 @@ export function Status({
   contextLimit,
   contextTokens,
   vim,
+  hand,
   busy,
   width,
   hint,
@@ -109,6 +110,8 @@ export function Status({
   contextTokens?: number
   /** Vim mode, when vim mode is on at all. */
   vim?: "normal" | "insert"
+  /** Gesture control, while it is on: `live` once frames are coming back. */
+  hand?: { text: string; live: boolean }
   busy: boolean
   width: number
   hint: string
@@ -139,6 +142,7 @@ export function Status({
       <text fg={theme.accent}>{agent}</text>
       <text fg={theme.muted}>{`  ${left}`}</text>
       <box style={{ flexGrow: 1 }} />
+      {hand && <text fg={hand.live ? theme.accent : theme.warning}>{`${hand.text}  `}</text>}
       {warn && <text fg={theme.warning}>{`${warn}  `}</text>}
       <text fg={theme.hint}>{hint ? `${hint}  ` : ""}</text>
       {right.map((part, index) => (

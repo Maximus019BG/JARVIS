@@ -25,6 +25,7 @@ declare module "onnxruntime-node" {
     static create(path: string, options?: Record<string, unknown>): Promise<InferenceSession>
     readonly inputNames: string[]
     readonly outputNames: string[]
+    readonly inputMetadata?: readonly { readonly name: string; readonly shape?: readonly (number | string)[] }[]
     run(feeds: Record<string, Tensor>): Promise<InferenceOutput>
     release(): Promise<void>
   }

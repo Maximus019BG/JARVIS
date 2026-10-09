@@ -217,6 +217,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const ctx = {
     cwd,
     check: config.check,
+    vision: config.vision,
     worktree: extensions.worktree,
     blueprints: blueprintRoot(config),
     gate: agentGate,

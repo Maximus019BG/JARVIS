@@ -15,6 +15,7 @@ export const MCP_AREAS = [
   "approvals",
   "devices",
   "usage",
+  "vision",
 ] as const;
 
 export type McpArea = (typeof MCP_AREAS)[number];

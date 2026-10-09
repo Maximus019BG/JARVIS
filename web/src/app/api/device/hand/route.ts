@@ -1,5 +1,8 @@
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { createTracker, type Ort, type Tracker } from "@pi/track.ts";
+import type { TrailPoint } from "@pi/detect.ts";
+import { createTracker, type GestureLabels, type Tracker } from "@pi/track.ts";
 import jpeg from "jpeg-js";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -30,14 +33,39 @@ const roiSchema = z
   .pipe(z.tuple([z.number().finite(), z.number().finite(), z.number().positive(), z.number().positive()]))
   .transform(([x, y, w, h]) => ({ x, y, w, h }));
 
+/**
+ * The motion trail the previous answer returned, echoed back like the ROI: `x,y,span;…`.
+ * The cap is a trust-boundary limit, not the model's window — the tracker trims to that.
+ */
+const trailSchema = z
+  .string()
+  .transform((value) => value.split(";").map((point) => point.split(",").map(Number)))
+  .pipe(z.array(z.tuple([z.number().finite(), z.number().finite(), z.number().positive().finite()])).max(64));
+const formatTrail = (trail: TrailPoint[] | undefined) =>
+  trail?.map((point) => point.map((n) => n.toFixed(1)).join(",")).join(";");
+
+/**
+ * The learned gesture model is optional: without it the route still returns landmarks. Both
+ * files or neither — labels without the model would fail the tracker, and every frame with it.
+ */
+const loadGesture = async () => {
+  const model = path.join(MODEL_DIR, "hand_gesture.onnx");
+  const labels = await readFile(path.join(MODEL_DIR, "hand_gesture.json"), "utf8").catch(() => undefined);
+  return labels && existsSync(model) ? { path: model, labels: JSON.parse(labels) as GestureLabels } : undefined;
+};
+
 let tracker: Promise<Tracker> | undefined;
 const getTracker = () =>
   (tracker ??= (async () => {
     const ort = await import("onnxruntime-node");
-    return createTracker(ort as unknown as Ort, {
-      palm: path.join(MODEL_DIR, "palm_detection.onnx"),
-      landmark: path.join(MODEL_DIR, "hand_landmark.onnx"),
-    });
+    return createTracker(
+      ort,
+      {
+        palm: path.join(MODEL_DIR, "palm_detection.onnx"),
+        landmark: path.join(MODEL_DIR, "hand_landmark.onnx"),
+      },
+      await loadGesture(),
+    );
   })().catch((error: unknown) => {
     // A missing model must not be cached forever: the next request tries again.
     tracker = undefined;
@@ -76,6 +104,9 @@ export async function POST(request: Request) {
   const roiHeader = request.headers.get("x-hand-roi");
   const roi = roiHeader ? roiSchema.safeParse(roiHeader) : undefined;
   if (roi && !roi.success) return NextResponse.json({ error: "invalid x-hand-roi" }, { status: 400 });
+  const trailHeader = request.headers.get("x-hand-trail");
+  const trail = trailHeader ? trailSchema.safeParse(trailHeader) : undefined;
+  if (trail && !trail.success) return NextResponse.json({ error: "invalid x-hand-trail" }, { status: 400 });
   const detect = request.headers.get("x-hand-detect") === "1";
 
   let image: { width: number; height: number; data: Uint8Array };
@@ -95,11 +126,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "hand model is not installed on the server" }, { status: 503 });
   }
 
-  const started = performance.now();
   const camera = { width: image.width, height: image.height };
-  const result = await serial(() => active.step(image.data, camera, { roi: roi?.data, detect }));
+  // `ms` is inference only, measured inside the queue: time spent waiting behind another
+  // frame is load, not model speed.
+  const { result, ms } = await serial(async () => {
+    const started = performance.now();
+    const result = await active.step(image.data, camera, { roi: roi?.data, detect, trail: trail?.data });
+    return { result, ms: Math.round(performance.now() - started) };
+  });
   return NextResponse.json(
-    { ...result, ms: Math.round(performance.now() - started) },
+    { ...result, trail: formatTrail(result.trail), ms },
     { headers: { "cache-control": "no-store" } },
   );
 }

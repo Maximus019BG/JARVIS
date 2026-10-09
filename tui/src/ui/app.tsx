@@ -15,7 +15,7 @@ import type { Extensions } from "../extend/extensions.ts"
 import type { McpSession } from "../extend/mcp.ts"
 import { discoverModels, discoveryArgs } from "../agent/model-discovery.ts"
 import { testProvider, testWillInstall } from "../agent/provider-test.ts"
-import { credentialsPath, isPaired, readCredentials, writeCredentials } from "../blueprint/credentials.ts"
+import { credentialsPath, isPaired, readCredentials, writeCredentials, type Credentials } from "../blueprint/credentials.ts"
 import { blueprintRoot } from "../blueprint/store.ts"
 import { applyWrites, checkEntry, checkMerged } from "../config/provider-plan.ts"
 import { providerHealth } from "../config/provider-status.ts"
@@ -39,6 +39,9 @@ import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { BlueprintEditor } from "./components/blueprint-editor.tsx"
 import { BlueprintPane } from "./components/blueprint-view.tsx"
+import { VisionView, type VisionMode } from "./components/vision-view.tsx"
+import { GLYPHS, useGestures } from "./use-gestures.ts"
+import { onCameraNotice, setCameraOverride } from "../pi/camera.ts"
 import { clip, tail, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
@@ -145,6 +148,29 @@ export function splitWidth(width: number): { paneWidth: number; paneFits: boolea
   }
 }
 
+/** The actions `perform` handles, in the order the key handler tests them. */
+const PERFORMED: Action[] = [
+  "interrupt",
+  "voice",
+  "clear",
+  "palette",
+  "tutorial",
+  "providerSetup",
+  "modelPicker",
+  "agentPicker",
+  "sessionPicker",
+  "filePicker",
+  "newSession",
+  "scrollUp",
+  "scrollDown",
+  "scrollHalfUp",
+  "scrollHalfDown",
+  "toggleReasoning",
+  "blueprintView",
+  "scrollBottom",
+  "gestures",
+]
+
 export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }: AppProps) {
   const { width, height } = useTerminalDimensions()
   /**
@@ -223,6 +249,10 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
    * transcript, or filling the terminal — and they are steps along one axis.
    */
   const [blueprintView, setBlueprintView] = useState<"hidden" | "pane" | "full">("hidden")
+  /** The camera overlay for /learn and /find, and the pairing it talks to. Another exclusive overlay. */
+  const [vision, setVision] = useState<{ mode: VisionMode; credentials: Credentials } | null>(null)
+  /** Hand gestures as commands. The camera runs only while this is on. */
+  const [gesturesOn, setGesturesOn] = useState(() => config.vision.autostart)
   /** Set once the pane has opened itself, so a reader who closed it is not reopened on. */
   const offered = useRef(false)
   /** Whether the arming press also killed a turn, so the hint can say both things happened. */
@@ -783,6 +813,22 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     [config, cwd],
   )
 
+  const openVision = useCallback(
+    (mode: VisionMode) => {
+      let credentials: Credentials | undefined
+      try {
+        credentials = readCredentials()
+      } catch (error) {
+        return turn.note(errorMessage(error), "error")
+      }
+      if (!credentials) return turn.note("pair first (/pair) — items are taught and found on your cloud", "error")
+      setVision({ mode, credentials })
+    },
+    [turn],
+  )
+
+  const setGestures = useCallback((on?: boolean) => setGesturesOn((current) => on ?? !current), [])
+
   const dispatch = useCallback(
     (name: string, args: string) => {
       const command = commands.find((entry) => entry.name === name)
@@ -803,6 +849,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         openVoiceSetup,
         reload: reloadConfig,
         testProvider: runTest,
+        openVision,
+        setGestures,
         quit: () => process.exit(0),
       })
     },
@@ -816,9 +864,11 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       openPair,
       openSetup,
       openSpeakSetup,
+      openVision,
       openVoiceSetup,
       reloadConfig,
       runTest,
+      setGestures,
       turn,
       width,
     ],
@@ -1168,6 +1218,92 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     [cwd, dispatch, openSetup, picker, selectAgent, selectModel, turn],
   )
 
+  /**
+   * What a key does once the overlays, vim and the completion strip have declined it. Its own
+   * function so a gesture can do exactly what the key would.
+   */
+  const perform = (action: Action) => {
+    // Clearing the queue is the point: stop has to mean stop, not "stop this one and
+    // immediately start the next thing I typed".
+    if (action === "interrupt") {
+      // A live recording is the nearest thing to stop, and dropping it must not also kill
+      // the turn that happens to be running behind it.
+      if (!cancelVoice()) {
+        setQueued([])
+        turn.interrupt()
+      }
+    } else if (action === "voice") toggleVoice()
+    else if (action === "clear") turn.clear()
+    else if (action === "palette") setPicker("command")
+    else if (action === "tutorial") setPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
+    else if (action === "providerSetup") dispatch("provider", "")
+    else if (action === "modelPicker") setPicker("model")
+    else if (action === "agentPicker") setPicker("agent")
+    else if (action === "sessionPicker") setPicker("session")
+    else if (action === "filePicker") setPicker("file")
+    else if (action === "newSession") turn.newSession()
+    else if (action === "scrollUp") scroll.current?.scrollBy({ x: 0, y: -SCROLL_LINES })
+    else if (action === "scrollDown") scroll.current?.scrollBy({ x: 0, y: SCROLL_LINES })
+    else if (action === "scrollHalfUp") scroll.current?.scrollBy({ x: 0, y: -Math.floor(height / 2) })
+    else if (action === "scrollHalfDown") scroll.current?.scrollBy({ x: 0, y: Math.floor(height / 2) })
+    else if (action === "toggleReasoning") setThinking((shown) => !shown)
+    // hidden → pane → full → hidden, skipping the pane on a terminal too narrow to hold
+    // both it and a readable transcript.
+    else if (action === "blueprintView")
+      setBlueprintView((current) =>
+        current === "hidden" ? (paneFits ? "pane" : "full") : current === "pane" ? "full" : "hidden",
+      )
+    else if (action === "scrollBottom") scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
+    else if (action === "gestures") setGestures()
+  }
+
+  const gestures = useGestures({
+    enabled: gesturesOn && blueprintView !== "full",
+    config: {
+      map: config.vision.gestures,
+      minScore: config.vision.minScore,
+      holdMs: config.vision.holdMs,
+      cooldownMs: config.vision.cooldownMs,
+    },
+    onCommand: ({ label, action }) => {
+      const glyph = GLYPHS[label] ?? label
+      // Approval is the reason to have gestures at all: the prompt is the one place a hand
+      // beats reaching for the keyboard.
+      if (action === "approve" || action === "reject") {
+        if (!turn.permission) return
+        turn.permission.answer(action === "approve" ? "once" : "reject")
+        return toast(`${glyph} ${action === "approve" ? "approved" : "rejected"}`)
+      }
+      // Stop and talk always work; the rest wait for whatever overlay owns the keyboard.
+      if ((turn.permission || turn.question || picker || panel || setup || pairing || vision) && action !== "interrupt" && action !== "voice") return
+      perform(action as Action)
+      toast(`${glyph} ${KEY_HELP.find(([name]) => name === action)?.[1] ?? action}`)
+    },
+  })
+
+  useEffect(() => setCameraOverride(config.vision.camera), [config.vision.camera])
+  useEffect(() => onCameraNotice((message) => toast(message)), [toast])
+
+  // A note rather than a toast: a toast clips at one line, and this one carries the fix.
+  useEffect(() => {
+    if (!gestures.error) return
+    turn.note(`gestures off: ${gestures.error}`, "error")
+    setGesturesOn(false)
+  }, [gestures.error])
+
+  useEffect(() => {
+    if (gestures.unlabelled) toast("hands arrive without gestures — the server needs hand_gesture.onnx (web/models/hand/README.md)", "warn")
+  }, [gestures.unlabelled, toast])
+
+  /** Says what the hands do the moment they start doing it. Not at launch with them off. */
+  const gesturesAnnounced = useRef(false)
+  useEffect(() => {
+    if (!gesturesOn && !gesturesAnnounced.current) return
+    gesturesAnnounced.current = true
+    const map = Object.entries(config.vision.gestures).map(([label, action]) => `${GLYPHS[label] ?? label} ${action}`)
+    toast(gesturesOn ? `gestures on — ${map.join(" · ")}` : "gestures off")
+  }, [gesturesOn])
+
   // The permission prompt and the picker own the keyboard while they are open. Everything
   // else is dispatched here first — these handlers run before the focused textarea sees
   // the key, so `stopPropagation` is what keeps the completion strip from also typing.
@@ -1188,7 +1324,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     }
 
     // Otherwise the prompt and the overlays own the keyboard; each closes itself.
-    if (turn.permission || turn.question || picker || panel || setup || blueprintView === "full") return
+    if (turn.permission || turn.question || picker || panel || setup || vision || blueprintView === "full") return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -1244,37 +1380,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
       return key.stopPropagation()
     }
 
-    // Clearing the queue is the point: stop has to mean stop, not "stop this one and
-    // immediately start the next thing I typed".
-    if (is("interrupt")) {
-      // A live recording is the nearest thing to stop, and dropping it must not also kill
-      // the turn that happens to be running behind it.
-      if (!cancelVoice()) {
-        setQueued([])
-        turn.interrupt()
-      }
-    } else if (is("voice")) toggleVoice()
-    else if (is("clear")) turn.clear()
-    else if (is("palette")) setPicker("command")
-    else if (is("tutorial")) setPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
-    else if (is("providerSetup")) dispatch("provider", "")
-    else if (is("modelPicker")) setPicker("model")
-    else if (is("agentPicker")) setPicker("agent")
-    else if (is("sessionPicker")) setPicker("session")
-    else if (is("filePicker")) setPicker("file")
-    else if (is("newSession")) turn.newSession()
-    else if (is("scrollUp")) scroll.current?.scrollBy({ x: 0, y: -SCROLL_LINES })
-    else if (is("scrollDown")) scroll.current?.scrollBy({ x: 0, y: SCROLL_LINES })
-    else if (is("scrollHalfUp")) scroll.current?.scrollBy({ x: 0, y: -Math.floor(height / 2) })
-    else if (is("scrollHalfDown")) scroll.current?.scrollBy({ x: 0, y: Math.floor(height / 2) })
-    else if (is("toggleReasoning")) setThinking((shown) => !shown)
-    // hidden → pane → full → hidden, skipping the pane on a terminal too narrow to hold
-    // both it and a readable transcript.
-    else if (is("blueprintView"))
-      setBlueprintView((current) =>
-        current === "hidden" ? (paneFits ? "pane" : "full") : current === "pane" ? "full" : "hidden",
-      )
-    else if (is("scrollBottom")) scroll.current?.scrollTo({ x: 0, y: scroll.current.scrollHeight })
+    const action = PERFORMED.find(is)
+    if (action) perform(action)
   })
 
   const welcome = (
@@ -1366,7 +1473,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           keymap={keymap}
           motion={motion}
           busy={turn.busy}
-          focused={!picker && !panel && !setup && !turn.question}
+          focused={!picker && !panel && !setup && !vision && !turn.question}
           handle={editor}
           onSubmit={submit}
           onChange={change}
@@ -1470,6 +1577,13 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         contextLimit={contextLimit}
         contextTokens={turn.contextTokens}
         vim={vim.mode}
+        hand={
+          gesturesOn
+            ? gestures.stats?.state === "live"
+              ? { text: `✋ ${gestures.seen ?? "…"} · ${gestures.stats.fps}fps ${gestures.stats.rttMs}ms`, live: true }
+              : { text: `✋ ${gestures.stats?.state ?? "connecting"}`, live: false }
+            : undefined
+        }
         busy={turn.busy || turn.compacting}
         width={width}
         warn={health.warning}
@@ -1501,6 +1615,19 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           gestures={config.blueprint?.pi?.gestures}
           fitTuning={config.blueprint?.pi?.fit}
           onClose={() => setBlueprintView("hidden")}
+        />
+      )}
+
+      {vision && (
+        <VisionView
+          credentials={vision.credentials}
+          initial={vision.mode}
+          threshold={config.vision.threshold}
+          theme={theme}
+          // Hidden, not closed, while a prompt is up: closing would drop the shots taken so far.
+          paused={Boolean(turn.permission || turn.question)}
+          onClose={() => setVision(null)}
+          onTaught={(name, samples) => toast(`taught ${name} from ${samples} shots — looking for it now`)}
         />
       )}
 

@@ -14,6 +14,8 @@ export type ToolContext = {
   cwd: string
   /** Glob -> commands to run after a file matching it is written. */
   check?: Record<string, string[]>
+  /** `config.vision`, for `find_item`'s match threshold. */
+  vision?: { threshold?: number }
   /** Git worktree root, or `cwd` when not in a repo. Passed to custom tools. */
   worktree: string
   /**

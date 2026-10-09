@@ -11,53 +11,138 @@
  */
 import {
   assertAnchorCount,
-  clampRoi,
   cropToTensor,
   decodeDetections,
   generateAnchors,
   landmarksToCamera,
   nms,
   PALM_ANCHORS,
+  palmCentre,
+  pushTrail,
   roiFromPalm,
+  trailToTensor,
   type Roi,
+  type TrailPoint,
 } from "./detect.ts"
-import type { Hand } from "./gestures.ts"
+import { handSpan, type Hand, type Label, type Landmark } from "./gestures.ts"
 
 type OrtTensor = { data: unknown; dims: readonly number[] }
 type OrtSession = {
   readonly inputNames: readonly string[]
   readonly outputNames: readonly string[]
+  /** onnxruntime 1.20+. Absent on older runtimes, which then get NCHW. */
+  readonly inputMetadata?: readonly { readonly name: string; readonly shape?: readonly (number | string)[] }[]
   run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>
 }
+type SessionOptions = { intraOpNumThreads?: number; interOpNumThreads?: number; graphOptimizationLevel?: "all" }
 export type Ort = {
   Tensor: new (type: "float32", data: Float32Array, dims: readonly number[]) => OrtTensor
-  InferenceSession: { create(path: string): Promise<OrtSession> }
+  InferenceSession: { create(path: string, options?: SessionOptions): Promise<OrtSession> }
 }
 
 export type Camera = { width: number; height: number }
-export type StepResult = { hands: Hand[]; roi?: Roi }
+export type StepResult = { hands: Hand[]; roi?: Roi; trail?: TrailPoint[]; motion?: Label }
 export type Tracker = {
-  step(rgb: Uint8Array, camera: Camera, options: { roi?: Roi; detect: boolean }): Promise<StepResult>
+  step(
+    rgb: Uint8Array,
+    camera: Camera,
+    options: { roi?: Roi; detect: boolean; trail?: readonly TrailPoint[] },
+  ): Promise<StepResult>
+}
+
+/** `hand_gesture.json`, written next to the model by the notebook. */
+export type GestureLabels = { gesture: string[]; motion: string[]; window: number }
+export type Classifier = {
+  readonly window: number
+  classify(landmarks: readonly Landmark[], trail: readonly TrailPoint[]): Promise<{ gesture: Label; motion: Label }>
 }
 
 const LANDMARK_INPUT = 224
 
-export async function createTracker(ort: Ort, paths: { palm: string; landmark: string }): Promise<Tracker> {
+/**
+ * Which way round a model wants its pixels, from its own input shape: `[1, H, W, 3]` is a
+ * TFLite conversion left channels-last, anything else is the usual channels-first.
+ */
+const layoutOf = (session: OrtSession): "nchw" | "nhwc" => (session.inputMetadata?.[0]?.shape?.[3] === 3 ? "nhwc" : "nchw")
+const inputDims = (layout: "nchw" | "nhwc", size: number) => (layout === "nchw" ? [1, 3, size, size] : [1, size, size, 3])
+
+const top = (probs: ArrayLike<number>, labels: readonly string[]): Label => {
+  let best = 0
+  for (let i = 1; i < labels.length; i++) if ((probs[i] ?? 0) > (probs[best] ?? 0)) best = i
+  return { name: labels[best]!, score: probs[best] ?? 0 }
+}
+
+/**
+ * The learned gesture model: 21 landmarks and a motion trail in, a pose and a motion out.
+ * About 10K weights, so a thread pool would cost more than the arithmetic: one thread, and
+ * normalisation lives inside the graph, so raw camera pixels go straight in.
+ */
+export async function createClassifier(ort: Ort, path: string, labels: GestureLabels): Promise<Classifier> {
+  const session = await ort.InferenceSession.create(path, {
+    intraOpNumThreads: 1,
+    interOpNumThreads: 1,
+    graphOptimizationLevel: "all",
+  })
+  const points = new Float32Array(21 * 2)
+  const trailBuffer = new Float32Array(labels.window * 3)
+  let checked = false
+
+  return {
+    window: labels.window,
+    async classify(landmarks, trail) {
+      for (let i = 0; i < 21; i++) {
+        points[i * 2] = landmarks[i]?.x ?? 0
+        points[i * 2 + 1] = landmarks[i]?.y ?? 0
+      }
+      const output = await session.run({
+        landmarks: new ort.Tensor("float32", points, [1, 21, 2]),
+        trail: new ort.Tensor("float32", trailToTensor(trail, labels.window, trailBuffer), [1, labels.window, 3]),
+      })
+      const gesture = output.gesture!.data as Float32Array
+      const motion = output.motion!.data as Float32Array
+      // Same reasoning as the anchor check: a labels file from a different training run
+      // would name every gesture wrongly without anything failing.
+      if (!checked) {
+        if (gesture.length !== labels.gesture.length || motion.length !== labels.motion.length) {
+          throw new Error(
+            `gesture model outputs ${gesture.length}+${motion.length} classes but hand_gesture.json lists ` +
+              `${labels.gesture.length}+${labels.motion.length} — export both files from the same notebook run`,
+          )
+        }
+        checked = true
+      }
+      return { gesture: top(gesture, labels.gesture), motion: top(motion, labels.motion) }
+    },
+  }
+}
+
+export async function createTracker(
+  ort: Ort,
+  paths: { palm: string; landmark: string },
+  gesture?: { path: string; labels: GestureLabels },
+): Promise<Tracker> {
   const palm = await ort.InferenceSession.create(paths.palm)
   const landmark = await ort.InferenceSession.create(paths.landmark)
+  const classifier = gesture ? await createClassifier(ort, gesture.path, gesture.labels) : undefined
   const anchors = generateAnchors(PALM_ANCHORS)
   const PALM_INPUT = PALM_ANCHORS.inputSize
   const palmBuffer = new Float32Array(3 * PALM_INPUT * PALM_INPUT)
   const landmarkBuffer = new Float32Array(3 * LANDMARK_INPUT * LANDMARK_INPUT)
+  const palmLayout = layoutOf(palm)
+  const landmarkLayout = layoutOf(landmark)
   let checked = false
 
   return {
     async step(rgb, camera, options) {
       let roi = options.roi
       if (options.detect || !roi) {
-        cropToTensor(rgb, camera, { x: 0, y: 0, w: camera.width, h: camera.height }, PALM_INPUT, palmBuffer)
+        // Letterboxed into a square, as MediaPipe feeds its detector: a 4:3 frame stretched
+        // to 192×192 squashes every palm by a quarter.
+        const side = Math.max(camera.width, camera.height)
+        const square = { x: (camera.width - side) / 2, y: (camera.height - side) / 2, w: side, h: side }
+        cropToTensor(rgb, camera, square, PALM_INPUT, palmBuffer, palmLayout)
         const output = await palm.run({
-          [palm.inputNames[0]!]: new ort.Tensor("float32", palmBuffer, [1, 3, PALM_INPUT, PALM_INPUT]),
+          [palm.inputNames[0]!]: new ort.Tensor("float32", palmBuffer, inputDims(palmLayout, PALM_INPUT)),
         })
         const tensors = palm.outputNames.map((name) => output[name]!)
         // Scores are the single-channel output; regressors are the wider one.
@@ -73,13 +158,17 @@ export async function createTracker(ort: Ort, paths: { palm: string; landmark: s
           0.3,
           2,
         )
-        roi = found[0] ? clampRoi(roiFromPalm(found[0], camera), camera) : undefined
+        const region = { x: square.x, y: square.y, width: side, height: side }
+        // Not clamped to the frame: a hand close to the camera needs a crop bigger than the
+        // picture, and squeezing it in cuts fingers off (a palm then reads as "three").
+        // cropToTensor pads the outside with black, as MediaPipe does.
+        roi = found[0] ? roiFromPalm(found[0], region) : undefined
       }
       if (!roi) return { hands: [] }
 
-      cropToTensor(rgb, camera, roi, LANDMARK_INPUT, landmarkBuffer)
+      cropToTensor(rgb, camera, roi, LANDMARK_INPUT, landmarkBuffer, landmarkLayout)
       const output = await landmark.run({
-        [landmark.inputNames[0]!]: new ort.Tensor("float32", landmarkBuffer, [1, 3, LANDMARK_INPUT, LANDMARK_INPUT]),
+        [landmark.inputNames[0]!]: new ort.Tensor("float32", landmarkBuffer, inputDims(landmarkLayout, LANDMARK_INPUT)),
       })
       // The landmark model emits a 63-value tensor plus a presence score; pick them by size
       // rather than by name, since the exported names differ between conversions.
@@ -90,9 +179,15 @@ export async function createTracker(ort: Ort, paths: { palm: string; landmark: s
 
       const score = presence ? Math.min(1, Math.max(0, (presence.data as Float32Array)[0] ?? 1)) : 1
       // A confident hand keeps its ROI for the next frame; a lost one forces a re-detect.
+      // A lost hand also drops the trail, so a reappearing hand never reads as a swipe.
       if (score < 0.5) return { hands: [] }
       const landmarks = landmarksToCamera(coords.data as Float32Array, roi, { inputSize: LANDMARK_INPUT })
-      return { hands: [{ score, landmarks }], roi }
+      const hand: Hand = { score, landmarks }
+      if (!classifier) return { hands: [hand], roi }
+
+      const trail = pushTrail(options.trail ?? [], [...palmCentre(landmarks), handSpan(hand)], classifier.window)
+      const { gesture, motion } = await classifier.classify(landmarks, trail)
+      return { hands: [{ ...hand, gesture }], roi, trail, motion }
     },
   }
 }

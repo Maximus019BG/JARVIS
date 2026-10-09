@@ -27,6 +27,7 @@ import * as approval from "~/server/db/schemas/approval";
 import * as agentSession from "~/server/db/schemas/agent_session";
 import * as sessionPrompt from "~/server/db/schemas/session_prompt";
 import * as gatewayUsage from "~/server/db/schemas/gateway_usage";
+import * as visionItem from "~/server/db/schemas/vision_item";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
@@ -62,6 +63,7 @@ export const schema = {
   ...agentSession,
   ...sessionPrompt,
   ...gatewayUsage,
+  ...visionItem,
 };
 
 export const db = drizzle(conn, {

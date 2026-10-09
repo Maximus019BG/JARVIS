@@ -3,6 +3,7 @@ import { blueprintTools } from "../blueprint/tools.ts"
 import { codeProjectTool } from "../code/tools.ts"
 import { MCP_PREFIX } from "../extend/mcp.ts"
 import type { PermissionGate } from "../permission.ts"
+import { isPaired } from "../blueprint/credentials.ts"
 import { askTool } from "./ask.ts"
 import { bashOutputTool } from "./background.ts"
 import { bashTool } from "./bash.ts"
@@ -14,6 +15,7 @@ import { listTool } from "./list.ts"
 import { readTool } from "./read.ts"
 import { taskTool } from "./task.ts"
 import { todoTool } from "./todo.ts"
+import { findItemTool } from "./vision.ts"
 import { webfetchTool } from "./webfetch.ts"
 import { writeTool } from "./write.ts"
 import type { ToolContext } from "./context.ts"
@@ -45,6 +47,8 @@ export function builtinTools(ctx: ToolContext, agents: { name: string; descripti
     code_project: codeProjectTool(ctx),
   }
   if (ctx.ask) tools.ask = askTool(ctx)
+  // The camera is only worth offering with someone in front of it, and a cloud to match on.
+  if (ctx.ask && isPaired()) tools.find_item = findItemTool(ctx, { threshold: ctx.vision?.threshold })
   if (ctx.spawn && agents.length > 0) tools.task = taskTool(ctx, agents)
   return tools
 }

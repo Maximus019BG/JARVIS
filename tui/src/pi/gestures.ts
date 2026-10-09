@@ -15,14 +15,25 @@ export const PINKY_TIP = 20
 
 export type Landmark = { x: number; y: number; z?: number }
 
+/** A label from the learned classifier (`models/hand_gestgures.ipynb`) and its probability. */
+export type Label = { name: string; score: number }
+
 export type Hand = {
   handedness?: "left" | "right"
   score: number
   /** 21 landmarks in camera pixel coordinates. */
   landmarks: Landmark[]
+  /** Static pose, when the gesture model is installed. */
+  gesture?: Label
 }
 
-export type Frame = { t: number; hands: Hand[] }
+/**
+ * `motion` is in image space: a mirrored feed (the remote webcam) swaps swipe_left and
+ * swipe_right, so whoever acts on it maps the direction the way the stroke mapping does.
+ * It is per frame and holds for several as the window slides: act on the first frame of a
+ * run, and ignore it while the pen is down — a stroke is a hand moving, too.
+ */
+export type Frame = { t: number; hands: Hand[]; motion?: Label }
 
 export type GestureConfig = {
   /**
@@ -331,5 +342,60 @@ export function oneEuro(options: { minCutoff?: number; beta?: number } = {}) {
       last = { x, dx, t }
       return x
     },
+  }
+}
+
+export type CommandConfig = {
+  /** Learned label (`thumbs_up`, `swipe_left`, …) → what it does. Unmapped labels do nothing. */
+  map: Record<string, string>
+  /** Classifier probability a label needs before it counts. */
+  minScore: number
+  /** How long a pose has to be held: long enough that passing through one is not a command. */
+  holdMs: number
+  /** Quiet time after a motion, so one swipe is one action and the palm that swiped is not a pose. */
+  cooldownMs: number
+}
+
+export type Command = { label: string; action: string }
+
+/**
+ * Learned labels to one-shot commands. A pose fires once per hold and re-arms only when the
+ * label changes or the hand leaves; a motion fires on the first frame of its run. Unsure
+ * frames neither grow nor break a hold, because the classifier flickers at the edges of a
+ * pose and a hold that resets on every flicker is a hold nobody can finish.
+ */
+export class GestureCommands {
+  private pose?: { name: string; since: number; fired: boolean }
+  private moving = false
+  private quietUntil = -Infinity
+
+  constructor(private readonly config: CommandConfig) {}
+
+  push(frame: Frame): Command[] {
+    const { map, minScore, holdMs, cooldownMs } = this.config
+    const out: Command[] = []
+
+    const motion = frame.motion
+    const moving = Boolean(motion && motion.name !== "none" && motion.score >= minScore)
+    if (moving && !this.moving && frame.t >= this.quietUntil && map[motion!.name]) {
+      out.push({ label: motion!.name, action: map[motion!.name]! })
+      this.quietUntil = frame.t + cooldownMs
+    }
+    this.moving = moving
+
+    const hand = frame.hands[0]
+    if (moving || frame.t < this.quietUntil || !hand) {
+      this.pose = undefined
+      return out
+    }
+    const gesture = hand.gesture
+    if (!gesture || gesture.score < minScore) return out
+    if (gesture.name !== this.pose?.name) this.pose = { name: gesture.name, since: frame.t, fired: false }
+    if (!this.pose.fired && frame.t - this.pose.since >= holdMs) {
+      this.pose.fired = true
+      const action = map[gesture.name]
+      if (action) out.push({ label: gesture.name, action })
+    }
+    return out
   }
 }

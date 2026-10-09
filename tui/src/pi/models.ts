@@ -5,22 +5,35 @@ import { dataDir } from "../config/paths.ts"
 export const modelDir = join(dataDir, "models")
 
 /**
- * The two ONNX models the vision worker needs. Not vendored into the repo: together they
- * are a few megabytes of binary that only the Pi path uses, and only ever read, never
- * edited — a fetch-on-demand keeps the repository and the compiled binary small.
+ * The two ONNX models the vision worker and the web API's hand route need. Not vendored into
+ * the repo: together they are a few megabytes of binary, only ever read, never edited — a
+ * fetch-on-demand keeps the repository and the compiled binary small.
+ *
+ * MediaPipe's palm detector (192px, 2016 anchors) and hand landmarks (224px), as converted by
+ * OpenCV Zoo (Apache-2.0). They are channels-last; `track.ts` reads that off the model.
  */
 export const MODELS = {
   palm: {
     file: "palm_detection.onnx",
-    url: "https://huggingface.co/vladmandic/hand-detection/resolve/main/palm_detection.onnx",
+    url: "https://huggingface.co/opencv/palm_detection_mediapipe/resolve/main/palm_detection_mediapipe_2023feb.onnx",
   },
   landmark: {
     file: "hand_landmark.onnx",
-    url: "https://huggingface.co/vladmandic/hand-detection/resolve/main/hand_landmark.onnx",
+    url: "https://huggingface.co/opencv/handpose_estimation_mediapipe/resolve/main/handpose_estimation_mediapipe_2023feb.onnx",
   },
 } as const
 
 export type ModelName = keyof typeof MODELS
+
+/**
+ * The learned gesture classifier and its labels. Optional, and not in `MODELS`: it is ours,
+ * trained in `models/hand_gestgures.ipynb`, so there is nothing to download — copy the two
+ * files here (the notebook's last cell does) and the worker picks them up.
+ */
+export const gesturePaths = {
+  model: join(modelDir, "hand_gesture.onnx"),
+  labels: join(modelDir, "hand_gesture.json"),
+}
 
 export function modelPaths(): Record<ModelName, string> {
   return {

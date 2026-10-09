@@ -113,6 +113,20 @@
       "when": 1790324737359,
       "tag": "0015_code_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791523597768,
+      "tag": "0016_vision_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791525002351,
+      "tag": "0017_vision_scope_backfill",
+      "breakpoints": true
     }
   ]
 }

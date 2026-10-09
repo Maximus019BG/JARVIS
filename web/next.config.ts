@@ -34,6 +34,16 @@ const config: NextConfig = {
   outputFileTracingIncludes: {
     "/api/device/hand": [
       "./models/hand/*.onnx",
+      "./models/hand/*.json",
+      "../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v*/linux/x64/*",
+    ],
+    // Item learning and finding (`~/server/vision`): same runtime, one DINOv2 model.
+    "/api/vision/items": [
+      "./models/items/*.onnx",
+      "../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v*/linux/x64/*",
+    ],
+    "/api/vision/detect": [
+      "./models/items/*.onnx",
       "../node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v*/linux/x64/*",
     ],
   },
