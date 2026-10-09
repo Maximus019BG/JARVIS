@@ -187,3 +187,9 @@ hardware/data/*
 .firecrawl
 # Generated from tui/install.sh at build time by web/scripts/embed-install-sh.mjs
 web/src/app/install.sh/script.generated.ts
+
+# Gesture model training (models/hand_gestgures.ipynb): recordings, HaGRID cache, build output.
+# The exported model is committed where it is served: web/models/hand/.
+models/data/
+# models/export/
+.ipynb_checkpoints/

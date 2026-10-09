@@ -1,0 +1,25 @@
+[project]
+name = "jarvis-models"
+version = "0.1.0"
+description = "Hand gesture classifier for JARVIS: training notebook and ONNX export."
+requires-python = ">=3.12"
+dependencies = [
+  "ipykernel",
+  "numpy",
+  "onnx",
+  "onnxruntime",
+  "onnxscript",
+  "torch",
+]
+
+[tool.uv]
+package = false
+
+# Training is a few seconds of CPU; the default Linux torch wheel drags in ~2GB of CUDA.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
