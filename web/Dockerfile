@@ -23,7 +23,7 @@ FROM deps AS build
 COPY web web
 COPY tui tui
 # Inlined into the client bundle at build time.
-ARG NEXT_PUBLIC_BASE_URL=http://www.jarvisweb.cloud
+ARG NEXT_PUBLIC_BASE_URL=https://www.jarvisweb.cloud
 ENV NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL \
     SKIP_ENV_VALIDATION=1 \
     NEXT_TELEMETRY_DISABLED=1

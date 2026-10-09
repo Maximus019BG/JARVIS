@@ -4,6 +4,7 @@ resources:
   - api.yaml
   - db.yaml
   - proxy.yaml
+  - network-policy.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: jarvis

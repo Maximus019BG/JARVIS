@@ -13,7 +13,7 @@ export const env = createEnv({
       .default("development"),
     BETTER_AUTH_SECRET: z.string().min(32).max(248),
     BETTER_AUTH_ORGANIZATION_LIMIT: z.coerce.number().default(5),
-    BETTER_AUTH_URL: z.string().url().default("http://www.jarvisweb.cloud"),
+    BETTER_AUTH_URL: z.string().url().default("https://www.jarvisweb.cloud"),
     BETTER_AUTH_RESET_PASSWORD_EXPIRES_IN: z
       .string()
       .transform((val) => {
@@ -69,7 +69,7 @@ export const env = createEnv({
    * `NEXT_PUBLIC_`.
    */
   client: {
-    NEXT_PUBLIC_BASE_URL: z.string().url().default("http://www.jarvisweb.cloud"),
+    NEXT_PUBLIC_BASE_URL: z.string().url().default("https://www.jarvisweb.cloud"),
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
   },
 

@@ -1,0 +1,87 @@
+# Firewall between the pods. Only the path below is open; everything else is dropped.
+#
+#   internet ─80/443─▶ reverse-proxy ─3000─▶ api-server ─5432─▶ db-server
+#
+# Enforced only by a CNI that implements NetworkPolicy (Calico, Cilium, cloud clusters with
+# policy enabled, `minikube start --cni=calico`). Others accept these objects and ignore them.
+# kubelet probes and `kubectl port-forward` don't go through pod networking, so they still work.
+
+# Baseline: no pod accepts a connection unless a policy below lets it in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Public edge: anyone in on 80/443; out only to DNS and the api pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: reverse-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app: reverse-proxy
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 80
+        - port: 443
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: api-server
+      ports:
+        - port: 3000
+---
+# ponytail: api egress left open — it calls LLM providers, OAuth, Resend, Expo push and webhook
+# targets. Lock it to DNS + db + public IPs (ipBlock 0.0.0.0/0 except private ranges) if needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-server
+spec:
+  podSelector:
+    matchLabels:
+      app: api-server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: reverse-proxy
+      ports:
+        - port: 3000
+---
+# Postgres: only the api gets in, and it never needs to connect out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-server
+spec:
+  podSelector:
+    matchLabels:
+      app: db-server
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-server
+      ports:
+        - port: 5432

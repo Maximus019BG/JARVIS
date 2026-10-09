@@ -24,6 +24,7 @@ spec:
                   fieldPath: metadata.namespace
           ports:
             - containerPort: 80
+            - containerPort: 443
           readinessProbe:
             tcpSocket:
               port: 80
@@ -36,13 +37,21 @@ spec:
             - name: config
               mountPath: /etc/nginx/templates
               readOnly: true
+            # nginx reads it only at start: after k8s/tls.sh replaces it, the script restarts the pods.
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: reverse-proxy
+        # Must exist before the pods can start: k8s/tls.sh <namespace> [domain]
+        - name: tls
+          secret:
+            secretName: reverse-proxy-tls
 ---
 # The public entry point. LoadBalancer works on Docker Desktop and cloud clusters;
-# on kind/minikube use `kubectl port-forward -n <ns> svc/reverse-proxy 8080:80`.
+# on kind/minikube use `kubectl port-forward -n <ns> svc/reverse-proxy 8443:443` → https://localhost:8443.
 apiVersion: v1
 kind: Service
 metadata:
@@ -54,5 +63,9 @@ spec:
   selector:
     app: reverse-proxy
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443
