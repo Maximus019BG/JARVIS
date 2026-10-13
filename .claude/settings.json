@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.*.local)",
+      "Read(**/.env.production)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(~/.config/jarvis/secrets.json)",
+      "Edit(**/.env)",
+      "Edit(**/.env.local)",
+      "Edit(**/.env.*.local)",
+      "Edit(**/.env.production)",
+      "Edit(**/*.pem)",
+      "Edit(**/*.key)",
+      "Edit(~/.config/jarvis/secrets.json)",
+      "Bash(cat *.env*)",
+      "Bash(kubectl get secret *)"
+    ]
+  }
+}

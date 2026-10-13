@@ -1,0 +1,16 @@
+# Decisions
+
+One line per decision: what was decided, and why. Newest first. Add a row when a choice would surprise
+someone reading the code later. Never rewrite an old row; add a new one that supersedes it (`supersedes D-03`).
+
+| ID | Date | Decision | Why | Where |
+|---|---|---|---|---|
+| D-09 | 2026-10-09 | Hand tracking runs on the server and is stateless; the client echoes a `trail` header with each frame | No per-device server state, so any `api-server` replica can answer any frame | `web/models/hand/README.md`, `tui/src/pi/track.ts` |
+| D-08 | 2026-10-09 | Default-deny ingress network policies in every namespace; only the proxy is reachable | A compromised pod can't reach Postgres directly | `k8s/base/network-policy.yaml` |
+| D-07 | 2026-10-09 | Python is only used for model training, and only through `uv` (`pyproject.toml` + `uv.lock`), with CPU-only torch on Linux | Reproducible env; avoids ~2 GB of CUDA wheels for seconds of training | `models/pyproject.toml` |
+| D-06 | 2026-09-23 | Self-hosted on Kubernetes (kustomize base + `dev`/`test`/`prod` overlays), nginx doing the load balancing over a headless service | One manifest set for every environment; nginx sees each pod | `k8s/` |
+| D-05 | 2026-08-19 | `tui/install.sh` is embedded into the web build as a generated module, not read from disk at request time | A runtime `fs` read outside `web/` isn't traced into the bundle; it works locally and 404s in prod | `web/scripts/embed-install-sh.mjs` |
+| D-04 | 2026-08-17 | Gateway routing lives in a checked-in TS module; keys are in env | Routing is code-shaped, not secret-shaped: type-checked, diffable, no DB hit on the hot path | `web/src/server/gateway/upstreams.ts` |
+| D-03 | 2026-08-17 | `web` imports `tui` source through path aliases (`@blueprint`, `@pi`) rather than a published package | One blueprint/vision engine, no publish step; the cost is that Docker builds from the repo root | `web/tsconfig.json`, `web/jest.config.cjs` |
+| D-02 | 2026-08-17 | pnpm workspace = `web` + `tui`; `mobile` stays outside with its own npm install | Expo/RN dependency trees fight with Next's hoisting | `pnpm-workspace.yaml` |
+| D-01 | 2026-08-17 | Full rewrite: the TUI is a Bun/TypeScript agent where providers, agents, tools, skills and plugins are data on disk | Extend without forking; one binary on laptop and Pi | `tui/README.md`, PR #47 |

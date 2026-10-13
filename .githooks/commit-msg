@@ -1,0 +1,16 @@
+#!/bin/sh
+# Refuse a commit subject that is not a Conventional Commit: `type(scope)!: subject`.
+# Enabled by `pnpm install` (root `prepare` sets core.hooksPath). Skip once: git commit --no-verify
+subject=$(head -n1 "$1")
+case $subject in Merge\ *|Revert\ *|fixup!\ *|squash!\ *|amend!\ *) exit 0 ;; esac
+types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+if ! printf '%s' "$subject" | grep -Eq "^($types)(\([a-z0-9._/-]+\))?!?: .+"; then
+  echo "commit-msg: \"$subject\"" >&2
+  echo "  expected <type>(<scope>): <subject>, type one of: $(echo "$types" | tr "|" " ")" >&2
+  echo "  e.g. feat(tui): add /find command" >&2
+  exit 1
+fi
+if [ ${#subject} -gt 100 ]; then
+  echo "commit-msg: subject is ${#subject} chars, keep it <= 100" >&2
+  exit 1
+fi

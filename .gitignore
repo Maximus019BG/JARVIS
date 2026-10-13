@@ -57,7 +57,8 @@ drizzle.sqlite
 node_modules/
 
 # Others
-.claude
+.claude/*
+!.claude/settings.json
 
 # Expo
 .expo/
