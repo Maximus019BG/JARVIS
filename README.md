@@ -87,15 +87,18 @@ Whether you’re prototyping hardware, writing firmware, or managing project wor
 
 ## 🧩 Tech Stack
 
-| Category | Tools / Frameworks |
+What the repository runs today. The map is in [`docs/architecture.md`](docs/architecture.md).
+
+| Part | Stack |
 |-----------|-------------------|
-| Hardware | Raspberry Pi 5, Camera Module, Projector |
-| Vision | OpenCV, MediaPipe, TensorFlow Lite |
-| Voice | Vosk / Whisper / Google Speech API |
-| Automation | n8n, Node-RED |
-| AI Agents | OpenAI GPT, HuggingFace, LangChain |
-| Connectivity | MQTT, WebSockets, REST APIs |
-| Interface | Flask / FastAPI (Backend), React / Electron (Control UI) |
+| Terminal agent, Pi vision, worker (`tui/`) | Bun, TypeScript, Vercel AI SDK (Anthropic, OpenAI, Google, any OpenAI-compatible provider), OpenTUI |
+| Web app + API (`web/`) | Next.js 16, Drizzle ORM, Postgres, Better Auth |
+| Phone app (`mobile/`) | Expo 54, React Native |
+| Vision | ONNX Runtime: hand tracking and a gesture classifier trained in `models/` (PyTorch, `uv`) |
+| Voice | Wake word, speaker verification, transcription and speech through the web gateway |
+| Automations | Canvas, runner and triggers in `web/`; agent steps run on your machine via `jarvis work` |
+| Deploy | Kubernetes (kustomize overlays), nginx, Postgres |
+| Hardware | Raspberry Pi 5, camera, projector |
 
 ---
 
@@ -117,9 +120,11 @@ Whether you’re prototyping hardware, writing firmware, or managing project wor
 - Microphone + speaker  
 - Internet connectivity
 
-> ⚠️ **Build Tool Requirement**
->
-> This repository does **not** support `pip install -r requirements.txt`.
-> All dependency management is handled via **`uv`** using `pyproject.toml` and `uv.lock`.
->
-> Attempts to install dependencies without `uv` may fail or produce inconsistent environments.
+### Setup
+
+- The `jarvis` CLI: [`tui/README.md`](tui/README.md). Web app and API: [`web/README.md`](web/README.md).
+  Phone app: [`mobile/README.md`](mobile/README.md). Cluster: [`k8s/README.md`](k8s/README.md).
+- Working on the code, as a person or an agent: start with [`AGENTS.md`](AGENTS.md).
+
+> ⚠️ **Python is only used in `models/`** (gesture model training), and only through **`uv`**
+> (`pyproject.toml` + `uv.lock`). `pip install -r requirements.txt` is not supported.

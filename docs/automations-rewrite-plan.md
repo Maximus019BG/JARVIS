@@ -1,13 +1,18 @@
 # Automations Platform Rewrite Plan (n8n-like)
 
-This repo’s current automations feature is **UI graph CRUD only** (nodes/edges JSON persisted) with no workflow DSL, runner, triggers, connectors, credential store, or execution history.
+Status: partly implemented. The runner, triggers, schedules and the `jarvis work` worker exist
+(2026-10-13); what is built is documented in [`modules/web/automations`](modules/web/automations/README.md).
+The paragraph below is the state of the code when this plan was written. Paths in later sections
+that don't exist yet (`server/worker`, `automations/nodes/*`, …) are planned, not missing.
+
+When this plan was written, the automations feature was **UI graph CRUD only** (nodes/edges JSON persisted) with no workflow DSL, runner, triggers, connectors, credential store, or execution history.
 
 Primary existing touchpoints:
 
-- Pages: [`page()`](web/src/app/(protected)/app/automations/page.tsx:1), [`page()`](web/src/app/(protected)/app/automations/create/page.tsx:1), [`page()`](web/src/app/(protected)/app/automations/[id]/edit/page.tsx:1)
-- Editor: [`AutomationCanvas()`](web/src/components/automations/automation-canvas.tsx:1), [`AutomationPalette()`](web/src/components/automations/automation-palette.tsx:1)
-- API CRUD: [`GET()`](web/src/app/api/workstation/automation/list/[workstationId]/route.ts:1), [`GET()`](web/src/app/api/workstation/automation/load/[workstationId]/[automationId]/route.ts:1), [`POST()`](web/src/app/api/workstation/automation/save/[workstationId]/[automationId]/route.ts:1)
-- DB: [`automation`](web/src/server/db/schemas/automation.ts:1), [`workstation`](web/src/server/db/schemas/workstation.ts:1)
+- Pages: [`page()`](../web/src/app/(protected)/app/automations/page.tsx), [`page()`](../web/src/app/(protected)/app/automations/create/page.tsx), [`page()`](../web/src/app/(protected)/app/automations/[id]/edit/page.tsx)
+- Editor: [`AutomationCanvas()`](../web/src/components/automations/automation-canvas.tsx), [`AutomationPalette()`](../web/src/components/automations/automation-palette.tsx)
+- API CRUD: [`GET()`](../web/src/app/api/workstation/automation/list/[workstationId]/route.ts), [`GET()`](../web/src/app/api/workstation/automation/load/[workstationId]/[automationId]/route.ts), [`POST()`](../web/src/app/api/workstation/automation/save/[workstationId]/[automationId]/route.ts)
+- DB: [`automation`](../web/src/server/db/schemas/automation.ts), [`workstation`](../web/src/server/db/schemas/workstation.ts)
 
 ---
 
@@ -141,7 +146,7 @@ Target tables (minimum viable):
 - `createdAt`, `updatedAt`
 
 Encryption approach
-- Reuse pattern similar to existing secrets usage in env (see [`env`](web/src/env.js:1)), introduce an app-level encryption key.
+- Reuse pattern similar to existing secrets usage in env (see [`env`](../web/src/env.js)), introduce an app-level encryption key.
 - Store encrypted payload + metadata (iv, tag, version) inside `encryptedSecrets`.
 
 Migration strategy
@@ -252,7 +257,7 @@ MVP nodes
 ## 8) UI rewrite plan (editor + ops)
 
 ### Editor
-- Keep ReactFlow (already used in [`AutomationCanvas()`](web/src/components/automations/automation-canvas.tsx:1)) but:
+- Keep ReactFlow (already used in [`AutomationCanvas()`](../web/src/components/automations/automation-canvas.tsx)) but:
   - Introduce typed node renderers
   - Add right panel: node configuration forms generated from node schemas
   - Add data-mapping UI for inputs (expression editor)
@@ -344,7 +349,7 @@ Credentials:
 - UI:
   - editor serialization roundtrip
 
-Leverage existing test patterns (Jest already present under [`web/src/__tests__`](web/src/__tests__/blueprint-sync.test.ts:1)).
+Leverage existing test patterns (Jest already present under [`web/src/__tests__`](../web/src/__tests__/)).
 
 ---
 
@@ -359,5 +364,5 @@ Leverage existing test patterns (Jest already present under [`web/src/__tests__`
 
 ## Appendix: Current-state gaps to address immediately
 
-- Today `automation.metadata` is untyped `text` and parse errors can reset the canvas and overwrite on save; guard rails are needed in [`page()`](web/src/app/(protected)/app/automations/[id]/edit/page.tsx:1).
-- Palette is static placeholders in [`AutomationPalette()`](web/src/components/automations/automation-palette.tsx:1); replace with registry-driven palette.
+- Today `automation.metadata` is untyped `text` and parse errors can reset the canvas and overwrite on save; guard rails are needed in [`page()`](../web/src/app/(protected)/app/automations/[id]/edit/page.tsx).
+- Palette is static placeholders in [`AutomationPalette()`](../web/src/components/automations/automation-palette.tsx); replace with registry-driven palette.
