@@ -79,7 +79,7 @@ describe("step sequence", () => {
   // This is the "happy path is a few keypresses" claim, made assertable. If a preset starts
   // asking a question it used to answer for the reader, one of these fails.
   test("anthropic asks for a name, a key and models — nothing else", () => {
-    const { steps } = walk(["anthropic", "anthropic", "sk-ant-123", ["claude-sonnet-4-5"]])
+    const { steps } = walk(["anthropic", "anthropic", "sk-ant-123", ["claude-sonnet-5-5"]])
     expect(steps).toEqual(["preset", "id", "key", "models", "test"])
   })
 
@@ -188,14 +188,14 @@ describe("draftEntry and planWrites", () => {
   const drafted = (answers: (string | string[])[]) => walk(answers).setup.draft
 
   test("a stored key becomes a reference, and the literal is nowhere in the entry", () => {
-    const draft = drafted(["anthropic", "anthropic", "sk-ant-secret", ["claude-sonnet-4-5"]])
+    const draft = drafted(["anthropic", "anthropic", "sk-ant-secret", ["claude-sonnet-5-5"]])
     const { entry } = draftEntry(draft)
     expect(entry.options.apiKey).toBe("{secret:anthropic-api-key}")
     expect(JSON.stringify(entry)).not.toContain("sk-ant-secret")
   })
 
   test("the secret write comes before the config write", () => {
-    const writes = planWrites(drafted(["anthropic", "anthropic", "sk-1", ["claude-sonnet-4-5"]]), {
+    const writes = planWrites(drafted(["anthropic", "anthropic", "sk-1", ["claude-sonnet-5-5"]]), {
       setDefaultModel: false,
     })
     expect(writes.map((write) => write.kind)).toEqual(["secret", "config"])
@@ -287,7 +287,7 @@ describe("presets and model choices", () => {
   test("a preset default survives an endpoint that does not list it", () => {
     const draft = walk(["anthropic", "anthropic", "sk-1"]).setup.draft
     const rows = modelChoices(draft, { ...ctx, discovered: [{ value: "claude-3-haiku", label: "claude-3-haiku" }] })
-    expect(rows.map((row) => row.value)).toContain("claude-sonnet-4-5")
+    expect(rows.map((row) => row.value)).toContain("claude-sonnet-5-5")
     expect(rows.map((row) => row.value)).toContain("claude-3-haiku")
   })
 })

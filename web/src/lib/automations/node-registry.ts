@@ -205,7 +205,7 @@ export const nodeRegistry = {
           type: "string",
           description: "Relative to the --root the worker was started with",
         },
-        { key: "model", label: "Model", type: "string", placeholder: "anthropic/claude-opus-4-5" },
+        { key: "model", label: "Model", type: "string", placeholder: "anthropic/claude-opus-5-5" },
         { key: "timeoutSec", label: "Timeout (s)", type: "number" },
       ],
     },

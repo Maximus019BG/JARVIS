@@ -61,10 +61,12 @@ export const UPSTREAMS: readonly Upstream[] = [
     name: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     keyName: "GATEWAY_KEY_B",
-    models: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+    models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
     prefixes: ["claude-"],
     priority: 10,
-    cost: { input: 3, output: 15 },
+    // One price per upstream, so this is Opus 5.5's, the dearest listed: Sonnet and Haiku
+    // requests are metered on the high side rather than the low one.
+    cost: { input: 4, output: 20 },
     timeoutMs: 120_000,
     headers: { "anthropic-version": "2023-06-01" },
     enabled: false,
@@ -89,7 +91,7 @@ export const UPSTREAMS: readonly Upstream[] = [
  */
 export const ALIASES: Readonly<Record<string, string>> = {
   "jarvis-default": "gpt-4.1-mini",
-  "jarvis-max": "claude-sonnet-4-5",
+  "jarvis-max": "claude-opus-5-5",
 };
 
 /**

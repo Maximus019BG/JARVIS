@@ -2,8 +2,8 @@
   // Project config for developing jarvis itself. Copy this to
   // ~/.config/jarvis/jarvis.jsonc to use it everywhere.
   "$schema": "./jarvis.schema.json",
-  "model": "anthropic/claude-opus-4-5",
-  "smallModel": "anthropic/claude-haiku-4-5",
+  "model": "anthropic/claude-opus-5-5",
+  "smallModel": "anthropic/claude-haiku-5-5",
   "provider": {
     "anthropic": {
       "npm": "@ai-sdk/anthropic",
@@ -11,9 +11,9 @@
         "apiKey": "{env:ANTHROPIC_API_KEY}"
       },
       "models": {
-        "claude-opus-4-5": { "name": "Claude Opus 4.5" },
-        "claude-sonnet-4-5": { "name": "Claude Sonnet 4.5" },
-        "claude-haiku-4-5": { "name": "Claude Haiku 4.5" }
+        "claude-opus-5-5": { "name": "Claude Opus 5.5" },
+        "claude-sonnet-5-5": { "name": "Claude Sonnet 5.5" },
+        "claude-haiku-5-5": { "name": "Claude Haiku 5.5" }
       }
     },
     // Any OpenAI-compatible gateway works the same way.

@@ -109,13 +109,13 @@ provider factory and jarvis installs it on first use into
 
 ```jsonc
 {
-  "model": "anthropic/claude-opus-4-5",
+  "model": "anthropic/claude-opus-5-5",
   "provider": {
     "anthropic": {
       "npm": "@ai-sdk/anthropic",
       "options": { "apiKey": "{env:ANTHROPIC_API_KEY}" },
       "models": {
-        "claude-opus-4-5": { "name": "Claude Opus 4.5", "cost": { "input": 5, "output": 25 } }
+        "claude-opus-5-5": { "name": "Claude Opus 5.5", "cost": { "input": 4, "output": 20 } }
       }
     },
     "gateway": {
@@ -178,9 +178,8 @@ settings, the body is the system prompt.
 ```markdown
 ---
 description: Reviews diffs for correctness
-model: anthropic/claude-sonnet-4-5
+model: anthropic/claude-sonnet-5-5
 tools: { write: false, edit: false }
-temperature: 0.2
 ---
 
 You review code. Report only defects you can point at a line for.

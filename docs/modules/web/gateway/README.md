@@ -1,6 +1,6 @@
 # Gateway
 
-Code: `web/src/server/gateway/`, `web/src/app/api/gateway/`, `web/src/app/(protected)/app/usage/`, `web/src/lib/usage.ts` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/server/gateway/`, `web/src/app/api/gateway/`, `web/src/app/(protected)/app/usage/`, `web/src/lib/usage.ts` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 An OpenAI-compatible proxy so a paired device can use the owner's model keys without holding them.
@@ -111,7 +111,9 @@ because `z.coerce.boolean("false")` is true), `GATEWAY_KEY_A`, `GATEWAY_KEY_B`, 
 openai → A, anthropic → B, openrouter → C, audio (Groq) → D.
 
 Config lives in code (`upstreams.ts`), not env or DB: type-checked, reviewable, no round trip on the
-hot path. All three chat upstreams ship `enabled: false`.
+hot path. All three chat upstreams ship `enabled: false`. The `anthropic` upstream lists
+`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` and the alias `jarvis-max` →
+`claude-opus-5-5`.
 
 ## Depends on / used by
 - Depends on: [devices-and-pairing](../devices-and-pairing/README.md) (`authenticateDevice`),

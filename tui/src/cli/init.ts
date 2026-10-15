@@ -37,8 +37,7 @@ const FILES: Record<string, string> = {
 
   "agents/example.md": `---
 description: Example agent. Delete this or make it your own.
-# model: anthropic/claude-sonnet-4-5
-# temperature: 0.2
+# model: anthropic/claude-sonnet-5-5
 tools:
   write: false
   edit: false

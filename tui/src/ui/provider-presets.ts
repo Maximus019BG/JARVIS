@@ -69,7 +69,7 @@ export const PRESETS: readonly Preset[] = [
     askNpm: false,
     auth: "key",
     discovery: { kind: "anthropic" },
-    models: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+    models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
     catalogKeys: ["anthropic"],
   },
   {

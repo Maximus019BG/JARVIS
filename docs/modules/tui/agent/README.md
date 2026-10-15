@@ -141,6 +141,8 @@ writes), `XDG_CONFIG_HOME`/`XDG_DATA_HOME` (via `config/paths.ts`).
   (`resolveTranscription`, `resolveSpeech`), `tools/loadout.ts` (uses `repair.ts`).
 
 ## Gotchas
+- An agent's `temperature` is passed straight to `streamText`. Current Claude models (Opus 5.5,
+  Sonnet 5.5, Haiku 5.5) reject non-default sampling values with a 400, so leave it unset for them.
 - Tool-name defence is three layers: the `<tools>` block in the prompt, `repair.ts` (aliases like
   `browse` → `webfetch`, `blueprint_place` → `blueprint_symbol` + `action: "place"`, plus
   case/separator drift; no fuzzy matching on purpose), then the retry loop for gateways that
