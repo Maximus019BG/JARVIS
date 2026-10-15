@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 
-import { auth } from "~/lib/auth";
 import { db } from "~/server/db";
-import { automation } from "~/server/db/schemas/automation";
 import { automationRun } from "~/server/db/schemas/automation-run";
 import { automationRunStep } from "~/server/db/schemas/automation-run-step";
-import { workstation } from "~/server/db/schemas/workstation";
+import { authorizeAutomation } from "~/server/automations/access";
 
 export async function GET(
   request: Request,
@@ -15,43 +13,13 @@ export async function GET(
   },
 ) {
   const { workstationId, automationId, runId } = await ctx.params;
+  const authorized = await authorizeAutomation(request, workstationId, automationId);
+  if (authorized instanceof NextResponse) return authorized;
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-
-  const workstationRecord = (
-    await db
-      .select()
-      .from(workstation)
-      .where(eq(workstation.id, workstationId))
-      .limit(1)
-  )[0];
-
-  if (!workstationRecord || workstationRecord.userId !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const automationRecord = (
-    await db
-      .select()
-      .from(automation)
-      .where(
-        and(
-          eq(automation.id, automationId),
-          eq(automation.workstationId, workstationId),
-        ),
-      )
-      .limit(1)
-  )[0];
-
-  if (!automationRecord) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const run = (
-    await db
+  // Together: the steps are only returned when the scoped run lookup finds the run, so
+  // fetching them in parallel saves a round trip without showing anything extra.
+  const [runs, steps] = await Promise.all([
+    db
       .select()
       .from(automationRun)
       .where(
@@ -61,30 +29,30 @@ export async function GET(
           eq(automationRun.workstationId, workstationId),
         ),
       )
-      .limit(1)
-  )[0];
+      .limit(1),
+    db
+      .select({
+        id: automationRunStep.id,
+        index: automationRunStep.index,
+        status: automationRunStep.status,
+        type: automationRunStep.type,
+        name: automationRunStep.name,
+        input: automationRunStep.input,
+        output: automationRunStep.output,
+        error: automationRunStep.error,
+        startedAt: automationRunStep.startedAt,
+        finishedAt: automationRunStep.finishedAt,
+        createdAt: automationRunStep.createdAt,
+      })
+      .from(automationRunStep)
+      .where(eq(automationRunStep.runId, runId))
+      .orderBy(asc(automationRunStep.index)),
+  ]);
 
+  const run = runs[0];
   if (!run) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
-  const steps = await db
-    .select({
-      id: automationRunStep.id,
-      index: automationRunStep.index,
-      status: automationRunStep.status,
-      type: automationRunStep.type,
-      name: automationRunStep.name,
-      input: automationRunStep.input,
-      output: automationRunStep.output,
-      error: automationRunStep.error,
-      startedAt: automationRunStep.startedAt,
-      finishedAt: automationRunStep.finishedAt,
-      createdAt: automationRunStep.createdAt,
-    })
-    .from(automationRunStep)
-    .where(eq(automationRunStep.runId, runId))
-    .orderBy(asc(automationRunStep.index));
 
   return NextResponse.json({ run, steps });
 }

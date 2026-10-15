@@ -41,16 +41,22 @@ export async function ownsAutomation(
   workstationId: string,
   automationId: string,
 ): Promise<typeof automation.$inferSelect | OwnershipFailure> {
-  if (!(await ownsWorkstation(userId, workstationId))) return "forbidden";
-
-  const found = (
+  // One round trip: the workstation, with the automation left-joined onto it. No row or
+  // someone else's workstation is "forbidden"; our workstation without the automation is
+  // "not_found", the same answers two sequential queries gave.
+  const row = (
     await db
-      .select()
-      .from(automation)
-      .where(and(eq(automation.id, automationId), eq(automation.workstationId, workstationId)))
+      .select({ owner: workstation.userId, found: automation })
+      .from(workstation)
+      .leftJoin(
+        automation,
+        and(eq(automation.workstationId, workstation.id), eq(automation.id, automationId)),
+      )
+      .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
-  return found ?? "not_found";
+  if (row?.owner !== userId) return "forbidden";
+  return row.found ?? "not_found";
 }
 
 /**
@@ -61,10 +67,16 @@ export async function ownsBlueprint(
   userId: string,
   blueprintId: string,
 ): Promise<typeof blueprint.$inferSelect | OwnershipFailure> {
-  const found = (
-    await db.select().from(blueprint).where(eq(blueprint.id, blueprintId)).limit(1)
+  // One round trip: the blueprint with its workstation's owner joined on.
+  const row = (
+    await db
+      .select({ found: blueprint, owner: workstation.userId })
+      .from(blueprint)
+      .leftJoin(workstation, eq(workstation.id, blueprint.workstationId))
+      .where(eq(blueprint.id, blueprintId))
+      .limit(1)
   )[0];
-  if (!found) return "not_found";
+  if (!row) return "not_found";
 
-  return (await ownsWorkstation(userId, found.workstationId)) ? found : "forbidden";
+  return row.owner === userId ? row.found : "forbidden";
 }

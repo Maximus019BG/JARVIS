@@ -63,7 +63,7 @@ original stays in history.
 
 | Caller | Check |
 |---|---|
-| Browser, one blueprint | `server/blueprint-access.ts` → `requireBlueprint`: session (401), blueprint exists (404), its workstation belongs to the user via `server/ownership.ts` → `ownsBlueprint` (403). Every `/api/blueprint/[blueprintId]/*` route starts here. |
+| Browser, one blueprint | `server/blueprint-access.ts` → `requireBlueprint`: session (401), blueprint exists (404), its workstation belongs to the user via `server/ownership.ts` → `ownsBlueprint` (one left-join query; 403). Every `/api/blueprint/[blueprintId]/*` route starts here. |
 | Browser, workstation-wide | Session, then workstation ownership (`ownsWorkstation`, or the same `userId` comparison inline). |
 | Device | `server/device-auth.ts` → `authenticateDevice` (bearer token), then `hasGrant(deviceId, blueprintId, "read" \| "write")` against `device_grant` (a grant with no blueprint id covers the whole workstation), and the blueprint must be in the device's workstation. |
 
@@ -74,8 +74,8 @@ grant nothing; access is decided by the API.
 
 | File | Responsibility |
 |---|---|
-| `web/src/app/api/blueprint/push/route.ts` | Device push: validate, rate-limit, grant check, fast-forward or 409, insert versions. |
-| `web/src/app/api/blueprint/pull/route.ts` | Device pull: list reachable blueprints, or return versions of one. |
+| `web/src/app/api/blueprint/push/route.ts` | Device push: validate, rate-limit, grant check, fast-forward or 409, insert all new versions in one bulk `INSERT`. |
+| `web/src/app/api/blueprint/pull/route.ts` | Device pull: list reachable blueprints, or return versions of one (`since` lookup and commits query both scoped to the blueprint in SQL). |
 | `web/src/app/api/blueprint/create/route.ts` | Create a blueprint from the browser; row id equals document id. |
 | `web/src/app/api/blueprint/[blueprintId]/route.ts` | Get the current document (legacy-converted); delete the blueprint. |
 | `web/src/app/api/blueprint/[blueprintId]/edit/route.ts` | Apply an op batch with `applyOps` and append a version. Optional rename. |
@@ -199,10 +199,9 @@ components in `~/components/ui`, `~/lib/workstation-hooks`, `~/lib/type-to-confi
   the Zod-parsed document; web writes store `serialize(doc)`. The same drawing can therefore have
   two different `hash` values depending on who wrote it. `appendBlueprintVersion` requires
   `serialize` output.
-- **`pull` with `since` is not scoped in SQL.** The version query filters on `version > after`
-  across all blueprints, takes 201 rows, then filters by `blueprintId` in JS, and the `since` sha
-  lookup is not scoped to the blueprint either. Other blueprints' rows can crowd out this one's.
-  The tui client never sends `since`, so it does not hit this today.
+- **Concurrent writes to one blueprint:** the loser's transaction (push or `appendBlueprintVersion`)
+  hits `blueprint_version_version_unique` and rolls back. Push does not catch it, so that device
+  gets a 500 and must push again.
 - **Rename through `/edit` does not check for a name clash** in the workstation; create and clone
   do. Names are filenames on every syncing device.
 - `recentOnly` on the list route is a TODO and returns everything.

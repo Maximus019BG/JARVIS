@@ -58,8 +58,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "rate_limited", retryAfter: 60 }, { status: 429 });
   }
 
+  // Two columns, not the row: `transcript` can be megabytes, and this only checks ownership
+  // and whether there is anything new.
   const existing = (
-    await db.select().from(agentSession).where(eq(agentSession.id, body.id)).limit(1)
+    await db
+      .select({ workstationId: agentSession.workstationId, lines: agentSession.lines })
+      .from(agentSession)
+      .where(eq(agentSession.id, body.id))
+      .limit(1)
   )[0];
   if (existing && existing.workstationId !== device.workstationId) {
     return forbidden("that session belongs to another workstation");
@@ -105,6 +111,9 @@ export async function POST(request: Request) {
         costMicros: body.costMicros,
         deviceId: device.id,
       },
+      // The ownership check above reads before this writes; this keeps a session id that
+      // another workstation created in between from being overwritten.
+      setWhere: eq(agentSession.workstationId, device.workstationId),
     });
 
   await db.insert(syncLog).values({

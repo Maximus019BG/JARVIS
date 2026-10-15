@@ -50,7 +50,8 @@ Usage (`jarvis pair`, `/pair`) is in [tui/README.md](../../../../tui/README.md).
 **Using the token.** `device-auth.ts` → `authenticateDevice(request)` reads
 `Authorization: Bearer jvd_…` (`bearerToken`) and calls `resolveDeviceToken`: lookup by hash,
 `status === "active"`, `isActive !== false`, `timingSafeEqual`, and a fire-and-forget
-`lastSeenAt` bump. The MCP server reuses `resolveDeviceToken`, so there is one validation path.
+`lastSeenAt` bump at most once a minute (`LAST_SEEN_EVERY_MS`, checked in JS against the row it
+already read, so most requests write nothing). The MCP server reuses `resolveDeviceToken`, so there is one validation path.
 
 **Access model, two independent boundaries.**
 - *Grants* (`device_grant`): which blueprints the REST sync routes let a device touch.
@@ -64,7 +65,10 @@ Usage (`jarvis pair`, `/pair`) is in [tui/README.md](../../../../tui/README.md).
 
 **Ownership.** `web/src/server/ownership.ts` holds the tenancy rules with no `Request` and no
 better-auth import, so cookie routes and MCP tools share them: `ownsWorkstation`,
-`ownsAutomation` (scoped by workstation *and* id), `ownsBlueprint`. `web/src/server/owned-device.ts`
+`ownsAutomation` (scoped by workstation *and* id), `ownsBlueprint`. The last two are one query
+each (a left join with the workstation) and give the same `forbidden`/`not_found` answers the old
+two sequential lookups did: `ownsAutomation` checks the workstation first, `ownsBlueprint` the
+blueprint first. `web/src/server/owned-device.ts`
 → `ownedDevice(request, deviceId)` is the HTTP shell every `/api/device/[deviceId]/…` route uses:
 401 without a session, 404 for no device, 403 if the user does not own its workstation.
 
@@ -81,9 +85,9 @@ user does not own resolves to nothing.
 ## Files
 | File | Responsibility |
 |---|---|
-| `web/src/server/device-auth.ts` | Token and code primitives (`newUserCode`, `newDeviceCode`, `newToken`, `sha256`, `normaliseUserCode`, `CODE_TTL_MS`, `POLL_INTERVAL_SECONDS`, `TOKEN_PREFIX`), `bearerToken`, `resolveDeviceToken`, `authenticateDevice`, `hasGrant`, `grantsToReadable`, `readableBlueprintIds`, `canDeleteDevice`, `mayActOnLink`, `forbidden` |
+| `web/src/server/device-auth.ts` | Token and code primitives (`newUserCode`, `newDeviceCode`, `newToken`, `sha256`, `normaliseUserCode`, `CODE_TTL_MS`, `POLL_INTERVAL_SECONDS`, `TOKEN_PREFIX`, `LAST_SEEN_EVERY_MS`), `bearerToken`, `resolveDeviceToken`, `authenticateDevice`, `hasGrant`, `grantsToReadable`, `readableBlueprintIds`, `canDeleteDevice`, `mayActOnLink`, `forbidden` |
 | `web/src/server/owned-device.ts` | `ownedDevice`: session + device exists + owns its workstation, as a route guard |
-| `web/src/server/ownership.ts` | `ownsWorkstation`, `ownsAutomation`, `ownsBlueprint`, `OwnershipFailure` |
+| `web/src/server/ownership.ts` | `ownsWorkstation`, `ownsAutomation`, `ownsBlueprint` (one query each), `OwnershipFailure` |
 | `web/src/app/api/device/code/route.ts` | Pairing step 1: create `device_link`, return codes and QR |
 | `web/src/app/api/device/token/route.ts` | Pairing step 2: poll, mint token on first poll after approval |
 | `web/src/app/api/device/approve/route.ts` | `GET` look up a code for the approval screen; `POST` approve into a workstation |
@@ -198,8 +202,9 @@ No in-memory caches.
   is a primary-key error (500).
 - The `Workstation` type in `workstation-hooks.ts` has a `slug` field the table does not have.
 - `device_grant` and `device.scopes` are both replaced, never merged, so unticking a box removes access.
-- `DevicesCard` "polling now" means `lastSeenAt` under 60 s ago, which works because
-  `resolveDeviceToken` bumps it on every authenticated request.
+- `DevicesCard` "polling now" means `lastSeenAt` under 60 s ago, but `resolveDeviceToken` only
+  refreshes it once it is over 60 s old, so a device polling non-stop can read "1 minute ago"
+  for up to one poll interval each minute.
 - Index note: `docs/modules/README.md` lists `web/src/app/api/device/code/` under Code projects, but
   `web/src/app/api/device/code/route.ts` is pairing step 1 and is documented here.
 

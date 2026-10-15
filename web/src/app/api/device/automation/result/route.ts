@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { advance, failRun } from "~/server/automations/runner";
@@ -40,26 +40,32 @@ export async function POST(request: Request) {
   const run = (await db.select().from(automationRun).where(eq(automationRun.id, job.runId)).limit(1))[0];
   if (run?.workstationId !== device.workstationId) return forbidden("that run belongs to another workstation");
 
-  // Idempotent: a device retrying after the sweep already failed its job gets a 200 and
-  // changes nothing, rather than resurrecting a run somebody has already been told failed.
-  if (job.status !== "running") {
-    return NextResponse.json({ success: true, ignored: true, status: job.status });
-  }
-
   const payload = (job.payload ?? {}) as { stepId?: string };
   const stepId = payload.stepId ?? null;
   const at = new Date();
 
+  // Idempotent, and race-free: finishing the job is one conditional UPDATE, so of two
+  // deliveries of the same result (a retry racing the first, or one arriving after the
+  // sweep failed the job) exactly one moves it, and the other gets a 200 and changes
+  // nothing. A check-then-update here let both call `advance` and double the next step.
+  const finished = await db
+    .update(automationJob)
+    .set(
+      body.ok
+        ? { status: "succeeded", updatedAt: at }
+        : { status: "failed", lastError: (body.error ?? "the agent failed").slice(0, 2000), updatedAt: at },
+    )
+    .where(and(eq(automationJob.id, job.id), eq(automationJob.status, "running")))
+    .returning({ id: automationJob.id });
+  if (finished.length === 0) {
+    return NextResponse.json({ success: true, ignored: true, status: job.status });
+  }
+
   if (!body.ok) {
-    await db
-      .update(automationJob)
-      .set({ status: "failed", lastError: (body.error ?? "the agent failed").slice(0, 2000), updatedAt: at })
-      .where(eq(automationJob.id, job.id));
     await failRun(job.runId, stepId, body.error ?? "the agent failed");
     return NextResponse.json({ success: true, status: "failed" });
   }
 
-  await db.update(automationJob).set({ status: "succeeded", updatedAt: at }).where(eq(automationJob.id, job.id));
   if (stepId) {
     await db
       .update(automationRunStep)

@@ -5,6 +5,9 @@ import { db } from "~/server/db";
 import { device } from "~/server/db/schemas/device";
 import { deviceGrant } from "~/server/db/schemas/device_grant";
 
+/** How stale `device.lastSeenAt` may get before a request refreshes it. */
+const LAST_SEEN_EVERY_MS = 60_000;
+
 /** `jvd_` marks a jarvis device token, so a stray value in a log is recognisable. */
 export const TOKEN_PREFIX = "jvd_";
 
@@ -84,8 +87,12 @@ export async function resolveDeviceToken(token: string): Promise<typeof device.$
   const b = Buffer.from(hash, "utf8");
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
-  // Deliberately not awaited-and-checked: a failed heartbeat must not fail the request.
-  void db.update(device).set({ lastSeenAt: new Date() }).where(eq(device.id, found.id));
+  // Deliberately not awaited-and-checked: a failed heartbeat must not fail the request. At most
+  // once a minute: a worker polls every 3 s, and minute precision is all "last seen" needs.
+  const now = new Date();
+  if (!found.lastSeenAt || now.getTime() - found.lastSeenAt.getTime() > LAST_SEEN_EVERY_MS) {
+    void db.update(device).set({ lastSeenAt: now }).where(eq(device.id, found.id));
+  }
 
   return found;
 }

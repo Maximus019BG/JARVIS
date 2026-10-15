@@ -189,12 +189,14 @@ export async function POST(request: Request) {
         .where(eq(blueprint.id, body.blueprintId));
     }
 
-    for (const commit of fresh) {
-      version += 1;
-      await tx.insert(blueprintVersion).values({
+    // One INSERT for every new commit: a query per commit was a ~230 ms round trip each,
+    // so a 200-commit push spent most of a minute here.
+    const base = version;
+    await tx.insert(blueprintVersion).values(
+      fresh.map((commit, i) => ({
         id: `bpv_${nanoid(16)}`,
         blueprintId: body.blueprintId,
-        version,
+        version: base + i + 1,
         metadata: JSON.stringify(commit.doc),
         hash: sha256(JSON.stringify(commit.doc)),
         commitSha: commit.sha,
@@ -203,8 +205,9 @@ export async function POST(request: Request) {
         deviceId: device.id,
         createdBy: device.userId,
         createdAt: commit.at ?? now,
-      });
-    }
+      })),
+    );
+    version += fresh.length;
 
     await tx.insert(syncLog).values({
       id: `syn_${nanoid(16)}`,

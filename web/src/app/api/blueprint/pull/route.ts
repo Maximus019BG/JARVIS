@@ -1,4 +1,4 @@
-import { asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { blueprint } from "~/server/db/schemas/blueprint";
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
       await db
         .select({ version: blueprintVersion.version })
         .from(blueprintVersion)
-        .where(eq(blueprintVersion.commitSha, since))
+        .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.commitSha, since)))
         .limit(1)
     )[0];
     // An unknown `since` means the device is on a history the server has never seen.
@@ -58,17 +58,18 @@ export async function GET(request: Request) {
   const commits = await db
     .select()
     .from(blueprintVersion)
-    .where(after > 0 ? gt(blueprintVersion.version, after) : eq(blueprintVersion.blueprintId, blueprintId))
+    // Both conditions in SQL: filtering by blueprint after the LIMIT let other blueprints'
+    // commits fill the page, so a pull came back short with `truncated: false`.
+    .where(and(eq(blueprintVersion.blueprintId, blueprintId), gt(blueprintVersion.version, after)))
     .orderBy(asc(blueprintVersion.version))
     .limit(MAX_COMMITS + 1);
 
-  const scoped = commits.filter((row) => row.blueprintId === blueprintId);
-  const truncated = scoped.length > MAX_COMMITS;
+  const truncated = commits.length > MAX_COMMITS;
 
   return NextResponse.json({
     success: true,
     name: owner.name,
-    commits: scoped.slice(0, MAX_COMMITS).map((row) => ({
+    commits: commits.slice(0, MAX_COMMITS).map((row) => ({
       sha: row.commitSha,
       parentSha: row.parentSha,
       message: row.message,

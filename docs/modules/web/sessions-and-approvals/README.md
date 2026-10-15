@@ -1,6 +1,6 @@
 # Sessions and approvals
 
-Code: `web/src/app/api/{session,approval,mobile}/`, `web/src/app/api/device/prompt/`, `web/src/server/steering.ts`, `web/src/server/db/queries/session.ts`, `web/src/components/{sessions,approvals}/`, `web/src/app/(protected)/app/sessions/`, `web/src/lib/{transcript-lines,notifications,session}.ts`, `web/src/lib/validation/mobile/` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/app/api/{session,approval,mobile}/`, `web/src/app/api/device/prompt/`, `web/src/server/steering.ts`, `web/src/server/db/queries/session.ts`, `web/src/components/{sessions,approvals}/`, `web/src/app/(protected)/app/sessions/`, `web/src/lib/{transcript-lines,notifications,session}.ts`, `web/src/lib/validation/mobile/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 The cloud side of reaching a running TUI from somewhere else. Three flows, all opt-in in the TUI
@@ -17,9 +17,11 @@ blocked on, answered from the web or phone). Plus Expo push registration for the
    local sync state.
 2. For each session that grew, it posts the full JSONL plus totals to `POST /api/session/push`.
    `web/src/app/api/session/push/route.ts` → `POST`: 8 MiB cap (checked on `content-length` and on
-   the read body), 60 pushes/min per device (counted from `sync_log`), refuses a session id owned by
-   another workstation (403), answers `upToDate` if `lines` did not grow, else upserts `agent_session`
-   and writes a `sync_log` row with `action: "session-push"`.
+   the read body), 60 pushes/min per device (counted from `sync_log`), reads only `workstationId` and
+   `lines` of the existing row (not the multi-MB `transcript`), refuses a session id owned by another
+   workstation (403), answers `upToDate` if `lines` did not grow, else upserts `agent_session` with
+   `setWhere: eq(workstationId, device.workstationId)` and writes a `sync_log` row with
+   `action: "session-push"`.
 3. The web reads it: `/app/sessions` (`web/src/app/(protected)/app/sessions/page.tsx`, newest 100
    owned sessions) and `/app/sessions/[sessionId]` (`web/src/app/(protected)/app/sessions/[sessionId]/page.tsx`), which parses the
    transcript with `web/src/lib/transcript-lines.ts` → `transcriptLines` (messages and compaction
@@ -142,6 +144,8 @@ beyond `React.cache` in `web/src/lib/session.ts`, which lives for one render.
 - `web/src/lib/session.ts` → `getSession` is for server components only; route handlers call
   `auth.api.getSession` directly.
 - The push size cap is in characters (`raw.length`) after the `content-length` check, not bytes.
+- If another workstation creates the same session id between the ownership read and the upsert,
+  `setWhere` makes the update a no-op, but the route still answers `{ success, lines }`.
 
 ## Tests
 - `web/src/__tests__/steering.test.ts`: `steerable`, `FRESH_MS`, `MAX_PENDING`.

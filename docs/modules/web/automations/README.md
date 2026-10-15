@@ -125,12 +125,14 @@ jarvis work ── POST /api/device/automation/claim ──► sweep timeouts �
   3. Claims the oldest `pending` job with `FOR UPDATE SKIP LOCKED`, so two devices never take
      the same row. This sets `locked_by`, `locked_at` and `attempts + 1`.
 - **Result** (`web/src/app/api/device/automation/result/route.ts` → `POST`) checks that
-  `job.lockedBy` is this device and the run belongs to this device's workstation. It is
-  idempotent: if the job is no longer `running` it answers 200 with `ignored: true`. On
-  `ok: false` it fails the job, the step and the run. On `ok: true` it stores
-  `{ text, usage }` on the step and calls `advance` to continue.
+  `job.lockedBy` is this device and the run belongs to this device's workstation. It finishes
+  the job with one conditional `UPDATE ... WHERE id = ? AND status = 'running' RETURNING`. Zero
+  rows (a retry, or the sweep already failed it) answers 200 `{ success, ignored: true, status }`
+  and changes nothing, so two deliveries can't both call `advance`. On `ok: false` it then fails
+  the step and the run. On `ok: true` it stores `{ text, usage }` on the step and calls `advance`.
 - The client is `tui/src/cli/work.ts` → `work`. It refuses any job whose `cwd` resolves outside
-  `--root` (`within`) and reports that as a failed result. It aborts after `timeoutSec`. Polling
+  `--root` (`within`) and reports that as a failed result. Tool calls the worker's `permission`
+  rules would `ask` about are refused unless it was started with `-y` (D-11). It aborts after `timeoutSec`. Polling
   is every 3 s while busy and every 15 s after 2 min idle. See [tui/cli](../../tui/cli/README.md).
 
 ### 6. Run status and the runs UI
@@ -147,7 +149,7 @@ shows a "run `jarvis work`" hint when an `agent` step is still waiting.
 | `web/src/lib/automations/cron.ts` | `parseField`, `parseCron`, `matches`, `partsIn`, `isTimeZone`, `minuteStart` (dependency-free cron) |
 | `web/src/lib/automations/run-status.ts` | `unfinished`, `runBadgeVariant`, `RUN_POLL_MS` |
 | `web/src/lib/api/automations.ts` | `automationsApi` axios client and the `Automation`, `AutomationRun`, `AutomationRunStep`, `AutomationTrigger`, `CronConfig`, `AutomationVersions` types |
-| `web/src/server/automations/access.ts` | `authorizeAutomation`: session plus `ownsAutomation`, returned as a row or a 401/403/404 response |
+| `web/src/server/automations/access.ts` | `authorizeAutomation`: session plus `ownsAutomation`, returned as a row or a 401/403/404 response; used by every per-automation workstation route |
 | `web/src/server/automations/save.ts` | `saveAutomationGraph`: upsert the automation, append a draft version |
 | `web/src/server/automations/publish.ts` | `publishAutomation`, `EditorGraph`, `PublishResult` |
 | `web/src/server/automations/triggers.ts` | `createTrigger`, `triggerInputSchema`, `cronConfigSchema` |
@@ -162,15 +164,15 @@ shows a "run `jarvis work`" hint when an `agent` step is still waiting.
 | `web/src/app/api/workstation/automation/publish/[workstationId]/[automationId]/route.ts` | Compile and publish the newest version |
 | `web/src/app/api/workstation/automation/versions/[workstationId]/[automationId]/route.ts` | List versions |
 | `web/src/app/api/workstation/automation/run/[workstationId]/[automationId]/route.ts` | "Run now" (manual trigger) |
-| `web/src/app/api/workstation/automation/run/[workstationId]/[automationId]/[runId]/route.ts` | Read one run with its steps |
+| `web/src/app/api/workstation/automation/run/[workstationId]/[automationId]/[runId]/route.ts` | Read one run with its steps (both queries in parallel) |
 | `web/src/app/api/workstation/automation/runs/[workstationId]/[automationId]/route.ts` | List the last 100 runs |
 | `web/src/app/api/workstation/automation/triggers/[workstationId]/[automationId]/route.ts` | List and create triggers |
 | `web/src/app/api/workstation/automation/triggers/[workstationId]/[automationId]/[triggerId]/route.ts` | Delete a trigger (revokes a webhook URL) |
 | `web/src/components/automations/automation-canvas.tsx` | ReactFlow editor (`AutomationCanvas`, `CanvasState`, `AutomationCanvasHandle`), right-click menus, drop target |
 | `web/src/components/automations/automation-palette.tsx` | Registry-driven node palette (click or drag) |
 | `web/src/components/automations/node-config-panel.tsx` | Schema-driven param form with an "Expression" toggle; `EditorNodeData` type |
-| `web/src/components/automations/automation-triggers.tsx` | `AutomationTriggers` card: webhook URL, cron form, delete |
-| `web/src/app/(protected)/app/automations/page.tsx` | Automations list for the active workstation |
+| `web/src/components/automations/automation-triggers.tsx` | `AutomationTriggers` card: webhook URL, untrusted-body warning, cron form, delete |
+| `web/src/app/(protected)/app/automations/page.tsx` | Automations list for the active workstation; fetches in an effect with a stale-response guard, `loading` derived |
 | `web/src/app/(protected)/app/automations/create/page.tsx` | New automation (palette + canvas; first save creates the row) |
 | `web/src/app/(protected)/app/automations/[id]/edit/page.tsx` | Editor: Save, Publish (save then publish), Run now, Triggers, publish errors |
 | `web/src/app/(protected)/app/automations/[id]/runs/page.tsx` | Runs table, polled while unfinished |
@@ -179,9 +181,10 @@ shows a "run `jarvis work`" hint when an `agent` step is still waiting.
 ## Interfaces
 
 ### Session routes (browser)
-Auth: better-auth session (cookie, or `Authorization: Bearer <session token>`). Ownership is
-checked with `ownsWorkstation`/`ownsAutomation` from `web/src/server/ownership.ts`. Failures:
-401 no session, 403 not your workstation, 404 no such automation.
+Auth: better-auth session (cookie, or `Authorization: Bearer <session token>`). Every route with
+an `:id` goes through `authorizeAutomation` (`web/src/server/automations/access.ts` →
+`ownsAutomation` in `web/src/server/ownership.ts`); `list` checks the workstation's `userId`
+inline. Failures: 401 no session, 403 not your workstation, 404 no such automation.
 
 | Method · path | Handler | Body | Response |
 |---|---|---|---|
