@@ -34,7 +34,7 @@ module's **Files** table.
 
 | Module | Code | Doc |
 |---|---|---|
-| Auth and accounts | `app/api/auth/`, `lib/auth*.ts`, `lib/validation/auth/`, `lib/permissions.ts`, `app/auth/`, `components/{auth,account,user}/`, `app/(protected)/app/settings/` | [web/auth-and-accounts](web/auth-and-accounts/README.md) |
+| Auth and accounts | `app/api/auth/`, `lib/auth*.ts`, `lib/validation/auth/`, `app/auth/`, `components/{auth,account,user}/`, `app/(protected)/app/settings/` | [web/auth-and-accounts](web/auth-and-accounts/README.md) |
 | Devices and pairing | `app/api/{device,workstation}/` (except blueprint/automation/hand subroutes; `device/code` is pairing step 1), `server/{device-auth,owned-device,ownership}.ts`, `components/{devices,workstation}/`, `app/(protected)/link/`, `lib/validation/workstations.ts`, `lib/workstation-hooks.ts` | [web/devices-and-pairing](web/devices-and-pairing/README.md) |
 | Sessions and approvals | `app/api/{session,approval,mobile}/`, `app/api/device/prompt/`, `server/steering.ts`, `server/db/queries/session.ts`, `components/{sessions,approvals}/`, `app/(protected)/app/sessions/`, `lib/{transcript-lines,notifications,session}.ts`, `lib/validation/mobile/` | [web/sessions-and-approvals](web/sessions-and-approvals/README.md) |
 | Gateway | `server/gateway/`, `app/api/gateway/`, `app/(protected)/app/usage/`, `lib/usage.ts` | [web/gateway](web/gateway/README.md) |

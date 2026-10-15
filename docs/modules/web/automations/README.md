@@ -30,7 +30,8 @@ workstation, which runs them with `jarvis work` and posts the result back.
   Each node becomes `{ id, type, name, params }`. Each edge becomes `{ from, to, fromHandle }`.
   `fromHandle` is carried so an `if` false branch could be expressed later. The runner ignores it today.
 - The compile step also validates. It returns `errors` (and publish refuses) when:
-  - a node type is unknown, or its params fail the registry schema;
+  - a node type is unknown (`Object.hasOwn(nodeRegistry, type)`, so `toString` is unknown too),
+    or its params fail the registry schema;
   - the graph has a cycle (`topoSort`, Kahn's algorithm);
   - in a graph with more than one node, a non-trigger node has no incoming edge. A lone
     `agent` node is allowed, because "Run now" can drive it.
@@ -63,8 +64,8 @@ gets a `key` (`nanoid(24)`). Only webhooks use it, as the URL path segment.
 
 - **Manual:** `POST /api/workstation/automation/run/...` → `startRun` with `triggerId: null`.
 - **Webhook:** `POST /api/automations/webhook/[triggerKey]` checks the shared secret
-  `AUTOMATION_WEBHOOK_SECRET` (header `x-automation-secret`, or `x-webhook-secret`, or query
-  `?secret=`). It then looks the trigger up by `type = "webhook"` and `key`, requires the
+  `AUTOMATION_WEBHOOK_SECRET`, read only from the `x-automation-secret` or `x-webhook-secret`
+  header and compared in constant time (`secretMatches`, `crypto.timingSafeEqual`). It then looks the trigger up by `type = "webhook"` and `key`, requires the
   automation to be `active` with a compiled published version, and calls `startRun` with the
   JSON body as `input`. It replies with `runId` and status, not the run's result. The run may
   be suspended on an agent node.
@@ -208,7 +209,7 @@ Auth: `Authorization: Bearer jvd_...` device token via `authenticateDevice`
 ### Public route
 | Method · path | Handler | Auth | Body | Response |
 |---|---|---|---|---|
-| `POST /api/automations/webhook/:triggerKey` | `web/src/app/api/automations/webhook/[triggerKey]/route.ts` → `POST` | `AUTOMATION_WEBHOOK_SECRET` in `x-automation-secret`, `x-webhook-secret` or `?secret=` | any JSON (becomes `$json`; invalid JSON becomes `null`) | `{ success, runId, status, suspended }`; 401 bad secret; 404 unknown key; 400 not published; 409 version missing or never compiled; 500 |
+| `POST /api/automations/webhook/:triggerKey` | `web/src/app/api/automations/webhook/[triggerKey]/route.ts` → `POST` | `AUTOMATION_WEBHOOK_SECRET` in the `x-automation-secret` or `x-webhook-secret` header (no query string) | any JSON (becomes `$json`; invalid JSON becomes `null`) | `{ success, runId, status, suspended }`; 401 bad secret; 404 unknown key; 400 not published; 409 version missing or never compiled; 500 |
 
 ### MCP
 `web/src/server/mcp/tools/automations.ts` and `web/src/server/mcp/tools/authoring.ts` call
@@ -250,9 +251,8 @@ No in-memory state. Cron state is `automation_trigger.last_fired_at`.
   `ponytail:` note at the top of `web/src/server/automations/runner.ts` predates `topoSort`: ordering is now done, branching is not.
 - **Cron fires only while some workstation polls.** If the minute passes with every machine
   asleep, the run is skipped, not delayed. The trigger card says so in the UI.
-- **The webhook secret is one value for the whole deployment**, not per trigger. The per-trigger
-  part is the 24-char `key` in the URL. The comparison is a plain `!==`, and `?secret=` puts the
-  secret in access logs. nginx rate-limits `/api/automations/webhook/` in the strict zone
+- **The webhook secret is one value for the whole deployment**, shared across tenants, not per
+  trigger (known gap). The per-trigger part is the 24-char `key` in the URL. nginx rate-limits `/api/automations/webhook/` in the strict zone
   (`k8s/base/nginx.conf`).
 - **The `webhookTrigger` node and webhook triggers are unrelated.** The node's `path`/`method`
   params are display only. What makes a URL work is an `automation_trigger` row. The receiver

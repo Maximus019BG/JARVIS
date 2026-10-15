@@ -18,7 +18,9 @@ const sha = z.string().regex(/^[0-9a-f]{40,64}$/);
 
 const bodySchema = z.object({
   projectId: z.string().min(1).max(64),
-  name: z.string().min(1).max(64),
+  // tui's `safeName` rule (`tui/src/blueprint/store.ts` → `VALID`). Clients join this name to a
+  // directory on clone, so it must never be path-shaped.
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
   /** The head this push builds on — must equal ours, or the client has to pull first. */
   baseSha: sha.nullable(),
   headSha: sha,

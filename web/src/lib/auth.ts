@@ -7,7 +7,9 @@ import { sendVerificationEmail } from "~/server/email/utils/send-verification-em
 import { bearer, lastLoginMethod, twoFactor } from "better-auth/plugins";
 
 export const auth = betterAuth({
-  trustedOrigins: ["*"],
+  // Only our own origin and the mobile app's scheme. "*" turned off Better Auth's origin
+  // (CSRF) check and its callback-URL validation, i.e. open redirects on /api/auth/*.
+  trustedOrigins: [env.NEXT_PUBLIC_BASE_URL, "jarvis://"],
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,

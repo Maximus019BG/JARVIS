@@ -112,7 +112,8 @@ export function editorGraphToDefinition(input: {
 
   // Validate node params against registry schemas.
   for (const n of rawNodes) {
-    const registryItem = (nodeRegistry as any)[n.type]
+    // `n.type` is typed, not checked: a graph an agent wrote can name any type.
+    const registryItem = Object.hasOwn(nodeRegistry, n.type)
       ? getNodeRegistryItem(n.type)
       : null;
     if (!registryItem) {

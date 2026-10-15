@@ -1,6 +1,6 @@
 # Code projects
 
-Code: `web/src/app/api/code/`, `web/src/app/(protected)/app/code/` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/app/api/code/`, `web/src/app/(protected)/app/code/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Server side of git-backed project sync. A device's git repo is the source of truth. The server
@@ -17,7 +17,8 @@ replay, plus a text snapshot of the head for a read-only web viewer. The TUI sid
 2. Reject bodies over 10 MB (`MAX_BODY_BYTES`). It checks `content-length` first, then the
    actual length, and answers 413.
 3. Validate `{ projectId, name, baseSha, headSha, message, bundle, files }`. Shas must be
-   40–64 hex characters.
+   40–64 hex characters. `name` must match `^[a-z0-9][a-z0-9-]{0,63}$` (the tui `safeName`
+   rule), because the TUI joins it to a directory on clone.
 4. If an `idempotency-key` header matches an unexpired `idempotency_key` row, replay the
    stored response.
 5. Rate limit: at most 60 `sync_log` rows per device in the last minute, otherwise 429. This
@@ -62,7 +63,7 @@ which is what a clone needs. The client replays them in order.
 ## Interfaces
 | Method · path | Auth | Body / query | Response |
 |---|---|---|---|
-| `POST /api/code/push` | device token, `code:write` | JSON `{ projectId (≤64), name (≤64), baseSha \| null, headSha, message? (≤500), bundle (base64), files?: { path: contents } }`; optional `idempotency-key` header | `{ success, version, head }`; `{ ..., upToDate: true }`; 400 `invalid_request` + `detail`; 403; 409 `{ error: "diverged", serverHead, serverVersion }`; 413 `payload_too_large`; 429 `{ error: "rate_limited", retryAfter: 60 }` |
+| `POST /api/code/push` | device token, `code:write` | JSON `{ projectId (≤64), name (`^[a-z0-9][a-z0-9-]{0,63}$`), baseSha \| null, headSha, message? (≤500), bundle (base64), files?: { path: contents } }`; optional `idempotency-key` header | `{ success, version, head }`; `{ ..., upToDate: true }`; 400 `invalid_request` + `detail`; 403; 409 `{ error: "diverged", serverHead, serverVersion }`; 413 `payload_too_large`; 429 `{ error: "rate_limited", retryAfter: 60 }` |
 | `GET /api/code/pull` | device token, `code:read` | none | `{ success, projects: [{ id, name, version, headSha, updatedAt }] }` (this workstation) |
 | `GET /api/code/pull?projectId=&since=` | device token, `code:read` | `since` = commit sha, optional | `{ success, name, head, version, bundles: [{ sha, version, bundle }] }`; 404 |
 

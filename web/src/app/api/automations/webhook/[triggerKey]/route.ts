@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 
@@ -7,12 +8,17 @@ import { automation } from "~/server/db/schemas/automation";
 import { automationTrigger } from "~/server/db/schemas/automation-trigger";
 import { publishedVersionOf, startRun } from "~/server/automations/runner";
 
-function getProvidedSecret(request: Request, url: URL) {
-  return (
-    request.headers.get("x-automation-secret") ??
-    request.headers.get("x-webhook-secret") ??
-    url.searchParams.get("secret")
-  );
+/** Headers only: a `?secret=` query string ends up in proxy and access logs. */
+function getProvidedSecret(request: Request) {
+  return request.headers.get("x-automation-secret") ?? request.headers.get("x-webhook-secret");
+}
+
+/** Constant time, so the response time doesn't leak how much of a guess was right. */
+function secretMatches(provided: string | null, expected: string | undefined): boolean {
+  if (!provided || !expected) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export async function POST(
@@ -21,9 +27,7 @@ export async function POST(
 ) {
   const { triggerKey } = await ctx.params;
 
-  const url = new URL(request.url);
-  const providedSecret = getProvidedSecret(request, url);
-  if (!providedSecret || providedSecret !== env.AUTOMATION_WEBHOOK_SECRET) {
+  if (!secretMatches(getProvidedSecret(request), env.AUTOMATION_WEBHOOK_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

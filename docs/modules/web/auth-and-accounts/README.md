@@ -1,6 +1,6 @@
 # Auth and accounts
 
-Code: `web/src/lib/auth*.ts`, `web/src/lib/validation/auth/`, `web/src/lib/permissions.ts`, `web/src/app/auth/`, `web/src/app/api/auth/`, `web/src/components/{auth,account,user}/`, `web/src/app/(protected)/app/settings/` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/lib/auth*.ts`, `web/src/lib/validation/auth/`, `web/src/app/auth/`, `web/src/app/api/auth/`, `web/src/components/{auth,account,user}/`, `web/src/app/(protected)/app/settings/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 User identity for the web app and the mobile app: sign-up, sign-in (email/password, GitHub,
@@ -19,6 +19,8 @@ cached `getSession` in `web/src/lib/session.ts`, owned by
 [sessions-and-approvals](../sessions-and-approvals/README.md)).
 
 Configured features:
+- **`trustedOrigins: [env.NEXT_PUBLIC_BASE_URL, "jarvis://"]`**: our own origin and the mobile
+  app's scheme, so Better Auth's origin (CSRF) check and callback-URL validation stay on.
 - **Cookie cache** (`session.cookieCache`, 5 min): the DB is a ~230 ms round trip away, and the
   signed cookie lets the common `getSession` path skip it.
 - **Email and password**, `requireEmailVerification: false` (sign-in works before verifying);
@@ -30,9 +32,8 @@ Configured features:
   `twoFactor({ issuer: "JARVIS" })` (TOTP + backup codes).
 
 **Client.** `web/src/lib/auth-client.ts` → `authClient` (`createAuthClient` from `better-auth/react`)
-with `lastLoginMethodClient`, `twoFactorClient` (its `onTwoFactorRedirect` sends the browser to
-`/auth/verify-2fa?redirect_url=…`) and `organizationClient` using `ac`/`owner` from
-`web/src/lib/permissions.ts`.
+with `lastLoginMethodClient` and `twoFactorClient` (its `onTwoFactorRedirect` sends the browser to
+`/auth/verify-2fa?redirect_url=…`).
 
 **Sign-in / sign-up.** `/auth` (`web/src/app/auth/(protected)/page.tsx` → `AuthPage`) switches between
 `SignInForm` and `SignUpForm` on `?mode=sign-up`. The `(protected)` layout here is inverted: it wraps
@@ -75,7 +76,6 @@ wrong layer. Tokens are `device` rows with `platform === "mcp"`; every call goes
 |---|---|
 | `web/src/lib/auth.ts` | `auth`: the better-auth server instance and its plugins |
 | `web/src/lib/auth-client.ts` | `authClient`: browser client with 2FA redirect |
-| `web/src/lib/permissions.ts` | `ac`, `owner` access-control role; `convertPermissionsToObject`, `convertCommaSeparatedPermissions` |
 | `web/src/app/api/auth/[...all]/route.ts` | `GET`/`POST`: `toNextJsHandler(auth)` |
 | `web/src/lib/validation/auth/sign-in.ts` | `signInSchema` |
 | `web/src/lib/validation/auth/sign-up.ts` | `signUpSchema`, `validatePassword` (lower, upper, digit, special) |
@@ -173,14 +173,14 @@ Browser state: the signed session cookie (5-minute cookie cache), `localStorage.
 - **`import type { auth }` in client components**, never `import { type auth }`: under
   `verbatimModuleSyntax` the latter emits a runtime import and drags the server auth module into the
   client bundle (see `not-logged-in.tsx`).
-- `trustedOrigins: ["*"]` accepts any origin.
+- **A new client origin must be added to `trustedOrigins`**, or Better Auth rejects its requests.
 - **The backup-code form posts to `/api/auth/2fa/verify`**, which is not a better-auth endpoint (the
   two-factor plugin exposes `/two-factor/verify-backup-code`), so backup-code sign-in does not work as written.
-- **The organization plugin is client-only.** `authClient` loads `organizationClient` with `ac`/`owner`,
-  but `auth.ts` has no organization plugin, `BETTER_AUTH_ORGANIZATION_LIMIT` is read nowhere, and
-  `convertPermissionsToObject` / `convertCommaSeparatedPermissions` have no callers. Workstations are
-  their own table (`workstation`), not better-auth organizations.
-- `VerifyEmailStatus` reports success for any visit without `?error=token_expired`.
+- **No organization plugin**, on either side. Workstations are their own table (`workstation`), not
+  better-auth organizations. `BETTER_AUTH_ORGANIZATION_LIMIT` is still validated in `web/src/env.js`
+  but read nowhere.
+- `VerifyEmailStatus` reports success for any visit without `?error=`, including one with no query
+  string at all.
 - `AccountUpdateProfileCard` sends `image: null` when no new file is picked, so saving a name change
   clears the avatar. Images are stored as base64 data URLs in `user.image`.
 - The settings page comment says `/link?code=…` redirects to it; `/link` now renders its own approval
