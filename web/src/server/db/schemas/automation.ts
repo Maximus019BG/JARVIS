@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { user } from "./user";
 import { workstation } from "./workstation";
 
@@ -16,7 +16,7 @@ export const automation = pgTable("automation", {
   updatedAt: timestamp("updated_at"),
   createdBy: text("created_by")
     .notNull()
-    .references(() => user.id),
+    .references(() => user.id, { onDelete: "cascade" }),
 
   // Legacy: existing UI persists graph JSON here.
   // Will be superseded by `automation_version.editor_graph`.
@@ -24,5 +24,5 @@ export const automation = pgTable("automation", {
 
   workstationId: text("workstation_id")
     .notNull()
-    .references(() => workstation.id),
-});
+    .references(() => workstation.id, { onDelete: "cascade" }),
+}, (table) => [index("automation_workstation_idx").on(table.workstationId)]);

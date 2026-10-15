@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { workstation } from "~/server/db/schemas/workstation";
 import { user } from "./user";
 import { device } from "./device";
@@ -21,7 +21,7 @@ export const blueprint = pgTable("blueprint", {
   syncStatus: text("sync_status").default("synced"),
   lastSyncedAt: timestamp("last_synced_at"),
   deviceId: text("device_id").references(() => device.id, { onDelete: "set null" }),
-});
+}, (table) => [index("blueprint_workstation_idx").on(table.workstationId)]);
 
 // Backwards-compatible export: some API routes import `syncLog` from this module.
 export { syncLog };

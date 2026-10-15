@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, integer, timestamp } from 'drizzle-orm/pg-core';
 import { device } from './device';
 import { blueprint } from './blueprint';
 
@@ -13,4 +13,7 @@ export const syncLog = pgTable("sync_log", {
   versionAfter: integer("version_after"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  // The per-device push rate limit counts this device's rows from the last minute.
+  index("sync_log_device_created_idx").on(table.deviceId, table.createdAt),
+]);

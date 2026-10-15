@@ -1,6 +1,6 @@
 # Blueprints (web)
 
-Code: `web/src/app/api/blueprint/`, `web/src/app/api/workstation/blueprint/`, `web/src/server/blueprint-*.ts`, `web/src/components/blueprints/`, `web/src/app/(protected)/app/blueprints/`, `web/src/lib/api/blueprint*.ts`, `web/src/lib/blueprint-name.ts`, `web/src/lib/workstation-blueprints.ts` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/app/api/blueprint/`, `web/src/app/api/workstation/blueprint/`, `web/src/server/blueprint-*.ts`, `web/src/components/blueprints/`, `web/src/app/(protected)/app/blueprints/`, `web/src/lib/api/blueprint*.ts`, `web/src/lib/blueprint-name.ts`, `web/src/lib/workstation-blueprints.ts` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 The web side of blueprints: the API devices push to and pull from, the browser pages for listing,
@@ -162,8 +162,8 @@ migrations):
 
 | Table | Schema file | Columns that matter here |
 |---|---|---|
-| `blueprint` | `blueprint.ts` | `id` (= document `id`), `name`, `workstation_id`, `created_by`, `metadata` (current document JSON), `version` (head version number), `hash` (sha256 of `metadata`), `sync_status` (`synced` after a device push, `pending` after a web write), `last_synced_at`, `device_id` (last pusher). |
-| `blueprint_version` | `blueprint_version.ts` | `blueprint_id`, `version`, `metadata`, `hash`, `commit_sha` (null for web writes), `parent_sha`, `message`, `device_id`, `created_by`, `created_at`. Unique `(blueprint_id, commit_sha)` makes a re-push a no-op. Append-only. |
+| `blueprint` | `blueprint.ts` | `id` (= document `id`), `name`, `workstation_id` (index `blueprint_workstation_idx`), `created_by`, `metadata` (current document JSON), `version` (head version number), `hash` (sha256 of `metadata`), `sync_status` (`synced` after a device push, `pending` after a web write), `last_synced_at`, `device_id` (last pusher). |
+| `blueprint_version` | `blueprint_version.ts` | `blueprint_id`, `version`, `metadata`, `hash`, `commit_sha` (null for web writes), `parent_sha`, `message`, `device_id`, `created_by`, `created_at`. Unique `(blueprint_id, commit_sha)` makes a re-push a no-op; unique `blueprint_version_version_unique` `(blueprint_id, version)` stops two concurrent writers both taking version N. Append-only. |
 | `sync_log` | `sync_log.ts` (re-exported from `blueprint.ts`) | One row per push, denied push and web write: `action`, `direction` (`up`/`down`), `status`, `version_before`, `version_after`. Also the push rate limiter's counter. |
 | `idempotency_key` | `idempotency_key.ts` | Stored push replies, 24 h expiry. |
 | `device_grant` | `device_grant.ts` | Read by `hasGrant`; owned by [Devices and pairing](../devices-and-pairing/README.md). |

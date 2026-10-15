@@ -11,7 +11,7 @@ export const automationVersion = pgTable("automation_version", {
 
   automationId: text("automation_id")
     .notNull()
-    .references(() => automation.id),
+    .references(() => automation.id, { onDelete: "cascade" }),
 
   version: integer("version").notNull(),
 
@@ -26,7 +26,7 @@ export const automationVersion = pgTable("automation_version", {
 
   createdBy: text("created_by")
     .notNull()
-    .references(() => user.id),
+    .references(() => user.id, { onDelete: "cascade" }),
 
   createdAt: timestamp("created_at").notNull(),
 });

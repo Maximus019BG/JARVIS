@@ -1,4 +1,5 @@
 import {
+  index,
   pgTable,
   text,
   timestamp,
@@ -13,7 +14,7 @@ export const automationJob = pgTable("automation_job", {
 
   runId: text("run_id")
     .notNull()
-    .references(() => automationRun.id),
+    .references(() => automationRun.id, { onDelete: "cascade" }),
 
   // step index within a run (minimal runner uses 0)
   stepIndex: integer("step_index").notNull().default(0),
@@ -34,4 +35,7 @@ export const automationJob = pgTable("automation_job", {
 
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at"),
-});
+}, (table) => [
+  // The claim query every idle worker runs every few seconds: pending jobs that are due.
+  index("automation_job_status_available_idx").on(table.status, table.availableAt),
+]);

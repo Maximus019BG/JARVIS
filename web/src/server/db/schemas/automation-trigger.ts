@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { automation } from "./automation";
 import { workstation } from "./workstation";
 
@@ -11,11 +11,11 @@ export const automationTrigger = pgTable(
 
     automationId: text("automation_id")
       .notNull()
-      .references(() => automation.id),
+      .references(() => automation.id, { onDelete: "cascade" }),
 
     workstationId: text("workstation_id")
       .notNull()
-      .references(() => workstation.id),
+      .references(() => workstation.id, { onDelete: "cascade" }),
 
     // webhook | cron
     type: text("type").notNull(),
@@ -42,5 +42,9 @@ export const automationTrigger = pgTable(
   },
   // The sweep runs on every device poll and looks up by workstation and type, which without
   // this is a sequential scan on the hottest path in the app.
-  (table) => [index("automation_trigger_workstation_type_idx").on(table.workstationId, table.type)],
+  (table) => [
+    index("automation_trigger_workstation_type_idx").on(table.workstationId, table.type),
+    // The unauthenticated webhook route looks triggers up by key; without this it scans.
+    uniqueIndex("automation_trigger_key_unique").on(table.key),
+  ],
 );

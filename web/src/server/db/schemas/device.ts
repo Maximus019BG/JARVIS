@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { user } from './user';
 import { workstation } from './workstation';
 
@@ -41,4 +41,4 @@ export const device = pgTable("device", {
   lastSeenAt: timestamp("last_seen_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   isActive: boolean("is_active").default(true),
-});
+}, (table) => [index("device_workstation_idx").on(table.workstationId)]);

@@ -45,5 +45,9 @@ export const blueprintVersion = pgTable(
   },
   // Re-pushing a commit must be a no-op, not a duplicate row. This is what lets the push
   // endpoint be retried safely when a reply is lost in flight.
-  (table) => [uniqueIndex("blueprint_version_commit_unique").on(table.blueprintId, table.commitSha)],
+  (table) => [
+    uniqueIndex("blueprint_version_commit_unique").on(table.blueprintId, table.commitSha),
+    // Two concurrent pushes must not both write version N.
+    uniqueIndex("blueprint_version_version_unique").on(table.blueprintId, table.version),
+  ],
 );

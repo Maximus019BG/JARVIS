@@ -220,12 +220,15 @@ not in the routes. Tool list: [web/mcp](../mcp/README.md).
 ## Data and state
 | Table (schema file) | Used for |
 |---|---|
-| `automation` (`web/src/server/db/schemas/automation.ts`) | name, `status` (`draft`/`active`/`paused`/`archived`), `publishedVersion`, legacy `metadata` graph JSON |
+| `automation` (`web/src/server/db/schemas/automation.ts`) | name, `status` (`draft`/`active`/`paused`/`archived`), `publishedVersion`, legacy `metadata` graph JSON; index `automation_workstation_idx` |
 | `automation_version` (`web/src/server/db/schemas/automation-version.ts`) | one row per save: `editorGraph`, `definition` (written by publish), `compiledPlan` |
-| `automation_trigger` (`web/src/server/db/schemas/automation-trigger.ts`) | `type`, `key`, `config` `{ expression, tz }`, `lastFiredAt`; index on `(workstation_id, type)` for the per-poll sweep |
-| `automation_run` (`web/src/server/db/schemas/automation-run.ts`) | one execution: `status`, `triggerId`, `input`, `stepCount` |
-| `automation_run_step` (`web/src/server/db/schemas/automation-run-step.ts`) | per-node `status`, `input`, `output`, `error`, timings. This is the runner's resume state. |
-| `automation_job` (`web/src/server/db/schemas/automation-job.ts`) | DB queue for `agent` steps: `status`, `payload`, `lockedAt`/`lockedBy`, `attempts`, `availableAt`, `lastError` |
+| `automation_trigger` (`web/src/server/db/schemas/automation-trigger.ts`) | `type`, `key`, `config` `{ expression, tz }`, `lastFiredAt`; index on `(workstation_id, type)` for the per-poll sweep; unique `automation_trigger_key_unique` on `key` (webhook lookup) |
+| `automation_run` (`web/src/server/db/schemas/automation-run.ts`) | one execution: `status`, `triggerId`, `input`, `stepCount`; index `automation_run_automation_created_idx` `(automation_id, created_at)` |
+| `automation_run_step` (`web/src/server/db/schemas/automation-run-step.ts`) | per-node `status`, `input`, `output`, `error`, timings. This is the runner's resume state. Unique `automation_run_step_run_index_unique` `(run_id, index)`, so a duplicate step insert fails. |
+| `automation_job` (`web/src/server/db/schemas/automation-job.ts`) | DB queue for `agent` steps: `status`, `payload`, `lockedAt`/`lockedBy`, `attempts`, `availableAt`, `lastError`; index `automation_job_status_available_idx` `(status, available_at)` for the claim |
+
+Every FK on these tables is `onDelete: "cascade"` (`web/drizzle/0018_tough_thunderbolts.sql`), so
+deleting a workstation, user or automation removes its versions, triggers, runs, steps and jobs.
 
 ID prefixes: runs `arn_`, steps `ars_`, jobs `ajb_`, triggers `atr_`. Versions use UUIDs.
 Automations created in the browser get a client-side UUID (the create page). Those created
@@ -277,8 +280,9 @@ No in-memory state. Cron state is `automation_trigger.last_fired_at`.
 - Pausing (`status: "paused"`) and archiving have no HTTP route. Only the MCP tool
   `automation_set_status` changes status after publish.
 - `web/src/server/db/schemas/automation-run.ts` and `web/src/server/db/schemas/automation-version.ts` say "migrations are intentionally deferred".
-  That is stale: all six tables are created in `web/drizzle/0003_lush_nightmare.sql`, and
-  `last_fired_at` plus its index were added in `web/drizzle/0011_blue_gamora.sql`.
+  That is stale: all six tables are created in `web/drizzle/0003_lush_nightmare.sql`,
+  `last_fired_at` plus its index were added in `web/drizzle/0011_blue_gamora.sql`, and the FK
+  cascades and indexes in `web/drizzle/0018_tough_thunderbolts.sql`.
 
 ### Progress against `docs/automations-rewrite-plan.md`
 | Plan item | State in code |

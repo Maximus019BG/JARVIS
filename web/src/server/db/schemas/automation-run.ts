@@ -1,4 +1,5 @@
 import {
+  index,
   pgTable,
   text,
   timestamp,
@@ -16,15 +17,15 @@ export const automationRun = pgTable("automation_run", {
 
   automationId: text("automation_id")
     .notNull()
-    .references(() => automation.id),
+    .references(() => automation.id, { onDelete: "cascade" }),
 
   automationVersionId: text("automation_version_id")
     .notNull()
-    .references(() => automationVersion.id),
+    .references(() => automationVersion.id, { onDelete: "cascade" }),
 
   workstationId: text("workstation_id")
     .notNull()
-    .references(() => workstation.id),
+    .references(() => workstation.id, { onDelete: "cascade" }),
 
   // queued | running | succeeded | failed | canceled
   status: text("status").notNull().default("queued"),
@@ -41,4 +42,4 @@ export const automationRun = pgTable("automation_run", {
   stepCount: integer("step_count").notNull().default(0),
 
   createdAt: timestamp("created_at").notNull(),
-});
+}, (table) => [index("automation_run_automation_created_idx").on(table.automationId, table.createdAt)]);

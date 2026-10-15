@@ -1,6 +1,6 @@
 # Database
 
-Code: `web/src/server/db/` (schemas, `index.ts`), `web/drizzle/`, `web/drizzle.config.ts`, `web/scripts/db-doctor-drizzle.mjs`, `web/scripts/db-baseline-drizzle.mjs`, `web/start-database.sh` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/server/db/` (schemas, `index.ts`), `web/drizzle/`, `web/drizzle.config.ts`, `web/scripts/db-doctor-drizzle.mjs`, `web/scripts/db-baseline-drizzle.mjs`, `web/start-database.sh` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Postgres access for the whole web app: one Drizzle client, one schema file per table group,
@@ -122,8 +122,9 @@ table belongs to the feature module listed below. Usage commands are in [`web/RE
 | `web/drizzle/0015_code_projects.sql` | `code_project`, `code_version` |
 | `web/drizzle/0016_vision_items.sql` | `vision_item` |
 | `web/drizzle/0017_vision_scope_backfill.sql` | data-only: adds `vision:*` scopes to already approved devices |
+| `web/drizzle/0018_tough_thunderbolts.sql` | `ON DELETE CASCADE` on every `automation*` FK; indexes `automation_workstation_idx`, `automation_run_automation_created_idx`, `automation_job_status_available_idx`, `blueprint_workstation_idx`, `device_workstation_idx`, `sync_log_device_created_idx` `(device_id, created_at)`; unique `automation_run_step_run_index_unique`, `automation_trigger_key_unique`, `blueprint_version_version_unique` |
 | `web/drizzle/meta/_journal.json` | Ordered list of migrations (tag, `when`) that drizzle-kit and both scripts read |
-| `web/drizzle/meta/0000_snapshot.json`, `web/drizzle/meta/0001_snapshot.json`, `web/drizzle/meta/0002_snapshot.json`, `web/drizzle/meta/0003_snapshot.json`, `web/drizzle/meta/0005_snapshot.json`, `web/drizzle/meta/0007_snapshot.json`, `web/drizzle/meta/0008_snapshot.json`, `web/drizzle/meta/0009_snapshot.json`, `web/drizzle/meta/0010_snapshot.json`, `web/drizzle/meta/0011_snapshot.json`, `web/drizzle/meta/0012_snapshot.json`, `web/drizzle/meta/0013_snapshot.json`, `web/drizzle/meta/0014_snapshot.json`, `web/drizzle/meta/0015_snapshot.json`, `web/drizzle/meta/0016_snapshot.json`, `web/drizzle/meta/0017_snapshot.json` | drizzle-kit's schema snapshot after each migration (there are none for 0004 and 0006). Generated, never hand-edited |
+| `web/drizzle/meta/0000_snapshot.json`, `web/drizzle/meta/0001_snapshot.json`, `web/drizzle/meta/0002_snapshot.json`, `web/drizzle/meta/0003_snapshot.json`, `web/drizzle/meta/0005_snapshot.json`, `web/drizzle/meta/0007_snapshot.json`, `web/drizzle/meta/0008_snapshot.json`, `web/drizzle/meta/0009_snapshot.json`, `web/drizzle/meta/0010_snapshot.json`, `web/drizzle/meta/0011_snapshot.json`, `web/drizzle/meta/0012_snapshot.json`, `web/drizzle/meta/0013_snapshot.json`, `web/drizzle/meta/0014_snapshot.json`, `web/drizzle/meta/0015_snapshot.json`, `web/drizzle/meta/0016_snapshot.json`, `web/drizzle/meta/0017_snapshot.json`, `web/drizzle/meta/0018_snapshot.json` | drizzle-kit's schema snapshot after each migration (there are none for 0004 and 0006). Generated, never hand-edited |
 
 ## Interfaces
 `package.json` scripts (run as `pnpm --filter web <script>`):
@@ -163,6 +164,11 @@ Exports: `web/src/server/db/index.ts` → `db`, `schema`. No API routes.
   `0003_lush_nightmare.sql` both exist. The journal decides which one runs.
 - Comments in `automation-run.ts` and `automation-version.ts` say migrations are deferred. That
   is stale: those tables are in `0003_lush_nightmare.sql`.
+- **Check for duplicates before applying 0018 to an existing database.** Its unique indexes fail
+  the migration if old rows collide:
+  `select blueprint_id, version, count(*) from blueprint_version group by 1,2 having count(*) > 1;`,
+  `select run_id, index, count(*) from automation_run_step group by 1,2 having count(*) > 1;`,
+  `select key, count(*) from automation_trigger group by 1 having count(*) > 1;`. Fix those rows first.
 - `start-database.sh`'s `sed -i ''` only works with BSD sed (macOS). On Linux or WSL the
   password rewrite fails.
 

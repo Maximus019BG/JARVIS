@@ -1,6 +1,6 @@
 # Devices and pairing
 
-Code: `web/src/app/api/device/` (except `automation/`, `hand/`, `mcp-token/`, `prompt/`), `web/src/app/api/workstation/` (except `automation/`, `blueprint/`), `web/src/server/{device-auth,owned-device,ownership}.ts`, `web/src/components/{devices,workstation}/`, `web/src/app/(protected)/link/`, `web/src/lib/validation/workstations.ts`, `web/src/lib/workstation-hooks.ts` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/app/api/device/` (except `automation/`, `hand/`, `mcp-token/`, `prompt/`), `web/src/app/api/workstation/` (except `automation/`, `blueprint/`), `web/src/server/{device-auth,owned-device,ownership}.ts`, `web/src/components/{devices,workstation}/`, `web/src/app/(protected)/link/`, `web/src/lib/validation/workstations.ts`, `web/src/lib/workstation-hooks.ts` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 How a machine (a laptop running the TUI, a Pi, an MCP client) gets a `jvd_` bearer token for one
@@ -152,7 +152,7 @@ TUI commands (in [tui/cli](../../tui/cli/README.md)): `jarvis pair [email] [url]
 ## Data and state
 | Table | Use |
 |---|---|
-| `device` (`web/src/server/db/schemas/device.ts`) | One paired machine or MCP token. `device_token` column holds the sha256 (`tokenHash`), `token_prefix`, `fingerprint`, `platform` (`"mcp"` for MCP tokens), `status` `active`/`revoked`, `scopes text[]`, `last_seen_at` |
+| `device` (`web/src/server/db/schemas/device.ts`) | One paired machine or MCP token. `device_token` column holds the sha256 (`tokenHash`), `token_prefix`, `fingerprint`, `platform` (`"mcp"` for MCP tokens), `status` `active`/`revoked`, `scopes text[]`, `last_seen_at`; index `device_workstation_idx` |
 | `device_link` (`web/src/server/db/schemas/device_link.ts`) | In-flight pairing request: `user_code` PK, `device_code_hash`, `expires_at`, `last_polled_at`, `approved_device_id`, `target_user_id` |
 | `device_grant` (`web/src/server/db/schemas/device_grant.ts`) | `device_id`, `blueprint_id` (NULL = all), `mode` `read`/`write`. Two partial unique indexes so a device cannot hold two "all" grants |
 | `workstation` (`web/src/server/db/schemas/workstation.ts`) | `user_id` is the owner, the root of every ownership check |

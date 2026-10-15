@@ -1,4 +1,5 @@
 import {
+  uniqueIndex,
   pgTable,
   text,
   timestamp,
@@ -13,7 +14,7 @@ export const automationRunStep = pgTable("automation_run_step", {
 
   runId: text("run_id")
     .notNull()
-    .references(() => automationRun.id),
+    .references(() => automationRun.id, { onDelete: "cascade" }),
 
   index: integer("index").notNull(),
 
@@ -31,4 +32,7 @@ export const automationRunStep = pgTable("automation_run_step", {
   finishedAt: timestamp("finished_at"),
 
   createdAt: timestamp("created_at").notNull(),
-});
+}, (table) => [
+  // One step per position in a run: a duplicate result delivery must fail, not add a step.
+  uniqueIndex("automation_run_step_run_index_unique").on(table.runId, table.index),
+]);
