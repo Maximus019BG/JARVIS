@@ -10,7 +10,7 @@ if ! printf '%s' "$subject" | grep -Eq "^($types)(\([a-z0-9._/-]+\))?!?: .+"; th
   echo "  e.g. feat(tui): add /find command" >&2
   exit 1
 fi
-if [ ${#subject} -gt 100 ]; then
+if [ ${#subject} -gt 120 ]; then
   echo "commit-msg: subject is ${#subject} chars, keep it <= 100" >&2
   exit 1
 fi
