@@ -33,7 +33,8 @@ they did; it reads the diff itself.
 6. **Simplicity.** No new dependency for a few lines of code, no abstraction with one user, no
    duplicated helper. Every deliberate shortcut carries a `ponytail:` comment.
 7. **Docs.** Every module whose code changed has its `docs/modules/` doc updated in the same PR, with
-   a new `Verified:` line, and the doc still matches the code. A surprising choice gets a row in
+   a new `Verified:` line, and the doc still matches the code. If behaviour changed, the matching
+   `docs/use-cases/` page is updated too. A surprising choice gets a row in
    `docs/decisions.md`, and a status change updates `docs/ROADMAP.md`. The package README is updated
    if commands or setup changed.
 8. **Agent safety** (`tui/`). A new tool either calls `ctx.gate.check` and has a `DEFAULT_RULES` entry

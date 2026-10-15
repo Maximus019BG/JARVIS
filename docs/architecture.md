@@ -48,6 +48,8 @@ How the parts of JARVIS fit together. Package details live in each package's REA
 
 ## Main flows
 
+Each flow is written out step by step, with its business rules, in [`docs/use-cases/`](use-cases/README.md).
+
 - **Pairing:** `jarvis pair` shows a code, the user approves it on web, and the device gets scoped
   grants (`web/src/server/device-auth.ts`, `owned-device.ts`).
 - **Remote approval and steering:** the TUI pushes its session and pending approvals. The phone or

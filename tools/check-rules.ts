@@ -123,7 +123,7 @@ const checks: Record<string, (args: string[]) => string[]> = {
   },
 
   "canon-paths"() {
-    const docs = ["AGENTS.md", "REVIEW.md", ...git("ls-files", "docs/modules").split("\n").filter((f) => f.endsWith(".md"))]
+    const docs = ["AGENTS.md", "REVIEW.md", ...git("ls-files", "docs/modules", "docs/use-cases").split("\n").filter((f) => f.endsWith(".md"))]
     return docs.flatMap((doc) =>
       [...new Set(pathTokens(read(doc)))]
         .filter((path) => !existsSync(join(ROOT, path)))
@@ -171,6 +171,6 @@ if (import.meta.main) {
     for (const problem of problems) console.error(`${name}: ${problem}`)
     if (problems.length === 0 && !hook) console.log(`${name}: ok`)
   }
-  if (failed && hook) console.error("Update the module doc and bump its Verified: line (AGENTS.md rule 10).")
+  if (failed && hook) console.error("Update the module doc and bump its Verified: line; if behaviour changed, update its docs/use-cases/ page too (AGENTS.md rule 10).")
   process.exit(failed ? (hook ? 2 : 1) : 0)
 }

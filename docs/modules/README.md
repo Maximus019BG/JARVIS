@@ -3,7 +3,8 @@
 How each subsystem works on the inside: the flows, which file does what, contracts, state and
 gotchas. **Usage** (install, commands, config) is covered in the package READMEs ([`tui/`](../../tui/README.md),
 [`web/`](../../web/README.md), [`mobile/`](../../mobile/README.md), [`models/`](../../models/README.md),
-[`k8s/`](../../k8s/README.md)). Module docs link to them instead of copying them.
+[`k8s/`](../../k8s/README.md)). Module docs link to them instead of copying them. End-to-end flows that cross modules, and their
+business rules, are in [`docs/use-cases/`](../use-cases/README.md).
 
 ## Rule: docs follow code
 

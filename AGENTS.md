@@ -8,7 +8,9 @@ A workstation assistant built in three parts: a terminal coding agent (`tui/`), 
 (`web/`), and a Raspberry Pi 5 with a camera and projector that runs the same `jarvis` binary.
 A phone app (`mobile/`) approves and steers sessions remotely. The map and data flow are in
 [`docs/architecture.md`](docs/architecture.md). How each subsystem works inside is in
-[`docs/modules/`](docs/modules/README.md). Read a module's doc before you change its code.
+[`docs/modules/`](docs/modules/README.md). What the system does for a user, flow by flow across
+TUI, web, phone and Pi (the business rules), is in [`docs/use-cases/`](docs/use-cases/README.md).
+Read a module's doc, and the use case it belongs to, before you change its code.
 
 | Path | What | Stack | Run / test |
 |---|---|---|---|
@@ -51,8 +53,12 @@ Stopping to ask is always allowed.
     commit** and bump that doc's `Verified:` line. `docs/modules/README.md` maps code paths to docs.
     A new subsystem gets a new folder made from the template, plus a row in that index. If commands,
     setup or config change, also update the package README (`tui/`, `web/`, …). A change without
-    its doc update isn't done. *CI: `check-rules docs-touched` (a `Docs-Skip: <reason>` line in a
-    commit message opts the PR out). Hook: the Claude Code Stop hook. Whether the doc is right is advisory.*
+    its doc update isn't done. If the change alters behaviour (a flow, limit, permission or state a
+    user or device sees), also update the matching page in [`docs/use-cases/`](docs/use-cases/README.md)
+    and bump its `Verified:` line; a new user-facing flow gets a new page and an index row.
+    *CI: `check-rules docs-touched` for module docs (a `Docs-Skip: <reason>` line in a commit message
+    opts the PR out), `canon-paths` for paths named in both. Hook: the Claude Code Stop hook. Whether
+    a use-case page was updated, and whether any doc is right, is advisory.*
 11. **Decisions go in [`docs/decisions.md`](docs/decisions.md)**, status in
     [`docs/ROADMAP.md`](docs/ROADMAP.md). Not in chat, not in agent memory. *Advisory.*
 
