@@ -8,9 +8,8 @@ on:
     branches:
       - master
 
-permissions:
-  contents: read
-  security-events: write
+# publish_results requires read-only top-level permissions; writes go on the job.
+permissions: read-all
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,6 +19,9 @@ jobs:
   analysis:
     name: Scorecards analysis
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4

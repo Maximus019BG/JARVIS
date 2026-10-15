@@ -5,7 +5,7 @@
 #   docker build -f web/Dockerfile -t jarvis-web .
 #   docker run --env-file web/.env -p 3000:3000 jarvis-web
 
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 RUN corepack enable
 WORKDIR /app
 
@@ -36,7 +36,7 @@ RUN RESEND_API_KEY=re_build_placeholder \
     pnpm --filter web build
 
 ################################################################################
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
 COPY --from=build --chown=node:node /app/web/.next/standalone ./

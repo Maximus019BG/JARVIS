@@ -25,7 +25,7 @@ and [`models/items/`](models/items/README.md).
 | Script | Does |
 |---|---|
 | `dev` / `build` / `start` | Next; `dev` and `build` first embed `../tui/install.sh` |
-| `check` | eslint + `tsc --noEmit` (what CI runs) |
+| `check` | eslint + `tsc --noEmit` (CI runs the root `pnpm check`, which includes this) |
 | `test` | jest, `src/__tests__/**/*.test.ts` |
 | `db:generate` | migration from the schema diff, into `drizzle/` |
 | `db:migrate` / `db:push` / `db:studio` | apply / push without a migration (dev only) / browse |

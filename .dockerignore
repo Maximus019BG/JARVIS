@@ -2,8 +2,10 @@
 **/.next
 .git
 mobile
-hardware
-doc
+docs
 k8s
+# web/Dockerfile copies only web/ and tui/; models/ holds a ~1.5 GB venv and training data.
+models
 **/.env*
 tui/dist
+tui/.*.bun-build

@@ -36,9 +36,8 @@ jobs:
           # Reduce scan runtime/noise for this monorepo.
           config: |
             paths-ignore:
-              - legacy/**
               - docs/**
-              - **/*.md
+              - '**/*.md'
               - web/public/**
               - web/drizzle/**
 
