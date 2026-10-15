@@ -1,6 +1,6 @@
 # Code projects
 
-Code: `tui/src/code/` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/code/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Turns git repos inside the workspace into "code projects" that sync to the JARVIS cloud (shown in
@@ -36,6 +36,8 @@ agreed on is the ref `refs/jarvis/cloud` (`CLOUD_REF`). Nothing jarvis-specific 
 are bundles: commit local work ("jarvis: save before pull"), then `applyBundles` fetches each
 bundle into `CLOUD_REF` and runs a normal `git merge` against it, so divergence gets a real
 three-way merge and conflicts are left in the files. A fresh clone hard-resets to `CLOUD_REF`.
+`clone` runs the server-listed name through `safeName` before joining it to `cwd`, so a
+path-shaped name from the server is refused rather than written outside the directory.
 With `abortOnConflict` (auto-sync) the merge is aborted and an error is thrown instead.
 
 **Git remotes** (`pushRemote`/`pullRemote`): the remote must already exist. Commits, then runs
@@ -48,7 +50,8 @@ for every project, commit "jarvis: auto-sync", push to the cloud if paired (abor
 conflict), and push to `origin` if it exists. Only problems are returned.
 
 **Entry points** (`tools.ts` → `codeAction`): dispatches `new`, `init`, `list`, `status`, `push`,
-`pull`, `clone`. `code_project` gates every action except `list`/`status`.
+`pull`, `clone`. `code_project` gates every action except `list`/`status`, and is `ask` in
+`DEFAULT_RULES`: it sends source off the machine.
 
 ## Files
 | File | Responsibility |

@@ -1,6 +1,6 @@
 # Tools
 
-Code: `tui/src/tools/`, `tui/src/permission.ts` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/tools/`, `tui/src/permission.ts` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 The built-in tools the agent can call (file I/O, shell, search, web fetch, todo, subagents,
@@ -29,12 +29,19 @@ exists and the device is paired, `task` only when `ctx.spawn` exists and some ag
 1. `observe(request)` (UI keeps the diff for display).
 2. Plugin override (`permission.ask` hook), else `resolvePermission(rules, request)`: keys are
    `tool` or `tool:prefix`; `*` matches any tool; longest matching prefix wins; fallback `allow`.
+   `prefixMatches` makes an **allow** prefix stricter for the two subjects a model can shape: a
+   `bash` prefix doesn't match when the rest of the command contains `; & | $ \` < >` or a
+   newline, and a `webfetch` prefix must spell out the whole origin (and the URL must start with
+   its own origin, so `https://a.com@evil.tld` doesn't pass as `a.com`). `ask`/`deny` prefixes
+   keep plain prefix matching.
 3. `deny` throws `PermissionDenied`; `allow` returns; `ask` checks the shared `granted` set
    (`tool:subject`), then calls the asker. `always` adds to `granted` and calls `onGrant`.
 Rules are `DEFAULT_RULES` overlaid with `config.permission`, then `withRules(agent.permission)`.
 Derived gates share the `granted` set, so "always" survives agent switches.
 
-**File safety** (`context.ts`): `resolvePath` refuses any path outside `ctx.cwd`. `read` records
+**File safety** (`context.ts`): `resolvePath` refuses any path outside `ctx.cwd`, compared after
+resolving symlinks (`realPath`, through the nearest existing ancestor for files not written
+yet), so a link in the repo pointing elsewhere is no way out. `read` records
 each file's mtime in `ctx.read` (`markRead`); `edit` refuses a file not in the map or whose mtime
 changed since. `write`/`edit` call `snapshot.ts` → `record` before writing, then `check.ts` →
 `runChecks`, which runs `config.check` commands for matching globs (with `$FILE` substituted) and
@@ -52,6 +59,10 @@ returns only failures; it re-marks the file read so a formatter does not trip th
 **Undo** (`snapshot.ts`): the UI calls `beginGroup` before a turn and `endGroup` after; each
 group stores each file's first pre-write content (`null` = did not exist). `undo`/`redo`
 restore a group and push its inverse.
+
+**Foreground `bash`** (`bash.ts`): spawns `bash -c` detached, i.e. in its own process group, and
+on timeout (capped at `MAX_TIMEOUT`, 10 min) or the turn's `abortSignal` (Esc) sends `SIGKILL` to
+the whole group, so a command's children die with it.
 
 **Background jobs** (`background.ts`): `bash` with `background: true` → `startBackground`
 spawns `bash -c` with stdout/stderr to a log file; `bash_output` reads it and can kill.
@@ -91,22 +102,24 @@ spawns `bash -c` with stdout/stderr to a log file; `bash_output` reads it and ca
 | `read` | `filePath`, `offset?`, `limit?` | none | 2000 lines, 2000 chars/line |
 | `write` | `filePath`, `content` | `write` / path | runs checks |
 | `edit` | `filePath`, `oldString?`, `newString?`, `replaceAll?`, `edits?[]` | `edit` / path, diff | must have read; runs checks |
-| `bash` | `command`, `description?`, `timeout?` (ms, default 120000), `background?` | `bash` / command | 60k chars per stream |
+| `bash` | `command`, `description?`, `timeout?` (ms, default 120000, max 600000), `background?` | `bash` / command | 60k chars per stream |
 | `bash_output` | `id`, `kill?` | none | 30k chars |
 | `glob` | `pattern`, `path?` | none | 200 results |
 | `grep` | `pattern`, `path?`, `include?` | none | 200 lines, rg `--max-count 20` per file |
 | `list` | `path?`, `depth?` (default 2) | none | 400 entries, hides dotfiles |
 | `todo` | `todos?[{text, status}]` | none | in memory per session |
-| `webfetch` | `url` (http/https) | `webfetch` / URL | 20 s, 40k chars |
+| `webfetch` | `url` (http/https) | `webfetch` / URL, again for every redirect hop | 20 s total, 5 redirects, 40k chars |
 | `engineering_calc` | `formula?`, `inputs?`, `search?` | none | — |
 | `ask` | `question`, `options[2..6]` | none | interactive only |
 | `task` | `agent`, `prompt`, `description` | none | depth ≤ 1 |
-| `find_item` | `item?` | none (see Gotchas) | paired + interactive only |
+| `find_item` | `item?` | `find_item` / item name | paired + interactive only |
 | `tool_search` | `names?[]`, `query?` | none | only when tools are deferred |
 
-**Default permission rules** (`DEFAULT_RULES`): `write`, `edit`, `bash`, `mcp`, `webfetch` →
-`ask`; `task` → `allow`; anything unlisted → `allow`. Config: `permission` (e.g.
-`"bash:git ": "allow"`, `"mcp:github_": "allow"`, `"webfetch:https://docs.": "allow"`), agent
+**Default permission rules** (`DEFAULT_RULES`): `write`, `edit`, `bash`, `mcp`, `webfetch`,
+`code_project`, `find_item` → `ask`; `task` → `allow`; anything unlisted → `allow`. A test
+(`DEFAULT_RULES` in `tools.test.ts`) fails when a built-in tool is neither in `DEFAULT_RULES` nor
+in its list of tools that are safe to run unasked. Config: `permission` (e.g.
+`"bash:git ": "allow"`, `"mcp:github_": "allow"`, `"webfetch:https://docs.example.com/": "allow"`), agent
 `permission`, agent `tools`/`defaultTools`, `check`, `lazyTools`, `vision.threshold`.
 
 **Env passed to child processes**: `bash`, background jobs and checks run with `JARVIS=1`.
@@ -130,9 +143,11 @@ spawns `bash -c` with stdout/stderr to a log file; `bash_output` reads it and ca
 
 ## Gotchas
 - Only gated calls can be refused. Built-ins are exempt from `gateTools`, so a built-in that does
-  not call `ctx.gate.check` itself is never gated. `find_item` is one: its comment says the gate
-  stands in front of it, but it has no `gate.check` and is exempt, so it opens the camera
-  unprompted. `task` likewise never checks, so a `task` rule in config has no effect.
+  not call `ctx.gate.check` itself is never gated. `task` never checks, so a `task` rule in config
+  has no effect.
+- `edit` replaces with a function (`() => newString`), because a string replacement expands
+  `$&`, `$$` and `$'`.
+- Foreground `bash` output is buffered whole, then clipped (`ponytail:` in `bash.ts`).
 - `bash_output` with `kill: true` is ungated.
 - Custom tools (`.jarvis/tools`) gate with their own name, which falls through to `allow` unless
   configured.
@@ -154,7 +169,7 @@ Run from `tui/`: `bun test`.
 
 | Test | Covers |
 |---|---|
-| `tui/test/tools.test.ts` | `portableSchemas`, `resolvePath`, `ask`, `edit`, `write`, stale reads, multi-edit, `check`, `todo`, `webfetch`, `bash`, `glob`/`grep`, `resolvePermission`, gate observe, `filterTools` (plus blueprint tools) |
+| `tui/test/tools.test.ts` | `portableSchemas`, `resolvePath` (incl. symlink escape), `ask`, `edit` (incl. `$` sequences), `write`, stale reads, multi-edit, `check`, `todo`, `webfetch` (incl. redirect re-gating), `bash` (incl. process-group kill), `glob`/`grep`, `resolvePermission` (incl. chained bash, webfetch origins), `DEFAULT_RULES` coverage, gate observe, `filterTools` (plus blueprint tools) |
 | `tui/test/loadout.test.ts` | `loadout.ts`, `tool_search` |
 | `tui/test/snapshot.test.ts` | `snapshot.ts` undo/redo |
 | `tui/test/mcp.test.ts` | `gateTools` on MCP tools |

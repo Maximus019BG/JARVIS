@@ -315,23 +315,29 @@ allowed) go in `instructions`.
 
 ### Permissions
 
-Every tool that changes something routes through one gate. `write`, `edit` and
-`bash` ask by default.
+Every tool that changes something routes through one gate. `write`, `edit`,
+`bash`, `webfetch`, MCP tools, `code_project` and `find_item` ask by default.
 
 ```jsonc
 {
   "permission": {
     "bash": "ask",
     "bash:git ": "allow",   // longest matching prefix wins
+    "webfetch:https://docs.example.com/": "allow",
     "write": "allow",
     "*": "ask"
   }
 }
 ```
 
+An allowing `bash` prefix never covers a chained command: `bash:git ` allows
+`git status` but still asks for `git status; curl … | sh` (anything with `; & | $`
+backticks, redirects or a newline after the prefix). An allowing `webfetch` prefix
+has to spell out the whole origin, and every redirect is checked again.
+
 `ask` in the TUI prompts with a diff or the command; `y` allows once, `a` allows
 that exact call for the session, `n` rejects and tells the model why. Headless
-runs deny unless you pass `--yes`. Agents can tighten this with their own
+runs and `jarvis work` deny unless you pass `--yes`. Agents can tighten this with their own
 `permission` block.
 
 ### Themes

@@ -116,8 +116,8 @@ export const ExamplePlugin = async ({ directory }: { directory: string }) => {
   void directory
   return {
     "permission.ask": async (input: { tool: string; subject?: string }, output: { status?: string }) => {
-      // Read-only git commands never need approval.
-      if (input.tool === "bash" && /^git (status|diff|log)\\b/.test(input.subject ?? "")) {
+      // Read-only git commands never need approval. Chained ones (\`git status; curl … | sh\`) still do.
+      if (input.tool === "bash" && /^git (status|diff|log)\\b[^;&|$\`<>\\n]*$/.test(input.subject ?? "")) {
         output.status = "allow"
       }
     },

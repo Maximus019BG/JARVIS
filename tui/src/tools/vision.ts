@@ -7,10 +7,10 @@ import { ToolError, type ToolContext } from "./context.ts"
 
 /**
  * Looks through the user's webcam for items they taught with `/learn`. One photo, matched on
- * the paired cloud and dropped there. The permission gate stands in front of it like any
- * tool, which is the point: this is the agent asking to use the camera.
+ * the paired cloud and dropped there. It asks first (`find_item` is "ask" in `DEFAULT_RULES`):
+ * a built-in tool is exempt from the generic gate, so it has to call it itself.
  */
-export const findItemTool = (_ctx: ToolContext, options: { threshold?: number } = {}) =>
+export const findItemTool = (ctx: ToolContext, options: { threshold?: number } = {}) =>
   tool({
     description: [
       "Look through the user's camera for physical items they have taught JARVIS (with /learn),",
@@ -23,6 +23,12 @@ export const findItemTool = (_ctx: ToolContext, options: { threshold?: number } 
     execute: async ({ item }) => {
       const credentials = readCredentials()
       if (!credentials) throw new ToolError("this device is not paired, and items are found on the paired cloud")
+      await ctx.gate.check({
+        tool: "find_item",
+        title: item ? `look for ${item} with the camera` : "look around with the camera",
+        detail: `take one photo and send it to ${credentials.baseUrl} to match taught items`,
+        subject: item ?? "",
+      })
       const feed = openFeed()
       try {
         const shot = await snapshot(feed)

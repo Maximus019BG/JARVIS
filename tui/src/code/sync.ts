@@ -155,7 +155,8 @@ export async function clone(cwd: string, name: string): Promise<string> {
   const wanted = safeName(name)
   const listed = (await listCloud(credentials)).find((project) => project.name === wanted || project.id === name)
   if (!listed) throw new Error(`no cloud project "${wanted}" on this workstation`)
-  const dir = join(cwd, listed.name)
+  // The listed name comes from the server; `safeName` refuses a path-shaped one (`../../x`).
+  const dir = join(cwd, safeName(listed.name))
   if (existsSync(dir) && readdirSync(dir).length > 0) throw new Error(`${dir} already exists and is not empty`)
   mkdirSync(dir, { recursive: true })
   git(dir, ["init", "--quiet", "--initial-branch=main"])

@@ -108,7 +108,8 @@ at `/config/jarvis`, and a `jarvis-data` volume at `/data`.
 
 **`.jarvis/` files created by `init`**: `package.json`, `tsconfig.json`, `.gitignore`,
 `agents/example.md`, `commands/example.md`, `skills/example/SKILL.md`, `tools/example.ts`,
-`plugins/example.ts`.
+`plugins/example.ts`. The example plugin auto-allows `git status|diff|log` but not a chained
+command, the same rule `permission.ts` → `prefixMatches` applies to config prefixes.
 
 **install.sh flags**: `--prefix <dir>`, `--pi`, `--service [dir]`, `--cloud <url>`, `-y/--yes`,
 `--uninstall`, `-h/--help`.

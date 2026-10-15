@@ -22,7 +22,8 @@ function apply(content: string, { oldString, newString, replaceAll = false }: Re
   if (occurrences > 1 && !replaceAll) {
     throw new ToolError(`oldString appears ${occurrences} times in ${name}; add more context or set replaceAll`)
   }
-  return replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString)
+  // A function replacement, because a string one expands `$&`, `$$` and `$'` in newString.
+  return replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, () => newString)
 }
 
 export const editTool = (ctx: ToolContext) =>

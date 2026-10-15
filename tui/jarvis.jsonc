@@ -35,7 +35,7 @@
     "edit": "ask",
     "bash": "ask"
     // "mcp" and "webfetch" default to "ask". Prefixes narrow them:
-    // "bash:git ": "allow", "mcp:github_": "allow", "webfetch:https://docs.": "allow"
+    // "bash:git ": "allow", "mcp:github_": "allow", "webfetch:https://docs.example.com/": "allow"
   },
 
   // Run after a matching file is written; failures go back to the model. This is how

@@ -4,6 +4,20 @@ import { clip, ToolError, type ToolContext } from "./context.ts"
 
 const MAX_OUTPUT = 40_000
 const TIMEOUT_MS = 20_000
+const MAX_REDIRECTS = 5
+
+function parseUrl(url: string): URL {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new ToolError(`not a valid URL: ${url}`)
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ToolError(`only http and https are supported, got ${parsed.protocol}`)
+  }
+  return parsed
+}
 
 /**
  * Enough HTML stripping to read documentation, and no more. A real HTML-to-markdown
@@ -35,28 +49,23 @@ export const webfetchTool = (ctx: ToolContext) =>
       url: z.string().describe("Absolute http(s) URL"),
     }),
     execute: async ({ url }) => {
-      let parsed: URL
-      try {
-        parsed = new URL(url)
-      } catch {
-        throw new ToolError(`not a valid URL: ${url}`)
-      }
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new ToolError(`only http and https are supported, got ${parsed.protocol}`)
-      }
-
-      // The URL is the subject, so `"webfetch:https://docs."` in the config allows a
-      // family of hosts the same way `"bash:git "` allows a family of commands.
-      await ctx.gate.check({ tool: "webfetch", title: `fetch ${parsed.host}`, detail: url, subject: url })
-
+      let target = parseUrl(url)
+      const signal = AbortSignal.timeout(TIMEOUT_MS)
       let response: Response
-      try {
-        response = await fetch(parsed, {
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-          headers: { "user-agent": "jarvis" },
-        })
-      } catch (error) {
-        throw new ToolError(`fetch failed: ${error instanceof Error ? error.message : String(error)}`)
+      for (let hop = 0; ; hop++) {
+        // The URL is the subject, so `"webfetch:https://docs.example.com/"` in the config allows
+        // a host. Redirects are followed by hand and checked again, so an allowed host can't
+        // bounce the request to one that isn't.
+        await ctx.gate.check({ tool: "webfetch", title: `fetch ${target.host}`, detail: target.href, subject: target.href })
+        try {
+          response = await fetch(target, { signal, headers: { "user-agent": "jarvis" }, redirect: "manual" })
+        } catch (error) {
+          throw new ToolError(`fetch failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        const location = response.headers.get("location")
+        if (response.status < 300 || response.status >= 400 || !location) break
+        if (hop >= MAX_REDIRECTS) throw new ToolError(`more than ${MAX_REDIRECTS} redirects fetching ${url}`)
+        target = parseUrl(new URL(location, target).href)
       }
       if (!response.ok) throw new ToolError(`${response.status} ${response.statusText} for ${url}`)
 

@@ -1,5 +1,6 @@
+import { lstatSync, realpathSync } from "node:fs"
 import { stat } from "node:fs/promises"
-import { isAbsolute, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { PermissionGate } from "../permission.ts"
 
 export class ToolError extends Error {}
@@ -46,11 +47,36 @@ export type ToolContext = {
   ask?: (question: string, options: string[]) => Promise<string>
 }
 
-/** Resolves a tool-supplied path against the workspace and refuses to escape it. */
+/**
+ * `path` with every symlink resolved. A path that doesn't exist yet (a file about to be
+ * written) resolves through its nearest existing ancestor.
+ */
+function realPath(path: string): string {
+  const missing: string[] = []
+  let dir = path
+  while (!lstatSync(dir, { throwIfNoEntry: false })) {
+    const parent = dirname(dir)
+    if (parent === dir) break
+    missing.unshift(basename(dir))
+    dir = parent
+  }
+  try {
+    return join(realpathSync(dir), ...missing)
+  } catch {
+    throw new ToolError(`cannot resolve ${path} (a dangling symlink?)`)
+  }
+}
+
+/**
+ * Resolves a tool-supplied path against the workspace and refuses to escape it. Compared
+ * after resolving symlinks, so a link in the repo (`docs -> ~/.ssh`) is no way out.
+ */
 export function resolvePath(ctx: ToolContext, path: string): string {
   const absolute = isAbsolute(path) ? resolve(path) : resolve(ctx.cwd, path)
-  const rel = relative(ctx.cwd, absolute)
-  if (rel.startsWith("..")) throw new ToolError(`path is outside the workspace: ${path}`)
+  const rel = relative(realPath(ctx.cwd), realPath(absolute))
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new ToolError(`path is outside the workspace: ${path}`)
+  }
   return absolute
 }
 
