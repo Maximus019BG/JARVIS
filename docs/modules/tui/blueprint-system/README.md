@@ -52,7 +52,7 @@ app compile it through the `@blueprint/*` alias (see [web/blueprints](../../web/
 | `tui/src/blueprint/place.ts` | Turns one symbol placement into `add` ops plus a `Part` record: grid snap, id prefix, transformed ports and pin directions. |
 | `tui/src/blueprint/arrange.ts` | `arrangeParts`: snap parts to the 2.54 mm grid and push overlapping ones apart. Returns moves, not a document. |
 | `tui/src/blueprint/autowire.ts` | `autowireOps`: three fixed rules that draw the connections a drawing already implies. `voltsOf` stops two rail voltages being joined. |
-| `tui/src/blueprint/route.ts` | Orthogonal wire routing (`routeWire`), port lookup (`portAt`, `dirAt`, `pinAt`), the reroute pass for stale nets and the junction-dot pass. |
+| `tui/src/blueprint/route.ts` | Orthogonal wire routing (`routeWire`), port lookup (`portAt`, `dirAt`), the reroute pass for stale nets and the junction-dot pass. |
 | `tui/src/blueprint/labels.ts` | `placeLabelOps`: moves part labels off parts, wires and each other. |
 | `tui/src/blueprint/merge.ts` | `merge3`: three-way merge keyed by entity id. Keeps both versions on a conflict. |
 | `tui/src/blueprint/diff.ts` | `diffDocs` and `summarise`: entity-level diff. The same primitive `merge3` uses. |

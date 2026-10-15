@@ -69,10 +69,13 @@ describe("simplify", () => {
     ])
   })
 
+  // A zigzag keeps every point, so the split depth is the stroke length, which is what a
+  // recursive version can't survive. It is also Ramer–Douglas–Peucker's quadratic worst case
+  // (~2×10⁸ distance checks): ~4 s alone, past bun's 5 s default under a full parallel run.
   test("handles a stroke long enough to blow a recursive implementation", () => {
     const points = Array.from({ length: 20000 }, (_, i): [number, number] => [i, i % 2])
     expect(() => simplify(points, 0.1)).not.toThrow()
-  })
+  }, 30_000)
 })
 
 describe("fitStroke auto-classification", () => {

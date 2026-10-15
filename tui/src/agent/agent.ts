@@ -502,8 +502,3 @@ export async function run(options: RunOptions): Promise<RunResult> {
     })
   }
 }
-
-/** The model an agent will actually use, for display before a run starts. */
-export function effectiveModel(config: Config, agent: Agent, override?: string): string {
-  return override ?? agent.model ?? defaultModelID(config)
-}

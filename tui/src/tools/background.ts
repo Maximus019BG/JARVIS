@@ -51,13 +51,6 @@ const state = (job: Job) =>
  */
 export const startedBackground = () => jobs.size > 0
 
-/** Running jobs, for the status line. */
-export function runningJobs(): number {
-  let count = 0
-  for (const job of jobs.values()) if (alive(job)) count++
-  return count
-}
-
 /** Kills everything still running, so quitting jarvis does not orphan a dev server. */
 export function killBackground() {
   for (const job of jobs.values()) if (alive(job)) job.proc.kill()

@@ -352,17 +352,6 @@ export function dirAt(doc: BlueprintDoc, address: string): Pt {
   return dirsOf(part)[index - 1] ?? [0, 0]
 }
 
-/** The pin name of the port a `"REF.PORT"` address names, if the symbol declares one. */
-export function pinAt(doc: BlueprintDoc, address: string): string | undefined {
-  const part = partOf(doc, address)
-  if (!part?.pins) return undefined
-  return part.pins[Number(address.slice(address.lastIndexOf(".") + 1)) - 1]
-}
-
-/** Whether a net has either end on any of these refs. */
-export const netTouches = (net: Net, refs: ReadonlySet<string>): boolean =>
-  refs.has(refOf(net.from).toLowerCase()) || refs.has(refOf(net.to).toLowerCase())
-
 /**
  * The route for one net as the drawing stands, ignoring whatever polyline currently draws
  * it — so re-routing a net does not try to avoid its own old path.

@@ -75,7 +75,7 @@ spawns `bash -c` with stdout/stderr to a log file; `bash_output` reads it and ca
 | `tui/src/tools/index.ts` | `builtinTools`, `gateTools`, `filterTools`, `portableSchema(s)`, re-exports `ToolError`, `MAX_DEPTH` |
 | `tui/src/tools/context.ts` | `ToolContext`, `ToolError`, `resolvePath`, `markRead`, `displayPath`, `clip` |
 | `tui/src/tools/ask.ts` | `ask`: multiple-choice question to the user |
-| `tui/src/tools/background.ts` | `bash_output`, `startBackground`, `startedBackground`, `runningJobs`, `killBackground` |
+| `tui/src/tools/background.ts` | `bash_output`, `startBackground`, `startedBackground`, `killBackground` |
 | `tui/src/tools/bash.ts` | `bash` |
 | `tui/src/tools/calc.ts` | `engineering_calc` over [engineering](../engineering/README.md) formulas |
 | `tui/src/tools/check.ts` | `runChecks`: post-write `config.check` commands |
@@ -87,7 +87,7 @@ spawns `bash -c` with stdout/stderr to a log file; `bash_output` reads it and ca
 | `tui/src/tools/read.ts` | `read` |
 | `tui/src/tools/snapshot.ts` | Per-session undo/redo: `beginGroup`, `record`, `endGroup`, `undo`, `redo`, `clearSnapshots` |
 | `tui/src/tools/task.ts` | `task` (subagent delegation), `MAX_DEPTH = 1` |
-| `tui/src/tools/todo.ts` | `todo`, `clearTodos` |
+| `tui/src/tools/todo.ts` | `todo` |
 | `tui/src/tools/tool-search.ts` | `tool_search` |
 | `tui/src/tools/vision.ts` | `find_item`: webcam snapshot matched on the paired cloud |
 | `tui/src/tools/webfetch.ts` | `webfetch`, `textFromHtml` |
@@ -156,9 +156,9 @@ in its list of tools that are safe to run unasked. Config: `permission` (e.g.
 - `edit` on a file the agent wrote itself works because `write` calls `markRead`.
 - `runChecks` runs per write, so a project-wide typecheck repeats on multi-file turns
   (`ponytail:` in `check.ts`).
-- Undo stacks die with the process (`ponytail:` in `snapshot.ts`). `clearSnapshots`,
-  `clearTodos` and `runningJobs` have no production callers, so those maps grow for the life of
-  the process and the status line does not show job counts.
+- Undo stacks die with the process (`ponytail:` in `snapshot.ts`). `clearSnapshots` has no
+  production callers, and nothing ever removes a session's todo list or a background job, so the
+  snapshot, todo and job maps grow for the life of the process. The status line shows no job count.
 - Deferred loading must never break a turn: on the last unknown-tool retry `agent.ts` calls
   `loadout.loadAll()`. With `lazyTools: false` the request is identical to before loadouts.
 - `tool_search`'s catalog includes loaded tools too, so its description never changes between

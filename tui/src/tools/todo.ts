@@ -40,8 +40,3 @@ export const todoTool = (ctx: ToolContext) =>
       return render(lists.get(ctx.sessionID) ?? [])
     },
   })
-
-/** Dropped when a session ends so the map cannot grow without bound. */
-export function clearTodos(sessionID: string) {
-  lists.delete(sessionID)
-}

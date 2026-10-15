@@ -226,9 +226,6 @@ export function cropToTensor(
   return out
 }
 
-/** Mean confidence of the 21 landmarks, when the model reports one. */
-export const handednessOf = (value: number): "left" | "right" => (value > 0.5 ? "right" : "left")
-
 /** One frame of hand motion: palm centre x, y and hand span, all in camera pixels. */
 export type TrailPoint = [number, number, number]
 

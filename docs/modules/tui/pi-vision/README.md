@@ -1,6 +1,6 @@
 # Pi vision
 
-Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Turns a camera into hands, and hands into actions. It drives three features: drawing on a

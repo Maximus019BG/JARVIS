@@ -1,6 +1,6 @@
 # Blueprint editing
 
-Part of [Blueprint system](README.md). Code: `tui/src/blueprint/{ops,place,arrange,autowire,route,labels,merge,fit,check,pick,tools,symbol-tool}.ts` · Verified: 2026-10-13 @ c292f2f
+Part of [Blueprint system](README.md). Code: `tui/src/blueprint/{ops,place,arrange,autowire,route,labels,merge,fit,check,pick,tools,symbol-tool}.ts` · Verified: 2026-10-14 @ c9135de
 
 ## Ops
 
@@ -117,7 +117,7 @@ Other exports:
 | Export | Use |
 |---|---|
 | `portAt(doc, "R1.2")` | Port coordinate. Errors list the refs that exist, or the valid port range. |
-| `dirAt`, `pinAt`, `refOf`, `netTouches` | Lookups on a `"REF.PORT"` address or net. |
+| `dirAt`, `refOf` | Lookups on a `"REF.PORT"` address. |
 | `obstaclesFor(doc)` | Every part's footprint grown by `GRID/2`, including the two being wired. |
 | `wireSegments(doc, exclude?)` | Every run of every `w<n>` polyline. |
 | `routeNet(doc, net)` | Routes one net ignoring its own current wire. |
