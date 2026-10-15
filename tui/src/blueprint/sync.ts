@@ -33,6 +33,8 @@ export async function call<T>(
       ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
       ...rest.headers,
     },
+    // Longer than the small JSON calls: a push carries every new commit.
+    signal: rest.signal ?? AbortSignal.timeout(60_000),
   })
   const text = await response.text()
   const body: unknown = text ? JSON.parse(text) : {}

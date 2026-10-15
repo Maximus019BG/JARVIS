@@ -48,6 +48,7 @@ export async function requestCode(
   body: { name: string; email?: string },
 ): Promise<CodeResponse> {
   const response = await fetch(`${normaliseBaseUrl(baseUrl)}/api/device/code`, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -115,7 +116,9 @@ export async function pollForToken(
     options.onTick?.(Math.max(0, Math.round((deadline - now()) / 1000)))
     await sleep(interval, options.signal)
 
+    const timeout = AbortSignal.timeout(30_000)
     const polled = await fetch(`${base}/api/device/token`, {
+      signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ deviceCode: code.deviceCode }),

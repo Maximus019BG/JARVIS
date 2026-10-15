@@ -1,6 +1,6 @@
 # Agent
 
-Code: `tui/src/agent/` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/agent/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 The agent loop and everything around a turn: resolving agents and models, building the system
@@ -48,8 +48,8 @@ sorted so it is cache-stable), then `<instructions>` from `~/.config/jarvis/JARV
 **Providers** (`provider.ts`): a provider entry names an npm package. `importPackage` uses the
 `BUNDLED` static imports (`@ai-sdk/openai-compatible`, `anthropic`, `openai`, `google`), else
 imports it, else `bun add <pkg> zod` into `<dataDir>/packages`. `pickFactory` takes
-`provider.export` or the first `create*` export. Factories are cached per provider id;
-`forgetProvider` drops them. `@ai-sdk/openai-compatible` models are wrapped to strip reasoning
+`provider.export` or the first `create*` export. Factories are cached per provider id (a
+failed load is evicted, so the next turn retries); `forgetProvider` drops them. `@ai-sdk/openai-compatible` models are wrapped to strip reasoning
 parts from outgoing assistant messages (Groq rejects them). Missing `contextLimit`/`cost` are
 filled from models.dev via `catalog.ts` → `modelInfo`.
 
@@ -69,12 +69,13 @@ stays on disk for `exportMarkdown`. The UI compacts automatically at 85% of `con
 - `remote-approval.ts` → `remoteAnswer`: posts the permission request, polls until answered,
   deadline or abort, then always deletes it. Returns only `once`/`reject`, never decides itself.
 - `remote-prompt.ts` → `claimPrompt`: claims one queued web prompt for the session.
-- `session-sync.ts` → `pushSession`/`pushSessions`: upserts transcripts plus metric totals.
+- `session-sync.ts` → `pushSession`/`pushSessions`: upserts transcripts plus metric totals. Each
+  request times out after 30 s.
 
 ## Files
 | File | Responsibility |
 |---|---|
-| `tui/src/agent/agent.ts` | `run` (the turn loop, retries, subagent spawn), `AgentEvent`, `errorMessage`, `effectiveModel` |
+| `tui/src/agent/agent.ts` | `run` (the turn loop, retries, subagent spawn), `AgentEvent`, `errorMessage` |
 | `tui/src/agent/agent-def.ts` | Built-in agents, markdown/config agent loading: `loadAgents`, `resolveAgent`, `spawnableAgents`, `agentPrompt`, `DEFAULT_AGENT` |
 | `tui/src/agent/attach.ts` | `attach`: turns `@image.png` mentions into base64 file parts (5 MB cap, workspace only) |
 | `tui/src/agent/catalog.ts` | models.dev cache: `modelInfo`, `catalogModels`, `catalogKey` |

@@ -131,6 +131,10 @@ function loadProvider(providerID: string, config: ProviderConfig): Promise<Provi
     return created as Provider
   })()
   loaded.set(providerID, promise)
+  // A failed load (offline `bun add`, a typo in `npm`) must not stick until `/provider change`.
+  promise.catch(() => {
+    if (loaded.get(providerID) === promise) loaded.delete(providerID)
+  })
   return promise
 }
 

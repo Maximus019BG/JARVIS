@@ -1,6 +1,6 @@
 # Blueprint system
 
-Code: `tui/src/blueprint/` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/blueprint/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 The engine behind 2D technical drawings ("blueprints"): the document format, every edit
@@ -33,7 +33,8 @@ Topic pages:
 4. **Storage is a git repo.** `store.ts` → `writeDoc` writes `<name>.blueprint.json` and commits
    it. History, `docAt` and diffs read git.
 5. **Sync mirrors git to the web.** `sync.ts` → `push` and `pull` talk to `/api/blueprint/push` and
-   `/api/blueprint/pull` with the device token from `credentials.ts`. A diverged history is
+   `/api/blueprint/pull` with the device token from `credentials.ts` (`call` times out after 60 s
+   unless the caller passes its own `signal`). A diverged history is
    three-way merged with `merge.ts` → `merge3`, which never drops geometry.
 6. **Agent tools wrap all of it.** `tools.ts` → `blueprintTools` returns six AI-SDK tools. Every
    writing tool applies the ops *before* asking for permission, so a batch that fails never

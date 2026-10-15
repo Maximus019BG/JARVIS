@@ -20,6 +20,8 @@ async function call(credentials: Credentials, method: string, route: string, bod
       ...(body === undefined ? {} : { "content-type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    // A half-open connection would otherwise stall this forever.
+    signal: AbortSignal.timeout(30_000),
   })
   if (!response.ok) throw new Error(`${method} ${route} failed: ${response.status}`)
   return await response.json()
