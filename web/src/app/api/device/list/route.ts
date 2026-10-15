@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const owned = (
     await db.select().from(workstation).where(eq(workstation.id, workstationId)).limit(1)
   )[0];
-  if (!owned || owned.userId !== session.user.id) {
+  if (owned?.userId !== session.user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -142,7 +142,7 @@ export function AccountTwoFactorSection() {
       setQrDataUrl(null);
 
       // Refresh session to get updated twoFactorEnabled status
-      refetchSession();
+      void refetchSession();
 
       toast.success("Two-factor authentication enabled successfully");
     } catch (e) {
@@ -191,7 +191,7 @@ export function AccountTwoFactorSection() {
       setState({ setupInProgress: false });
       setPassword("");
       verifyForm.reset();
-      refetchSession();
+      void refetchSession();
 
       toast.success("Two-factor authentication disabled");
     } catch (e) {

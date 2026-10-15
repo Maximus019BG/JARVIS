@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
   const deviceRows = await db.select().from(device).where(eq(device.id, link.approvedDeviceId)).limit(1);
   const paired = deviceRows[0];
-  if (!paired || paired.status !== "active") {
+  if (paired?.status !== "active") {
     await db.delete(deviceLink).where(eq(deviceLink.userCode, link.userCode));
     return pending("access_denied");
   }

@@ -29,7 +29,7 @@ export interface BlueprintFilters {
 }
 
 export const hasActiveBlueprintFilters = (f: BlueprintFilters) =>
-  Boolean(f.search || f.syncStatus || f.modifiedWithinDays);
+  Boolean(f.search) || Boolean(f.syncStatus) || Boolean(f.modifiedWithinDays);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -85,6 +85,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+interface BlueprintStats {
+  total: number;
+  active: number;
+  byWorkstation: Record<string, number>;
+  recentActivity: Array<{ date: string; count: number }>;
+}
+
+interface RecentBlueprint {
+  id: string;
+  name: string;
+  workstationId: string;
+  workstationName: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
 export const blueprintsApi = {
   // Every blueprint in a workstation; the page searches/sorts/pages them with applyBlueprintFilters.
   listBlueprints: async (workstationId: string): Promise<Blueprint[]> => {
@@ -101,7 +118,10 @@ export const blueprintsApi = {
     units: "mm" | "cm" | "in" | "px";
     viewBox: [number, number, number, number];
   }): Promise<{ id: string; name: string; createdBy: string }> => {
-    const response = await api.post("/blueprint/create", input);
+    const response = await api.post<{ id: string; name: string; createdBy: string }>(
+      "/blueprint/create",
+      input,
+    );
     return response.data;
   },
 
@@ -112,36 +132,24 @@ export const blueprintsApi = {
 
   // Clone a blueprint. The copy starts its own history at v1.
   cloneBlueprint: async (id: string, name?: string): Promise<{ id: string; name: string }> => {
-    const response = await api.post(`/blueprint/${id}/clone`, name ? { name } : {});
+    const response = await api.post<{ id: string; name: string }>(
+      `/blueprint/${id}/clone`,
+      name ? { name } : {},
+    );
     return response.data;
   },
 
   // Get blueprint statistics
-  getBlueprintStats: async (): Promise<{
-    total: number;
-    active: number;
-    byWorkstation: Record<string, number>;
-    recentActivity: Array<{ date: string; count: number }>;
-  }> => {
-    const response = await api.get("/workstation/blueprint/stats");
+  getBlueprintStats: async (): Promise<BlueprintStats> => {
+    const response = await api.get<BlueprintStats>("/workstation/blueprint/stats");
     return response.data;
   },
 
   // Get recent blueprints across all workstations
   getRecentBlueprints: async (
     limit = 10,
-  ): Promise<
-    Array<{
-      id: string;
-      name: string;
-      workstationId: string;
-      workstationName: string;
-      createdBy: string;
-      createdAt: string;
-      updatedAt: string | null;
-    }>
-  > => {
-    const response = await api.get(
+  ): Promise<RecentBlueprint[]> => {
+    const response = await api.get<RecentBlueprint[]>(
       `/workstation/blueprint/recent?limit=${limit}`,
     );
     return response.data;

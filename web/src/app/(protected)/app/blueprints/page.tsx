@@ -40,10 +40,20 @@ export default function BlueprintsPage() {
   const router = useRouter();
   const { data: activeWorkstation } = useActiveWorkstation();
 
+  const workstationId = activeWorkstation?.id;
+
   // State management
-  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Refresh/delete/clone bump this; with the workstation it names the list we want.
+  const [reloadCount, setReloadCount] = useState(0);
+  const requestKey = `${workstationId}:${reloadCount}`;
+  const [result, setResult] = useState<{
+    key: string;
+    blueprints: Blueprint[];
+    error: string | null;
+  } | null>(null);
+  // Loading until the result in hand answers the current request.
+  const loading = result?.key !== requestKey;
+  const error = loading ? null : (result?.error ?? null);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(
     null,
@@ -65,8 +75,8 @@ export default function BlueprintsPage() {
   });
 
   const filtered = useMemo(
-    () => applyBlueprintFilters(blueprints, filters),
-    [blueprints, filters],
+    () => applyBlueprintFilters(result?.blueprints ?? [], filters),
+    [result, filters],
   );
   const totalCount = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -75,40 +85,43 @@ export default function BlueprintsPage() {
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Load stats
-  const loadStats = React.useCallback(async () => {
-    try {
-      const statsData = await blueprintsApi.getBlueprintStats();
-      setStats(statsData);
-    } catch (error) {
-      console.error("Error loading blueprint stats:", error);
-      // Don't show error toast for stats, just silently fail
-    }
-  }, []);
+  const loadStats = React.useCallback(
+    () =>
+      blueprintsApi.getBlueprintStats().then(
+        (statsData) => setStats(statsData),
+        (error: unknown) => {
+          console.error("Error loading blueprint stats:", error);
+          // Don't show error toast for stats, just silently fail
+        },
+      ),
+    [],
+  );
 
-  // Load blueprints
-  const loadBlueprints = React.useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      if (!activeWorkstation?.id) {
-        setBlueprints([]);
-        return;
-      }
-
-      setBlueprints(await blueprintsApi.listBlueprints(activeWorkstation.id));
-    } catch (error) {
-      console.error("Error loading blueprints:", error);
-      setError("Failed to load blueprints. Please try again.");
-      toast.error("Failed to load blueprints");
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkstation?.id]);
+  const loadBlueprints = () => setReloadCount((n) => n + 1);
 
   // Effects
   useEffect(() => {
-    void loadBlueprints();
-  }, [loadBlueprints]);
+    if (!workstationId) return;
+    let live = true;
+    blueprintsApi.listBlueprints(workstationId).then(
+      (rows) => {
+        if (live) setResult({ key: requestKey, blueprints: rows, error: null });
+      },
+      (error: unknown) => {
+        if (!live) return;
+        console.error("Error loading blueprints:", error);
+        toast.error("Failed to load blueprints");
+        setResult((prev) => ({
+          key: requestKey,
+          blueprints: prev?.blueprints ?? [],
+          error: "Failed to load blueprints. Please try again.",
+        }));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [workstationId, requestKey]);
 
   useEffect(() => {
     void loadStats();
@@ -151,7 +164,7 @@ export default function BlueprintsPage() {
           toast.success(`Blueprint "${blueprint.name}" deleted`);
           typeToConfirm.close(true);
           setIsDetailModalOpen(false);
-          void loadBlueprints();
+          loadBlueprints();
           void loadStats();
         } catch (error) {
           console.error("Error deleting blueprint:", error);
@@ -168,7 +181,7 @@ export default function BlueprintsPage() {
       // The server picks a free name; sending one here just means two places decide it.
       const clonedBlueprint = await blueprintsApi.cloneBlueprint(blueprint.id);
       toast.success(`Blueprint cloned as "${clonedBlueprint.name}"`);
-      void loadBlueprints(); // Refresh the list
+      loadBlueprints(); // Refresh the list
     } catch (error) {
       console.error("Error cloning blueprint:", error);
       toast.error("Failed to clone blueprint");
@@ -286,7 +299,7 @@ export default function BlueprintsPage() {
     <div className="container mx-auto space-y-8 p-6">
       {/* Header */}
       <div className="flex flex-col space-y-4">
-        <BlueprintsHeader onRefresh={() => loadBlueprints()} />
+        <BlueprintsHeader onRefresh={loadBlueprints} />
         <BlueprintStats stats={stats} />
       </div>
 

@@ -94,12 +94,12 @@ grant nothing; access is decided by the API.
 | `web/src/lib/api/blueprint-versions.ts` | `blueprintVersionsApi` (list, at, diff, restore) and its types. Also holds `devicesApi`, `DeviceRow`, `PendingDeviceRequest` for the devices UI. |
 | `web/src/lib/blueprint-name.ts` | `BLUEPRINT_NAME_RE`, `isValidBlueprintName`, `slugifyBlueprintName`: the same name rule as `tui/src/blueprint/store.ts` → `safeName`. |
 | `web/src/lib/workstation-blueprints.ts` | `useWorkstationBlueprints`: React Query hook returning ids and names for access checkbox lists. |
-| `web/src/app/(protected)/app/blueprints/page.tsx` | Blueprint list page: stats, filters, paged grid (12 per page), create dialog, detail modal, delete with type-to-confirm, clone. |
+| `web/src/app/(protected)/app/blueprints/page.tsx` | Blueprint list page: stats, filters, paged grid (12 per page), create dialog, detail modal, delete with type-to-confirm, clone. Refresh bumps a reload counter; `loading`/`error` are derived from whether the result's request key (workstation + counter) is current. |
 | `web/src/app/(protected)/app/blueprints/[workstationId]/[blueprintId]/[userId]/view/page.tsx` | Renders `BlueprintViewer`. |
 | `web/src/app/(protected)/app/blueprints/[workstationId]/[blueprintId]/[userId]/edit/page.tsx` | Renders `BlueprintEditor`. |
 | `web/src/app/(protected)/app/blueprints/[workstationId]/[blueprintId]/[userId]/history/page.tsx` | Breadcrumbs plus `BlueprintHistory`. |
 | `web/src/app/(protected)/app/blueprints/[workstationId]/[blueprintId]/[userId]/error.tsx` | Error boundary for view, edit and history; shows the message and digest. |
-| `web/src/components/blueprints/canvas.tsx` | `BlueprintCanvas`: the one canvas renderer (view, edit, diff tints, ghost layer, pan/zoom, grid, marquee). Also `hitTest`, `entitiesWithin`, `gridStep`. |
+| `web/src/components/blueprints/canvas.tsx` | `BlueprintCanvas`: the one canvas renderer (view, edit, diff tints, ghost layer, pan/zoom, grid, marquee). Also `hitTest`, `entitiesWithin`, `gridStep`. The fit is computed during render (`fitView`); a user pan/zoom is stored with the `viewBox`/size/`fitKey` it was made for and dropped when those change. |
 | `web/src/components/blueprints/blueprint-editor.tsx` | `BlueprintEditor`: tools, pointer and keyboard handling, side panels, save. |
 | `web/src/components/blueprints/editor/use-editor-doc.ts` | `useEditorDoc`: base document plus op journal, undo/redo, save with `expectedVersion`. |
 | `web/src/components/blueprints/editor/toolbar.tsx` | `EditorToolbar`, `TOOLS` (with lucide icons), `Tool`. |
@@ -108,7 +108,7 @@ grant nothing; access is decided by the API.
 | `web/src/components/blueprints/editor/layers-panel.tsx` | Active layer, visibility, `addLayer` and `setLayer` ops. |
 | `web/src/components/blueprints/editor/check-panel.tsx` | Runs `checkDoc` in the browser on the unsaved document; click a finding to select it. |
 | `web/src/components/blueprints/blueprint-viewer.tsx` | `BlueprintViewer`: read-only canvas with layer toggles and a general check summary. |
-| `web/src/components/blueprints/blueprint-history.tsx` | `BlueprintHistory`: version list, single-version view, two-version diff overlay, restore. |
+| `web/src/components/blueprints/blueprint-history.tsx` | `BlueprintHistory`: version list, single-version view, two-version diff overlay, restore. `busy` is derived (current request vs last settled). |
 | `web/src/components/blueprints/blueprint-create-dialog.tsx` | `BlueprintCreateDialog`: name (slugified), sheet preset (A4, A3, custom) and units with conversion. |
 | `web/src/components/blueprints/blueprint-card.tsx` | `BlueprintCard`: one grid card with its action menu. |
 | `web/src/components/blueprints/blueprint-grid.tsx` | `BlueprintsGrid`: lays out cards. |

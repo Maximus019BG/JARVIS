@@ -11,8 +11,11 @@ export default function HeroSection() {
   const fullText = "JARVIS"
   const fullSubtext = "Job Acceleration Reference Visual Interface System"
 
+  // Flip in a frame callback, not the effect body, so the enter transitions start from the
+  // hidden first render.
   useEffect(() => {
-    setMounted(true)
+    const frame = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(frame)
   }, [])
 
   useEffect(() => {

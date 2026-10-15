@@ -7,11 +7,6 @@ export type ExpressionValue = {
   value: unknown;
 };
 
-export const expressionValueSchema = z.object({
-  mode: z.enum(["literal", "expression"]),
-  value: z.unknown(),
-});
-
 export const coerceExpressionOrValue = <T extends z.ZodTypeAny>(schema: T) =>
   z.union([schema, z.string()]);
 
@@ -38,7 +33,7 @@ export type AutomationNodeType =
   | "log"
   | "agent";
 
-export type NodeRegistryItem<TParams extends Record<string, any>> = {
+export type NodeRegistryItem<TParams extends Record<string, unknown>> = {
   type: AutomationNodeType;
   label: string;
   category: NodeCategory;
@@ -55,7 +50,7 @@ export const nodeRegistry = {
     defaultParams: {},
     paramsSchema: z.object({}).strict(),
     ui: { fields: [] },
-  } satisfies NodeRegistryItem<{}>,
+  } satisfies NodeRegistryItem<Record<string, never>>,
 
   webhookTrigger: {
     type: "webhookTrigger",

@@ -1,7 +1,6 @@
 "use client";
 
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
 "use client";
 
 import * as React from "react";
@@ -117,18 +116,12 @@ function useAnimateIconContext() {
   return context;
 }
 
-function composeEventHandlers<E extends React.SyntheticEvent<unknown>>(
-  theirs?: (event: E) => void,
-  ours?: (event: E) => void,
-) {
-  return (event: E) => {
-    theirs?.(event);
-    ours?.(event);
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyProps = Record<string, any>;
+type ChildHandlers = {
+  onMouseEnter?: React.MouseEventHandler<HTMLElement>;
+  onMouseLeave?: React.MouseEventHandler<HTMLElement>;
+  onPointerDown?: React.PointerEventHandler<HTMLElement>;
+  onPointerUp?: React.PointerEventHandler<HTMLElement>;
+};
 
 function AnimateIcon({
   asChild = false,
@@ -152,6 +145,8 @@ function AnimateIcon({
 
   const [localAnimate, setLocalAnimate] = React.useState<boolean>(() => {
     if (animate === undefined || animate === false) return false;
+    // In-view mode starts out of view, which stops the animation.
+    if (animateOnView) return false;
     return delay <= 0;
   });
   const [currentAnimation, setCurrentAnimation] = React.useState<
@@ -173,49 +168,59 @@ function AnimateIcon({
     runGenRef.current++;
   }, []);
 
-  const startAnimation = React.useCallback(
+  /**
+   * The ref half of start (`trigger` truthy) and stop: invalidate the running loop, clear
+   * timers, and arm the start delay. The state half is set by the caller, so the prop and
+   * in-view triggers below can set state while rendering and run this after commit.
+   */
+  const armAnimation = React.useCallback(
     (trigger: TriggerProp) => {
-      const next = typeof trigger === "string" ? trigger : animation;
       bumpGeneration();
       if (delayRef.current) {
         clearTimeout(delayRef.current);
         delayRef.current = null;
       }
-      setCurrentAnimation(next);
-      if (delay > 0) {
-        setLocalAnimate(false);
+      if (!trigger && loopDelayRef.current) {
+        clearTimeout(loopDelayRef.current);
+        loopDelayRef.current = null;
+      }
+      if (trigger && delay > 0) {
         delayRef.current = setTimeout(() => {
           setLocalAnimate(true);
         }, delay);
-      } else {
-        setLocalAnimate(true);
       }
     },
-    [animation, delay, bumpGeneration],
+    [delay, bumpGeneration],
+  );
+
+  const startAnimation = React.useCallback(
+    (trigger: TriggerProp) => {
+      armAnimation(trigger);
+      setCurrentAnimation(typeof trigger === "string" ? trigger : animation);
+      setLocalAnimate(delay <= 0);
+    },
+    [animation, delay, armAnimation],
   );
 
   const stopAnimation = React.useCallback(() => {
-    bumpGeneration();
-    if (delayRef.current) {
-      clearTimeout(delayRef.current);
-      delayRef.current = null;
-    }
-    if (loopDelayRef.current) {
-      clearTimeout(loopDelayRef.current);
-      loopDelayRef.current = null;
-    }
+    armAnimation(false);
     setLocalAnimate(false);
-  }, [bumpGeneration]);
+  }, [armAnimation]);
 
   React.useEffect(() => {
     activeRef.current = localAnimate;
   }, [localAnimate]);
 
-  React.useEffect(() => {
-    if (animate === undefined) return;
+  // Following the `animate` prop: state is adjusted during render, timers after commit.
+  const [prevAnimate, setPrevAnimate] = React.useState(animate);
+  if (prevAnimate !== animate) {
+    setPrevAnimate(animate);
     setCurrentAnimation(typeof animate === "string" ? animate : animation);
-    if (animate) startAnimation(animate);
-    else stopAnimation();
+    setLocalAnimate(Boolean(animate) && delay <= 0);
+  }
+
+  React.useEffect(() => {
+    armAnimation(animate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animate]);
 
@@ -245,11 +250,26 @@ function AnimateIcon({
     [controls],
   );
 
+  // Following the viewport, the same way as the `animate` prop above.
+  const [prevView, setPrevView] = React.useState({ isInView, animateOnView, animation, delay });
+  if (
+    prevView.isInView !== isInView ||
+    prevView.animateOnView !== animateOnView ||
+    prevView.animation !== animation ||
+    prevView.delay !== delay
+  ) {
+    setPrevView({ isInView, animateOnView, animation, delay });
+    if (animateOnView && isInView) {
+      setCurrentAnimation(typeof animateOnView === "string" ? animateOnView : animation);
+      setLocalAnimate(delay <= 0);
+    } else if (animateOnView) {
+      setLocalAnimate(false);
+    }
+  }
+
   React.useEffect(() => {
-    if (!animateOnView) return;
-    if (isInView) startAnimation(animateOnView);
-    else stopAnimation();
-  }, [isInView, animateOnView, startAnimation, stopAnimation]);
+    if (animateOnView) armAnimation(isInView && animateOnView);
+  }, [isInView, animateOnView, animation, armAnimation]);
 
   React.useEffect(() => {
     const gen = ++runGenRef.current;
@@ -378,36 +398,30 @@ function AnimateIcon({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localAnimate, controls]);
 
-  const childProps = (
-    React.isValidElement(children) ? (children as React.ReactElement).props : {}
-  ) as AnyProps;
+  const childProps: ChildHandlers = React.isValidElement<ChildHandlers>(children)
+    ? children.props
+    : {};
 
-  const handleMouseEnter = composeEventHandlers<React.MouseEvent<HTMLElement>>(
-    childProps.onMouseEnter,
-    () => {
-      if (animateOnHover) startAnimation(animateOnHover);
-    },
-  );
+  // The child's own handler first, then ours — composed at event time, not during render.
+  const handleMouseEnter = (event: React.MouseEvent<HTMLElement>) => {
+    childProps.onMouseEnter?.(event);
+    if (animateOnHover) startAnimation(animateOnHover);
+  };
 
-  const handleMouseLeave = composeEventHandlers<React.MouseEvent<HTMLElement>>(
-    childProps.onMouseLeave,
-    () => {
-      if (animateOnHover || animateOnTap) stopAnimation();
-    },
-  );
+  const handleMouseLeave = (event: React.MouseEvent<HTMLElement>) => {
+    childProps.onMouseLeave?.(event);
+    if (animateOnHover || animateOnTap) stopAnimation();
+  };
 
-  const handlePointerDown = composeEventHandlers<
-    React.PointerEvent<HTMLElement>
-  >(childProps.onPointerDown, () => {
+  const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    childProps.onPointerDown?.(event);
     if (animateOnTap) startAnimation(animateOnTap);
-  });
+  };
 
-  const handlePointerUp = composeEventHandlers<React.PointerEvent<HTMLElement>>(
-    childProps.onPointerUp,
-    () => {
-      if (animateOnTap) stopAnimation();
-    },
-  );
+  const handlePointerUp = (event: React.PointerEvent<HTMLElement>) => {
+    childProps.onPointerUp?.(event);
+    if (animateOnTap) stopAnimation();
+  };
 
   const content = asChild ? (
     <Slot

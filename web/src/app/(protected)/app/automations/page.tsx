@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -11,24 +10,29 @@ import { useEffect, useState } from "react";
 export default function AutomationsPage() {
   const router = useRouter();
   const { data: activeWorkstation } = useActiveWorkstation();
-  const [list, setList] = useState<Automation[]>([]);
-  const [loading, setLoading] = useState(false);
-  const load = React.useCallback(async () => {
-    if (!activeWorkstation?.id) return setList([]);
-    setLoading(true);
-    try {
-      const res = await automationsApi.list(activeWorkstation.id);
-      setList(res ?? []);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkstation?.id]);
+  const workstationId = activeWorkstation?.id;
+  const [loaded, setLoaded] = useState<{ workstationId: string; list: Automation[] } | null>(null);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!workstationId) return;
+    let live = true;
+    automationsApi.list(workstationId).then(
+      (res) => {
+        if (live) setLoaded({ workstationId, list: res ?? [] });
+      },
+      (e: unknown) => {
+        console.error(e);
+        if (live) setLoaded((prev) => ({ workstationId, list: prev?.list ?? [] }));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [workstationId]);
+
+  // Loading until the list in hand belongs to the active workstation.
+  const loading = loaded?.workstationId !== workstationId;
+  const list = loaded?.list ?? [];
 
   if (!activeWorkstation) return null;
 

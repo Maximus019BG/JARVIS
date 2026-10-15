@@ -18,6 +18,7 @@ import {
   FormItem,
   FormLabel,
 } from "~/components/ui/form";
+import { useHydrated } from "~/hooks/use-hydrated";
 import { authClient } from "~/lib/auth-client";
 import { cn } from "~/lib/utils";
 import {
@@ -51,11 +52,12 @@ export function PasswordResetForm({
     }
     if (searchParams.get("error") === "INVALID_TOKEN")
       toast.error("Invalid or expired token");
-    setIsInitialLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [isInitialLoading, setIsInitialLoading] = React.useState(true);
+  // Disabled until hydrated, and for good without a token (the effect is redirecting away).
+  const hydrated = useHydrated();
+  const isInitialLoading = !hydrated || !searchParams.get("token");
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
 

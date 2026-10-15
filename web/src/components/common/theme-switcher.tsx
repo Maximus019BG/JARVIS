@@ -4,6 +4,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import React from "react";
+import { useHydrated } from "~/hooks/use-hydrated";
 import { cn } from "~/lib/utils";
 
 const themes = [
@@ -30,7 +31,6 @@ export const ThemeSwitcher = ({
 }: React.ComponentProps<"div">) => {
   const { setTheme, theme } = useTheme();
 
-  const [mounted, setMounted] = React.useState(false);
 
   const changeTheme = React.useCallback(
     (theme: string) => {
@@ -39,10 +39,8 @@ export const ThemeSwitcher = ({
     [setTheme],
   );
 
-  // Prevent hydration mismatch
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Prevent hydration mismatch: false on the server and while hydrating, true after.
+  const mounted = useHydrated();
 
   if (!mounted) {
     return null;

@@ -7,6 +7,7 @@ import { AnotherMethodSeparator } from "~/components/auth/another-method-separat
 import { ContinueWithGoogleButton } from "~/components/auth/continue-with-google-button";
 import { ContinueWithGitHubButton } from "~/components/auth/continue-with-github-button";
 import { ContinueWithPasswordButton } from "~/components/auth/continue-with-password-button";
+import { useHydrated } from "~/hooks/use-hydrated";
 import { cn } from "~/lib/utils";
 import { toast } from "sonner";
 
@@ -27,16 +28,20 @@ export function VerifyEmailStatus({
     return params.toString();
   }, [searchParams]);
 
+  // Better Auth redirects here with `?error=` on any failure (`token_expired`,
+  // `invalid_token`, …). Only no error at all means the email was verified.
+  const error = searchParams.get("error");
+
   React.useEffect(() => {
-    setIsInitialLoading(false);
-    if (searchParams.get("error") === "token_expired") {
+    if (error) {
       toast.error(
-        "Verification token expired. Please try again signing in to your account.",
+        error === "token_expired"
+          ? "Verification token expired. Please try again signing in to your account."
+          : "This verification link is not valid. Please try again signing in to your account.",
       );
       return;
     }
 
-    setIsSuccess(true);
     toast.success(
       "Email verified successfully. You will be redirected after 5 seconds.",
     );
@@ -46,9 +51,12 @@ export function VerifyEmailStatus({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [isInitialLoading, setIsInitialLoading] = React.useState(true);
+  // What the mount effect above reports, derived: loading until hydrated, then success
+  // unless the link came back with an error.
+  const hydrated = useHydrated();
+  const isInitialLoading = !hydrated;
+  const isSuccess = hydrated && !error;
   const [isLoadingProvider, setIsLoadingProvider] = React.useState(false);
-  const [isSuccess, setIsSuccess] = React.useState(false);
   const disabled = isInitialLoading || isLoadingProvider || isSuccess;
 
   return (

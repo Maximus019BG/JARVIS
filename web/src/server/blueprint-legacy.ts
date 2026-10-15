@@ -24,7 +24,8 @@ const isLegacy = (raw: unknown): raw is LegacyDoc =>
 export function fromLegacy(raw: LegacyDoc, fallbackName: string): BlueprintDoc {
   const width = raw.width && raw.width > 0 ? raw.width : 1366;
   const height = raw.height && raw.height > 0 ? raw.height : 768;
-  const doc = emptyDoc(raw.name?.trim() || fallbackName, [0, 0, width, height], "px");
+  const name = raw.name?.trim();
+  const doc = emptyDoc(name?.length ? name : fallbackName, [0, 0, width, height], "px");
   doc.entities = (raw.lines ?? []).map(
     (line, index): Entity => ({
       type: "line",

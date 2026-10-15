@@ -150,7 +150,7 @@ const AutomationCanvas = React.forwardRef<
       data: {
         nodeType: type,
         label: registryItem.label,
-        params: { ...(registryItem.defaultParams as any) },
+        params: { ...registryItem.defaultParams },
       },
       style: { padding: 12 },
     };
@@ -248,7 +248,7 @@ const AutomationCanvas = React.forwardRef<
             onConnect={onConnect}
             onPaneContextMenu={(e) => onCanvasContextMenu(e)}
             onInit={setRfInstance}
-            onNodeContextMenu={onNodeContextMenu as any}
+            onNodeContextMenu={onNodeContextMenu}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             fitView
           >
@@ -269,7 +269,7 @@ const AutomationCanvas = React.forwardRef<
             setNodes((ns) =>
               ns.map((n) =>
                 n.id === nodeId
-                  ? { ...n, data: { ...(n.data as any), label: nextLabel } }
+                  ? { ...n, data: { ...n.data, label: nextLabel } }
                   : n,
               ),
             );
@@ -278,7 +278,7 @@ const AutomationCanvas = React.forwardRef<
             setNodes((ns) =>
               ns.map((n) =>
                 n.id === nodeId
-                  ? { ...n, data: { ...(n.data as any), params: nextParams } }
+                  ? { ...n, data: { ...n.data, params: nextParams } }
                   : n,
               ),
             );

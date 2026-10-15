@@ -37,10 +37,15 @@ export function TypeToConfirmAlertDialog() {
       ? state.warning
       : "This action is permanent and irreversible.";
 
-  React.useEffect(() => {
-    if (state.open) return;
-    clear();
-  }, [state.open]);
+  // Clear the typed text when the dialog closes: adjusted during render, not in an effect.
+  const [wasOpen, setWasOpen] = React.useState(state.open);
+  if (wasOpen !== state.open) {
+    setWasOpen(state.open);
+    if (!state.open) {
+      setInputValue("");
+      setShowIsWrong(false);
+    }
+  }
 
   function setOpen(open: boolean) {
     if (open) return;
@@ -67,11 +72,6 @@ export function TypeToConfirmAlertDialog() {
 
   function handleCancel() {
     void cancel?.();
-  }
-
-  function clear() {
-    setInputValue("");
-    setShowIsWrong(false);
   }
 
   return (

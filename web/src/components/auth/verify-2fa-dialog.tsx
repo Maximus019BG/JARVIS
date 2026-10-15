@@ -42,6 +42,12 @@ export function Verify2FADialog({ open, onOpenChange }: Verify2FADialogProps) {
   const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = React.useState(false);
   const [isVerified, setIsVerified] = React.useState(false);
+  // Re-arm the close guard whenever the dialog closes: adjusted during render, not in an effect.
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (!open) setIsVerified(false);
+  }
 
   const form = useForm<Verify2FA>({
     resolver: zodResolver(verify2faSchema),
@@ -98,10 +104,7 @@ export function Verify2FADialog({ open, onOpenChange }: Verify2FADialogProps) {
 
   // Reset form when dialog closes
   React.useEffect(() => {
-    if (!open) {
-      form.reset();
-      setIsVerified(false);
-    }
+    if (!open) form.reset();
   }, [open, form]);
 
   return (

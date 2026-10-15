@@ -47,7 +47,8 @@ function FieldEditor({
     try {
       return JSON.stringify(value, null, 2);
     } catch {
-      return String(value);
+      // circular or otherwise unserialisable: same "[object Object]" String() gave
+      return Object.prototype.toString.call(value);
     }
   }, [value]);
 

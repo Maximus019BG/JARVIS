@@ -143,6 +143,16 @@ export function entitiesWithin(doc: BlueprintDoc, from: Pt, to: Pt): string[] {
     .map((entity) => entity.id!);
 }
 
+type View = Omit<CanvasView, "step">;
+const INITIAL_VIEW: View = { scale: 1, x: 0, y: 0 };
+
+/** The camera that frames the whole sheet in a `width`x`height` box, or null before there is one. */
+function fitView([vx, vy, vw, vh]: BlueprintDoc["viewBox"], width: number, height: number): View | null {
+  if (!width || !height || !vw || !vh) return null;
+  const scale = Math.min(width / vw, height / vh) * 0.92;
+  return { scale, x: width / 2 - (vx + vw / 2) * scale, y: height / 2 - (vy + vh / 2) * scale };
+}
+
 export function BlueprintCanvas({
   doc,
   tints,
@@ -166,8 +176,20 @@ export function BlueprintCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  // scale is pixels per document unit; offset is in pixels.
-  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  // scale is pixels per document unit; offset is in pixels. The camera is the fitted one
+  // until the user pans or zooms; a new sheet, a resize or a Fit click (`fitKey`) drops
+  // that and snaps back to the fit.
+  const fitFor = useMemo(
+    () => [doc.viewBox, size.width, size.height, fitKey] as const,
+    [doc.viewBox, size.width, size.height, fitKey],
+  );
+  const fitted = useMemo(
+    () => fitView(doc.viewBox, size.width, size.height),
+    [doc.viewBox, size.width, size.height],
+  );
+  const [panned, setPanned] = useState<{ fitFor: typeof fitFor; view: View } | null>(null);
+  const pan = panned?.fitFor.every((value, index) => value === fitFor[index]) ? panned.view : null;
+  const view = pan ?? fitted ?? panned?.view ?? INITIAL_VIEW;
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   // Mirrors `view` so wheel and pan events that coalesce between renders still compose off
@@ -176,13 +198,20 @@ export function BlueprintCanvas({
   const viewRef = useRef(view);
 
   const applyView = useCallback(
-    (next: { scale: number; x: number; y: number }) => {
+    (next: View) => {
       viewRef.current = next;
-      setView(next);
+      setPanned({ fitFor, view: next });
       onViewChange?.({ ...next, step: gridStep(1 / next.scale) });
     },
-    [onViewChange],
+    [fitFor, onViewChange],
   );
+
+  // A fit is derived during render, so the mirror and the parent hear about it once it lands.
+  useEffect(() => {
+    if (pan || !fitted) return;
+    viewRef.current = fitted;
+    onViewChange?.({ ...fitted, step: gridStep(1 / fitted.scale) });
+  }, [pan, fitted, fitFor, onViewChange]);
 
   useEffect(() => {
     const element = wrapRef.current;
@@ -193,15 +222,6 @@ export function BlueprintCanvas({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-
-  const fit = useCallback(() => {
-    const [vx, vy, vw, vh] = doc.viewBox;
-    if (!size.width || !size.height || !vw || !vh) return;
-    const scale = Math.min(size.width / vw, size.height / vh) * 0.92;
-    applyView({ scale, x: size.width / 2 - (vx + vw / 2) * scale, y: size.height / 2 - (vy + vh / 2) * scale });
-  }, [doc.viewBox, size.width, size.height, applyView]);
-
-  useEffect(fit, [fit, fitKey]);
 
   const layersHidden = useMemo(() => hiddenLayers ?? new Set<string>(), [hiddenLayers]);
 

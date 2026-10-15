@@ -58,7 +58,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ blueprintI
       .limit(1)
   )[0];
 
-  if (head && head.version === source.version) {
+  if (head?.version === source.version) {
     return NextResponse.json({ error: "already_current", version: head.version }, { status: 409 });
   }
 

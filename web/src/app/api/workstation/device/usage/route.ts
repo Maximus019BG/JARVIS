@@ -114,20 +114,18 @@ export async function GET(request: NextRequest) {
       const info = deviceMap.get(did);
       if (!info) continue;
 
-      if (!perDevice[did]) {
-        perDevice[did] = {
-          deviceId: did,
-          deviceName: info.name,
-          workstationId: info.workstationId,
-          workstationName: workstationNameMap.get(info.workstationId) ?? "",
-          totalRequests: 0,
-          byAction: {},
-        };
-      }
+      const entry = (perDevice[did] ??= {
+        deviceId: did,
+        deviceName: info.name,
+        workstationId: info.workstationId,
+        workstationName: workstationNameMap.get(info.workstationId) ?? "",
+        totalRequests: 0,
+        byAction: {},
+      });
 
       const n = Number(row.count);
-      perDevice[did]!.totalRequests += n;
-      perDevice[did]!.byAction[row.action] = n;
+      entry.totalRequests += n;
+      entry.byAction[row.action] = n;
     }
 
     const requests = Object.values(perDevice);

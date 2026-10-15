@@ -85,7 +85,7 @@ export function BlueprintFiltersComponent({
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search blueprints..."
-              value={filters.search || ''}
+              value={filters.search ?? ''}
               onChange={(e) => update({ search: e.target.value })}
               className="pl-10"
             />
@@ -96,7 +96,7 @@ export function BlueprintFiltersComponent({
               <Button variant="outline" size="sm" className="relative">
                 <Filter className="h-4 w-4 mr-2" />
                 Filter
-                {(filters.syncStatus || filters.modifiedWithinDays) && (
+                {(Boolean(filters.syncStatus) || Boolean(filters.modifiedWithinDays)) && (
                   <div className="absolute -top-1 -right-1 h-3 w-3 bg-blue-500 rounded-full" />
                 )}
               </Button>
@@ -165,7 +165,7 @@ export function BlueprintFiltersComponent({
           </Popover>
 
           <Select
-            value={`${filters.sortBy || 'createdAt'}-${filters.sortOrder || 'desc'}`}
+            value={`${filters.sortBy ?? 'createdAt'}-${filters.sortOrder ?? 'desc'}`}
             onValueChange={(value) => {
               const [sortBy, sortOrder] = value.split('-') as [
                 NonNullable<BlueprintFilters['sortBy']>,

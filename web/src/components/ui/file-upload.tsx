@@ -657,6 +657,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
   } = props;
 
   const context = useFileUploadContext(DROPZONE_NAME);
+  const { inputRef } = context;
   const store = useStoreContext(DROPZONE_NAME);
   const dragOver = useStore((state) => state.dragOver);
   const invalid = useStore((state) => state.invalid);
@@ -674,10 +675,10 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
         target.closest('[data-slot="file-upload-trigger"]');
 
       if (!isFromTrigger) {
-        context.inputRef.current?.click();
+        inputRef.current?.click();
       }
     },
-    [context.inputRef, onClickProp],
+    [inputRef, onClickProp],
   );
 
   const onDragOver = React.useCallback(
@@ -735,7 +736,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
       store.dispatch({ type: "SET_DRAG_OVER", dragOver: false });
 
       const files = Array.from(event.dataTransfer.files);
-      const inputElement = context.inputRef.current;
+      const inputElement = inputRef.current;
       if (!inputElement) return;
 
       const dataTransfer = new DataTransfer();
@@ -746,7 +747,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
       inputElement.files = dataTransfer.files;
       inputElement.dispatchEvent(new Event("change", { bubbles: true }));
     },
-    [store, context.inputRef, onDropProp],
+    [store, inputRef, onDropProp],
   );
 
   const onPaste = React.useCallback(
@@ -773,7 +774,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
 
       if (files.length === 0) return;
 
-      const inputElement = context.inputRef.current;
+      const inputElement = inputRef.current;
       if (!inputElement) return;
 
       const dataTransfer = new DataTransfer();
@@ -784,7 +785,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
       inputElement.files = dataTransfer.files;
       inputElement.dispatchEvent(new Event("change", { bubbles: true }));
     },
-    [store, context.inputRef, onPasteProp],
+    [store, inputRef, onPasteProp],
   );
 
   const onKeyDown = React.useCallback(
@@ -796,10 +797,10 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
         (event.key === "Enter" || event.key === " ")
       ) {
         event.preventDefault();
-        context.inputRef.current?.click();
+        inputRef.current?.click();
       }
     },
-    [context.inputRef, onKeyDownProp],
+    [inputRef, onKeyDownProp],
   );
 
   const DropzonePrimitive = asChild ? Slot : "div";

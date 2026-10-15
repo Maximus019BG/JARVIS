@@ -25,29 +25,30 @@ export function useEditorDoc(blueprintId: string) {
   const [error, setError] = React.useState<string | null>(null);
 
   // Nothing is set synchronously here: the hook starts in its loading state, and every
-  // other write happens after the request resolves.
-  const load = React.useCallback(async () => {
-    try {
-      const { data } = await axios.get<{
-        doc: BlueprintDoc | null;
-        version: number;
-        legacy: boolean;
-        name: string;
-      }>(`/api/blueprint/${blueprintId}`);
-      if (!data.doc) {
-        setError("This blueprint has no readable content.");
-        return;
-      }
-      setBase({ doc: data.doc, version: data.version, legacy: data.legacy, name: data.name });
-      setJournal([]);
-      setRedoable([]);
-      setError(null);
-    } catch {
-      setError("Failed to load blueprint.");
-    } finally {
-      setLoading(false);
-    }
-  }, [blueprintId]);
+  // other write happens in a `.then` callback, after the request resolves.
+  const load = React.useCallback(
+    () =>
+      axios
+        .get<{
+          doc: BlueprintDoc | null;
+          version: number;
+          legacy: boolean;
+          name: string;
+        }>(`/api/blueprint/${blueprintId}`)
+        .then(({ data }) => {
+          if (!data.doc) {
+            setError("This blueprint has no readable content.");
+            return;
+          }
+          setBase({ doc: data.doc, version: data.version, legacy: data.legacy, name: data.name });
+          setJournal([]);
+          setRedoable([]);
+          setError(null);
+        })
+        .catch(() => setError("Failed to load blueprint."))
+        .finally(() => setLoading(false)),
+    [blueprintId],
+  );
 
   React.useEffect(() => {
     void load();

@@ -18,7 +18,7 @@ const node = (
   id,
   type: "automationNode",
   position: { x: 0, y: 0 },
-  data: { nodeType, label: id, params } as EditorNodeData,
+  data: { nodeType, label: id, params },
 });
 
 const edge = (from: string, to: string): Edge => ({ id: `${from}-${to}`, source: from, target: to });

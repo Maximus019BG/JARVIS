@@ -49,32 +49,46 @@ export function BlueprintHistory({ blueprintId }: { blueprintId: string }) {
   const [compareWith, setCompareWith] = useState<string | null>(null);
   const [doc, setDoc] = useState<BlueprintDoc | null>(null);
   const [diff, setDiff] = useState<DiffResponse | null>(null);
-  const [busy, setBusy] = useState(false);
   const [showUnchanged, setShowUnchanged] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   const [fitKey, setFitKey] = useState(0);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await blueprintVersionsApi.list(blueprintId);
-      setVersions(data.versions);
-      setName(data.blueprint.name);
-      setSelected((current) => current ?? (data.versions[0] ? refOf(data.versions[0]) : null));
-    } catch {
-      toast.error("Could not load history");
-      setVersions([]);
-    }
-  }, [blueprintId]);
+  // `.then`, not `await`: every write lands after the request, so the mount effect below
+  // never sets state synchronously.
+  const load = useCallback(
+    () =>
+      blueprintVersionsApi.list(blueprintId).then(
+        (data) => {
+          setVersions(data.versions);
+          setName(data.blueprint.name);
+          setSelected((current) => current ?? (data.versions[0] ? refOf(data.versions[0]) : null));
+        },
+        () => {
+          toast.error("Could not load history");
+          setVersions([]);
+        },
+      ),
+    [blueprintId],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // Identity of what the canvas should show; `settled` is the last one that finished loading,
+  // so "busy" is derived rather than set at the start of the effect.
+  const request = useMemo(
+    () => (selected ? { blueprintId, selected, compareWith, versions } : null),
+    [blueprintId, selected, compareWith, versions],
+  );
+  const [settled, setSettled] = useState<typeof request>(null);
+  const busy = request !== null && settled !== request;
+
   // One effect for both modes: two selections mean a diff, one means a single version.
   useEffect(() => {
-    if (!selected) return;
+    if (!request) return;
+    const { blueprintId, selected, compareWith, versions } = request;
     let live = true;
-    setBusy(true);
     const run = async () => {
       try {
         if (compareWith && compareWith !== selected) {
@@ -97,14 +111,14 @@ export function BlueprintHistory({ blueprintId }: { blueprintId: string }) {
       } catch {
         if (live) toast.error("Could not load that version");
       } finally {
-        if (live) setBusy(false);
+        if (live) setSettled(request);
       }
     };
     void run();
     return () => {
       live = false;
     };
-  }, [blueprintId, selected, compareWith, versions]);
+  }, [request]);
 
   const tints = useMemo(() => {
     if (!diff) return undefined;

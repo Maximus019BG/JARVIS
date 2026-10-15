@@ -54,7 +54,9 @@ QR → `verifyTotp` → `generateBackupCodes`; `twoFactor.disable({ password })`
 callback to `/auth/verify-email/token`; `VerifyEmailStatus` there shows the result.
 `RequestPasswordResetForm` calls `authClient.requestPasswordReset` with `redirectTo`
 `/auth/reset-password/token`; `PasswordResetForm` there calls `authClient.resetPassword` with the
-`token` query param. All forms carry `redirect_url` through.
+`token` query param. `VerifyEmailStatus` and `PasswordResetForm` derive their loading/success state from `useHydrated()`
+(`web/src/hooks/use-hydrated.ts`) instead of setting it in a mount effect. All forms carry
+`redirect_url` through.
 
 **Account dialog.** `user-dropdown-menu.tsx` → `UserDropdownMenu` (sidebar and header via `UserNav`)
 opens `account-dialog.tsx` → `AccountDialog` with three tabs: Account (profile, email, password),
@@ -105,11 +107,11 @@ wrong layer. Tokens are `device` rows with `platform === "mcp"`; every call goes
 | `web/src/components/auth/last-login-badge.tsx` | `LastLoginBadge` |
 | `web/src/components/auth/not-logged-in.tsx` | `NotLoggedIn`: redirect if a session exists |
 | `web/src/components/auth/verify-email.tsx` | `VerifyEmail`: resend verification mail |
-| `web/src/components/auth/verify-email-status.tsx` | `VerifyEmailStatus`: result of the verification link |
+| `web/src/components/auth/verify-email-status.tsx` | `VerifyEmailStatus`: result of the verification link (any `?error=` is a failure) |
 | `web/src/components/auth/request-password-reset-form.tsx` | `RequestPasswordResetForm` |
 | `web/src/components/auth/password-reset-form.tsx` | `PasswordResetForm` |
 | `web/src/components/auth/verify-2fa-form.tsx` | `Verify2FAForm` (TOTP) |
-| `web/src/components/auth/verify-2fa-dialog.tsx` | `Verify2FADialog` (TOTP in a dialog) |
+| `web/src/components/auth/verify-2fa-dialog.tsx` | `Verify2FADialog` (TOTP in a dialog; `isVerified` reset during render when `open` turns false) |
 | `web/src/components/auth/verify-2fa-backup-form.tsx` | `Verify2FABackupForm` |
 | `web/src/components/account/account-dialog.tsx` | `AccountDialog`: Account / Security / MCP tabs |
 | `web/src/components/account/account-profile-section.tsx` | `AccountProfileSection` |

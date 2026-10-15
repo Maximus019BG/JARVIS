@@ -27,7 +27,7 @@ export async function GET(
       .where(eq(workstation.id, workstationId))
       .limit(1)
   )[0];
-  if (!workstationRecord || workstationRecord.userId !== session.user.id)
+  if (workstationRecord?.userId !== session.user.id)
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const rows = await db

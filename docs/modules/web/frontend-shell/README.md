@@ -150,16 +150,17 @@ validation off (for Docker builds).
 | `web/src/components/common/avatar-upload.tsx` | `AvatarUpload`: file picker for avatar/logo images |
 | `web/src/components/common/loading-button.tsx` | `LoadingButton`: `Button` with an animated spinner |
 | `web/src/components/common/password-input.tsx` | `PasswordInput`: input with show/hide toggle |
-| `web/src/components/common/theme-switcher.tsx` | `ThemeSwitcher`: system, light or dark |
+| `web/src/components/common/theme-switcher.tsx` | `ThemeSwitcher`: system, light or dark; renders nothing until `useHydrated()` |
 | `web/src/components/providers/api-provider.tsx` | `ApiProvider`, `noRetryStatusCodes` |
 | `web/src/components/providers/theme-provider.tsx` | `ThemeProvider` (next-themes wrapper) |
 | `web/src/components/global-sheet.tsx` | `GlobalSheet`: one app-wide side sheet driven by `useSheetStore` |
 | `web/src/components/type-to-confirm-alert-dialog.tsx` | `TypeToConfirmAlertDialog`: "type X to confirm" dialog driven by `useAlertStore` |
 | `web/src/components/ui/` | shadcn/Radix primitives (button, card, dialog, dropdown-menu, form, input, select, sheet, sidebar, sonner, table, tabs, tooltip, ... and `tailwind-indicator.tsx`, the dev-only breakpoint badge). Configured by `web/components.json` |
-| `web/src/components/animate-ui/` | `icons/`: `AnimateIcon` base (`icon.tsx`) and motion-animated sidebar icons (chart-column, fingerprint, gallery-horizontal-end, hammer, plus, settings). `primitives/animate/slot.tsx`: the `Slot` they use |
+| `web/src/components/animate-ui/` | `icons/`: `AnimateIcon` base (`icon.tsx`) and motion-animated sidebar icons (chart-column, fingerprint, gallery-horizontal-end, hammer, plus, settings). `primitives/animate/slot.tsx`: the `Slot` they use, with a module-level per-type `motionOf()` cache so `motion.create` runs once per element type |
 | `web/src/config/url.ts` | `ORIGIN_URL` |
 | `web/src/config/dashboard-sidebar-nav.ts` | `dashboardSidebarNav`: sidebar entries |
-| `web/src/hooks/use-mobile.ts` | `useIsMobile` (768 px breakpoint; used by `ui/sidebar.tsx`) |
+| `web/src/hooks/use-mobile.ts` | `useIsMobile` (768 px breakpoint, `useSyncExternalStore` on `matchMedia`, `false` on the server; used by `ui/sidebar.tsx`) |
+| `web/src/hooks/use-hydrated.ts` | `useHydrated`: `useSyncExternalStore`, `false` on the server and while hydrating, then `true` (a mount flag without setState in an effect) |
 | `web/src/hooks/use-is-in-view.tsx` | `useIsInView` (used by `animate-ui/icons/icon.tsx`) |
 | `web/src/lib/utils.ts` | `cn` (clsx + tailwind-merge) |
 | `web/src/lib/format.ts` | `thousands` (1.2k/3.4M), `money` (integer micros to `$`) |
@@ -212,6 +213,9 @@ Client APIs for feature code: `typeToConfirm.show(opts): Promise<boolean>`,
   [web/email](../email/README.md).
 - `web/src/lib/ip-location.ts` calls `http://ip-api.com` (no TLS). With no `x-forwarded-for`
   it looks up `8.8.8.8`.
+- `ponytail:` `slot.tsx`'s `motionOf` cache is never evicted. Fine while child types are
+  module-level components; split into a `WeakMap` (objects/functions) plus a map for tag strings
+  if callers ever pass per-render types.
 - `globals.css` sets every radius token to 0 on purpose ("drafted lines"). New components get
   square corners unless they opt into `rounded-full`.
 
