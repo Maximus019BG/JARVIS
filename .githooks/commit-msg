@@ -1,6 +1,6 @@
 #!/bin/sh
 # Refuse a commit subject that is not a Conventional Commit: `type(scope)!: subject`.
-# Enabled by `pnpm install` (root `prepare` sets core.hooksPath). Skip once: git commit --no-verify
+# Enabled by `pnpm install` (root `prepare` sets core.hooksPath). CI checks PR titles the same way.
 subject=$(head -n1 "$1")
 case $subject in Merge\ *|Revert\ *|fixup!\ *|squash!\ *|amend!\ *) exit 0 ;; esac
 types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'

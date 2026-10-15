@@ -36,6 +36,10 @@ yarn-error.log*
 # local env files
 .env
 .env*.local
+.env.development
+.env.test
+.env.staging
+.env.production
 
 # vercel
 .vercel
@@ -59,6 +63,7 @@ node_modules/
 # Others
 .claude/*
 !.claude/settings.json
+!.claude/hooks/
 
 # Expo
 .expo/
@@ -183,7 +188,6 @@ build/
 **/episodic_memory.json
 **/memory_store.json
 *.jarvis
-hardware/data/*
 
 .firecrawl
 # Generated from tui/install.sh at build time by web/scripts/embed-install-sh.mjs

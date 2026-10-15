@@ -10,7 +10,10 @@ they did; it reads the diff itself.
 2. Read the whole diff.
 3. Check each promise against the diff: is it there, is it tested?
 4. Run `pnpm check && pnpm test`. Report what failed, verbatim. Don't summarize it.
-5. Write findings, most severe first. Then give a verdict: **approve**, **changes needed** or **blocked**.
+5. Write findings, most severe first, split into **Important** (must fix) and **Nit** (at most 5).
+6. End with exactly one line: `Verdict: APPROVE @ <head sha>` or `Verdict: RETURN @ <head sha>`. The
+   sha pins the verdict to what you read; a new push needs a new review. After 3 rounds of RETURN
+   on the same PR, stop and hand it to a human.
 
 ## Passes
 
@@ -24,13 +27,22 @@ they did; it reads the diff itself.
 4. **Shared code.** A change in `tui/src/blueprint` or `tui/src/pi` breaks `web` too. Both suites
    must have run.
 5. **Tests.** New logic with a branch or loop gets one test that fails if the logic breaks. Tests
-   that only restate the implementation don't count.
+   that only restate the implementation don't count. **Judge integrity:** no test deleted, skipped
+   or weakened, no assertion loosened, no lint rule, threshold or limit lowered to make a change
+   pass, unless the PR says why.
 6. **Simplicity.** No new dependency for a few lines of code, no abstraction with one user, no
    duplicated helper. Every deliberate shortcut carries a `ponytail:` comment.
 7. **Docs.** Every module whose code changed has its `docs/modules/` doc updated in the same PR, with
    a new `Verified:` line, and the doc still matches the code. A surprising choice gets a row in
    `docs/decisions.md`, and a status change updates `docs/ROADMAP.md`. The package README is updated
    if commands or setup changed.
+8. **Agent safety** (`tui/`). A new tool either calls `ctx.gate.check` and has a `DEFAULT_RULES` entry
+   in `tui/src/permission.ts`, or is read-only. No new path carries untrusted text (web pages,
+   files, webhook payloads, camera input, repo config) into a prompt or an auto-approved tool
+   without the user being asked.
+9. **Cost per request** (`web/`). Count the DB round trips a hot route makes; each costs ~230 ms.
+   A query inside a loop, or sequential queries that could be one join or one `Promise.all`, is a
+   finding.
 
 ## Finding format
 

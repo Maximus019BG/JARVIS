@@ -7,8 +7,9 @@
     "build": "pnpm --filter web build",
     "dev": "pnpm --filter web dev",
     "start": "pnpm --filter web start",
-    "check": "pnpm lint && pnpm typecheck",
+    "check": "pnpm lint && pnpm typecheck && pnpm rules",
     "lint": "pnpm --filter web lint",
+    "rules": "bun tools/check-rules.ts env canon-paths no-skip && bun test ./tools",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   }
