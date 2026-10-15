@@ -118,15 +118,6 @@ export function openAiErrorBody(failure: GatewayFailure): {
   };
 }
 
-/** The repo-standard body, for any gateway route a browser calls. */
-export function repoErrorBody(failure: GatewayFailure): { error: string; detail?: string; retryAfter?: number } {
-  return {
-    error: failure.code,
-    ...(failure.message ? { detail: failure.message } : {}),
-    ...(failure.retryAfter ? { retryAfter: failure.retryAfter } : {}),
-  };
-}
-
 /**
  * A failure that has to be delivered *inside* an already-200 stream. Ends with `[DONE]` so a
  * client's stream loop terminates normally instead of hanging on a truncated body.

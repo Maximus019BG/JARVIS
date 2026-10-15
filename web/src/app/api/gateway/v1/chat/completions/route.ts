@@ -14,7 +14,7 @@ import { checkLimits, reserveUsage, settleUsage } from "~/server/gateway/meter";
 import { callUpstream } from "~/server/gateway/proxy";
 import { resolveChain } from "~/server/gateway/resolve";
 import { LIMITS } from "~/server/gateway/upstreams";
-import { makeUsageSniffer, usageFromJson } from "~/server/gateway/usage";
+import { costMicros, makeUsageSniffer, usageFromJson } from "~/server/gateway/usage";
 
 /**
  * Stated rather than inherited. Every line below assumes Node: WHATWG streams with a `flush`
@@ -131,7 +131,7 @@ export async function POST(request: Request) {
 
     if (attempt.ok) {
       return body.stream
-        ? streamBack(attempt.response, target, usageId, attempts)
+        ? streamBack(attempt.response, target, usageId, attempts, JSON.stringify(body.messages).length)
         : await jsonBack(attempt.response, target, usageId, attempts, attempt.ms);
     }
 
@@ -178,6 +178,8 @@ function streamBack(
   target: NonNullable<Parameters<typeof settleUsage>[1]["target"]>,
   usageId: string,
   attempts: number,
+  /** Size of the prompt, for the estimate a client that hangs up mid-stream is billed on. */
+  promptChars: number,
 ) {
   const upstream = response.body;
   if (!upstream) {
@@ -189,11 +191,13 @@ function streamBack(
   const decoder = new TextDecoder();
   const sniffer = makeUsageSniffer(target.upstream.cost);
   const started = Date.now();
+  let sentBytes = 0;
 
   const meter = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       // Client first, always. Metering must not sit in the latency path of a token.
       controller.enqueue(chunk);
+      sentBytes += chunk.byteLength;
       try {
         sniffer.push(decoder.decode(chunk, { stream: true }));
       } catch {
@@ -218,28 +222,50 @@ function streamBack(
   // only be delivered inside the stream. And it must NOT be retried against another upstream:
   // partial content has already been sent, and splicing two half-completions together would
   // render as nonsense.
-  const piped = upstream.pipeThrough(meter);
+  const reader = upstream.pipeThrough(meter).getReader();
+  // Pulled, not read in a loop from `start`: the upstream is read only as fast as the client
+  // takes it, and when the client hangs up `cancel` runs instead of the next enqueue throwing.
   const guarded = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const reader = piped.getReader();
+    async pull(controller) {
       try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          controller.enqueue(value);
-        }
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
       } catch (error) {
         const failure: GatewayFailure = {
           status: 502,
           code: "upstream_error",
           message: error instanceof Error ? error.message : String(error),
         };
-        controller.enqueue(new TextEncoder().encode(sseErrorFrames(failure)));
+        try {
+          controller.enqueue(new TextEncoder().encode(sseErrorFrames(failure)));
+          controller.close();
+        } catch {
+          return; // the client is already gone, and `cancel` settles the row
+        }
         await settleUsage(usageId, { status: "upstream_error", target, attempts });
-      } finally {
-        controller.close();
-        reader.releaseLock();
       }
+    },
+    // The client hung up before the usage frame. Settling on an estimate of what was sent
+    // keeps an abandoned stream on the bill; left `pending` at cost 0, disconnecting early
+    // was a way past the monthly budget.
+    async cancel(reason) {
+      await reader.cancel(reason).catch(() => undefined);
+      // ponytail: ~4 characters per token, and SSE framing inflates the output side, so this
+      // overestimates; an exact count needs the usage frame a cancelled stream never sends.
+      const estimate = sniffer.result().usage ?? {
+        inputTokens: Math.ceil(promptChars / 4),
+        outputTokens: Math.ceil(sentBytes / 4),
+      };
+      await settleUsage(usageId, {
+        status: "cancelled",
+        target,
+        usage: estimate,
+        costMicros: costMicros(estimate, target.upstream.cost),
+        upstreamStatus: response.status,
+        latencyMs: Date.now() - started,
+        attempts,
+      });
     },
   });
 

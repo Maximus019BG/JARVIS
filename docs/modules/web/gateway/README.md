@@ -22,8 +22,8 @@ The `/app/usage` page in this module shows spend from synced sessions, not from 
 5. `resolve.ts` → `resolveChain(model)`: follow `ALIASES` (max 4 hops, cycle → no match), keep
    enabled upstreams whose `models` contain the id (exact) or whose `prefixes` match, sort exact
    first, then `priority`, then name. Empty → 404 `model_not_found`.
-6. `meter.ts` → `reserveUsage` inserts a `pending` row **before** the call, so a client that aborts
-   mid-stream is still counted.
+6. `meter.ts` → `reserveUsage` inserts a `pending` row **before** the call, so every request is
+   counted for the rate limit even if it never settles.
 7. Try up to `LIMITS.maxAttempts` (3) targets within `LIMITS.totalDeadlineMs` (240 s). An upstream
    with no key (`keyFor` → undefined) is skipped, not fatal. `proxy.ts` → `callUpstream` clamps
    `max_tokens` to `LIMITS.maxOutputTokens` (8192), forces `stream_options.include_usage` on streams,
@@ -31,10 +31,15 @@ The `/app/usage` page in this module shows spend from synced sessions, not from 
    and applies the upstream's `timeoutMs`. Failures go through `errors.ts` → `classifyUpstream`;
    only `isRetryable` ones (timeout, rate limit, upstream error) move to the next target.
 8. Success, non-streaming: read the JSON, `usageFromJson`, `settleUsage`, return the body with
-   `clientHeaders`. Streaming: pass bytes through one `TransformStream` whose `makeUsageSniffer` reads
-   a copy (client first, metering never in the token path) and settles in `flush`. A mid-stream
-   error is delivered in-band as `sseErrorFrames` (error + `[DONE]`) and is never retried, since
-   partial content is already on the wire.
+   `clientHeaders`. Streaming (`streamBack`): pass bytes through one `TransformStream` whose
+   `makeUsageSniffer` reads a copy (client first, metering never in the token path) and settles
+   `ok` in `flush`. The client stream is pull-based (`pull` reads one chunk per client read), so the
+   upstream is read only as fast as the client takes it. A mid-stream error is delivered in-band as
+   `sseErrorFrames` (error + `[DONE]`) and is never retried, since partial content is already on the
+   wire. If the client disconnects, `cancel()` cancels the upstream reader and settles the row
+   `cancelled` with the sniffed usage, or an estimate (`promptChars / 4` input, `sentBytes / 4`
+   output tokens) priced with `costMicros`, so the row is `estimated` and still counts against the
+   monthly budget.
 9. All attempts failed: `settleUsage` with `upstream_timeout` / `upstream_error` / `rejected`, and
    answer the last failure OpenAI-shaped (`openAiErrorBody`) with `x-gateway-error` and `retry-after`.
 
@@ -70,11 +75,11 @@ when no chat model is configured, plus `jarvis-voice` / `jarvis-speech` for audi
 | `web/src/server/gateway/keys.ts` | `keyFor` (explicit switch over `env`), `gatewayEnabled`; the only gateway file importing `~/env` |
 | `web/src/server/gateway/proxy.ts` | `callUpstream`: one chat call, clamp, timeout, classify |
 | `web/src/server/gateway/headers.ts` | `upstreamHeaders`, `clientHeaders` (allowlists both ways) |
-| `web/src/server/gateway/errors.ts` | `GatewayCode`, `GatewayFailure`, `classifyUpstream`, `isRetryable`, `redactSecrets`, `openAiErrorBody`, `repoErrorBody`, `sseErrorFrames`, `failureHeaders` |
+| `web/src/server/gateway/errors.ts` | `GatewayCode`, `GatewayFailure`, `classifyUpstream`, `isRetryable`, `redactSecrets`, `openAiErrorBody`, `sseErrorFrames`, `failureHeaders` |
 | `web/src/server/gateway/meter.ts` | `checkLimits`, `reserveUsage`, `settleUsage` |
 | `web/src/server/gateway/usage.ts` | `usageFromJson`, `usageFromSseEvent`, `costMicros`, `makeUsageSniffer`, `transcribeCostMicros`, `speechCostMicros` |
 | `web/src/server/gateway/audio.ts` | `audioGateway`, `audioFail`, `AudioCall` |
-| `web/src/app/api/gateway/v1/chat/completions/route.ts` | Chat proxy with fallback chain and stream metering |
+| `web/src/app/api/gateway/v1/chat/completions/route.ts` | Chat proxy with fallback chain and stream metering (`streamBack`, `jsonBack`) |
 | `web/src/app/api/gateway/v1/models/route.ts` | Model catalog |
 | `web/src/app/api/gateway/v1/audio/transcriptions/route.ts` | Speech-to-text via `audioGateway` |
 | `web/src/app/api/gateway/v1/audio/speech/route.ts` | Text-to-speech via `audioGateway` |
@@ -101,7 +106,7 @@ Page: `/app/usage`.
 ## Data and state
 | Table | Use |
 |---|---|
-| `gateway_usage` (`web/src/server/db/schemas/gateway_usage.ts`) | One row per request: `user_id`, `device_id`, `workstation_id`, `requested_model`, `upstream_name`, `upstream_model`, `status` (`pending`/`ok`/`upstream_error`/`upstream_timeout`/`rejected`), `streamed`, `estimated`, tokens, `cost_micros`, `upstream_status`, `latency_ms`, `attempts`. Indexed on `(device_id, created_at)` and `(user_id, created_at)`. Never stores prompts or completions |
+| `gateway_usage` (`web/src/server/db/schemas/gateway_usage.ts`) | One row per request: `user_id`, `device_id`, `workstation_id`, `requested_model`, `upstream_name`, `upstream_model`, `status` (`pending`/`ok`/`cancelled`/`upstream_error`/`upstream_timeout`/`rejected`), `streamed`, `estimated`, tokens, `cost_micros`, `upstream_status`, `latency_ms`, `attempts`. Indexed on `(device_id, created_at)` and `(user_id, created_at)`. Never stores prompts or completions |
 | `agent_session` | Read by the usage page |
 | `device` | Via `authenticateDevice` |
 
@@ -134,8 +139,12 @@ hot path. All three chat upstreams ship `enabled: false`. The `anthropic` upstre
 - **Streaming metering needs the usage frame.** `stream_options.include_usage` is forced on; the
   sniffer buffers partial SSE events and the last usage frame wins. No usage, or an upstream with no
   `cost`, writes `estimated: true` and cost 0 (audio is always `estimated`).
-- A stream the client abandons never reaches `flush`, so its row stays `pending` (still counted for
-  rate limiting). The schema comment lists a `client_abort` status that no code writes.
+- **A cancelled stream is billed on an estimate.** `ponytail:` in `streamBack` → `cancel`: ~4 chars
+  per token, and SSE framing inflates the output side, so it overestimates. An exact count needs the
+  usage frame a cancelled stream never sends. The schema comment lists `client_abort`, which nothing
+  writes; the status written is `cancelled`.
+- **One price per upstream.** `anthropic` is priced `{ input: 4, output: 20 }` (Opus 5.5's), so
+  Sonnet and Haiku requests are metered high.
 - `catalog()` hides upstreams with no key set, but `resolveChain` still routes to them and the chat
   route skips them, so a model whose only upstream lacks a key ends as 502 `gateway_misconfigured`.
 - Each upstream's `timeoutMs` must stay below `LIMITS.totalDeadlineMs`; the deadline is checked
