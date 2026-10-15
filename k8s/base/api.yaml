@@ -26,13 +26,16 @@ spec:
                 name: web-env
           ports:
             - containerPort: 3000
-          # ponytail: TCP check only, web/src/app/api/health has no route yet — switch to httpGet when it does.
+          # Ready = can reach Postgres; live = the process answers. A DB outage takes pods out of
+          # rotation without restarting them.
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/ready
               port: 3000
             periodSeconds: 5
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 20

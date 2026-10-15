@@ -45,7 +45,7 @@ module's **Files** table.
 | Code projects | `app/api/code/`, `app/(protected)/app/code/` | [web/code-projects](web/code-projects/README.md) |
 | Database | `server/db/` (schemas, index), `drizzle/`, `drizzle.config.ts`, `scripts/db-*.mjs`, `start-database.sh` | [web/database](web/database/README.md) |
 | Email | `server/email/`, `emails/`, `lib/email.ts` | [web/email](web/email/README.md) |
-| Frontend shell | `app/{layout,global-error,opengraph-image,robots,sitemap}.tsx?`, `app/(home)/`, `app/(protected)/{layout,app/layout,app/page}.tsx`, `app/install.sh/`, `components/{landing,dashboard,common,providers,animate-ui,ui}/`, `components/*.tsx`, `config/`, `hooks/`, `lib/{utils,format,copy,image,ip-location,sheet-store,type-to-confirm-store}.ts`, `lib/api/error.ts`, `proxy.ts`, `env.js`, `styles/`, `scripts/embed-install-sh.mjs` | [web/frontend-shell](web/frontend-shell/README.md) |
+| Frontend shell | `app/{layout,global-error,opengraph-image,robots,sitemap}.tsx?`, `app/(home)/`, `app/api/{health,ready}/`, `app/(protected)/{layout,app/layout,app/page}.tsx`, `app/install.sh/`, `components/{landing,dashboard,common,providers,animate-ui,ui}/`, `components/*.tsx`, `config/`, `hooks/`, `lib/{utils,format,copy,image,ip-location,sheet-store,type-to-confirm-store}.ts`, `lib/api/error.ts`, `proxy.ts`, `env.js`, `styles/`, `scripts/embed-install-sh.mjs` | [web/frontend-shell](web/frontend-shell/README.md) |
 
 Web paths are relative to `web/src/` unless they start with `web/`.
 

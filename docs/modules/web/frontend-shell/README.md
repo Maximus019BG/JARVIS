@@ -1,6 +1,6 @@
 # Frontend shell
 
-Code: `web/src/app/{layout,global-error,opengraph-image,robots,sitemap}.tsx?`, `web/src/app/(home)/`, `web/src/app/(protected)/{layout,app/layout,app/page}.tsx`, `web/src/app/install.sh/`, `web/src/components/{landing,dashboard,common,providers,animate-ui,ui}/`, `web/src/components/*.tsx`, `web/src/config/`, `web/src/hooks/`, `web/src/lib/{utils,format,copy,image,ip-location,sheet-store,type-to-confirm-store}.ts`, `web/src/lib/api/error.ts`, `web/src/proxy.ts`, `web/src/env.js`, `web/src/styles/`, `web/scripts/embed-install-sh.mjs` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/app/{layout,global-error,opengraph-image,robots,sitemap}.tsx?`, `web/src/app/(home)/`, `web/src/app/api/{health,ready}/`, `web/src/app/(protected)/{layout,app/layout,app/page}.tsx`, `web/src/app/install.sh/`, `web/src/components/{landing,dashboard,common,providers,animate-ui,ui}/`, `web/src/components/*.tsx`, `web/src/config/`, `web/src/hooks/`, `web/src/lib/{utils,format,copy,image,ip-location,sheet-store,type-to-confirm-store}.ts`, `web/src/lib/api/error.ts`, `web/src/proxy.ts`, `web/src/env.js`, `web/src/styles/`, `web/scripts/embed-install-sh.mjs` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Everything around the feature pages: the root document and providers, the public landing page,
@@ -133,6 +133,8 @@ validation off (for Docker builds).
 | `web/src/app/(protected)/app/layout.tsx` | `DashboardLayout`: sidebar, header, workstation gate, global dialog and sheet |
 | `web/src/app/(protected)/app/page.tsx` | `DashboardPage`: blueprint stats and recent blueprints |
 | `web/src/app/install.sh/route.ts` | `GET /install.sh` with the origin injected |
+| `web/src/app/api/health/route.ts` | `GET`: liveness, touches nothing else (k8s `livenessProbe`) |
+| `web/src/app/api/ready/route.ts` | `GET`: readiness, runs `select 1`; 503 when Postgres is unreachable (k8s `readinessProbe`) |
 | `web/src/app/install.sh/script.generated.ts` | `INSTALL_SH`, generated and gitignored. Do not edit |
 | `web/scripts/embed-install-sh.mjs` | Generates the file above from `tui/install.sh` |
 | `web/src/components/landing/hero-section.tsx` | `HeroSection` |
@@ -181,6 +183,8 @@ validation off (for Docker builds).
 | `GET /robots.txt` | none | `web/src/app/robots.ts` → default | robots rules |
 | `GET /sitemap.xml` | none | `web/src/app/sitemap.ts` → default | sitemap |
 | `GET /opengraph-image` | none | `web/src/app/opengraph-image.tsx` → default | PNG 1200×630 |
+| `GET /api/health` | none | `web/src/app/api/health/route.ts` → `GET` | `{ ok: true }`; no DB, so a DB outage never restarts pods |
+| `GET /api/ready` | none | `web/src/app/api/ready/route.ts` → `GET` | `{ ok: true }`; 503 `{ ok: false, error: "database unreachable" }` |
 
 Client APIs for feature code: `typeToConfirm.show(opts): Promise<boolean>`,
 `useSheetStore().open({ title, body, footer, side })`, `problem`, `detailsOf`,

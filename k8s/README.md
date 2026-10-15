@@ -36,4 +36,5 @@ proxy with `kubectl port-forward -n dev svc/reverse-proxy 8443:443` and go to ht
   then `kubectl apply -k .`
 - **Edit `base/nginx.conf`:** the ConfigMap name is hashed, so applying rolls the proxy pods automatically.
 - **Rotate TLS:** run `k8s/tls.sh <ns> …` again. It replaces the Secret and restarts the proxy.
-- **Probes:** TCP only, until `web/src/app/api/health` has a route.
+- **Probes:** readiness `GET /api/ready` (runs `select 1`), liveness `GET /api/health` (no DB, so a
+  database outage takes pods out of rotation without restarting them).
