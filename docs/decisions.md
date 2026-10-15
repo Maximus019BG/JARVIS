@@ -5,6 +5,9 @@ someone reading the code later. Never rewrite an old row; add a new one that sup
 
 | ID | Date | Decision | Why | Where |
 |---|---|---|---|---|
+| D-12 | 2026-10-14 | A repo's `jarvis.jsonc` and `.jarvis/` load only from directories listed in `~/.config/jarvis/trusted.json` (`jarvis trust`); instruction files still load everywhere | Repo config can set permissions, `baseURL` and `{secret:}`/`{file:}` values, and `.jarvis/{plugins,tools}` runs code at startup; cloning a repo must not grant that. A file, not an env var, because Bun auto-loads a repo's `.env` | `tui/src/config/discover.ts` |
+| D-11 | 2026-10-14 | `jarvis work` refuses tool calls the config would `ask` about unless started with `-y` (it used to approve everything) | A job's prompt can carry a webhook payload (`{{$json}}`) that anyone with the webhook URL wrote; auto-approved bash on the worker was remote code execution | `tui/src/cli/work.ts` |
+| D-10 | 2026-10-14 | `tui/bun.lock` stays as the tui's lock and tui-ci installs from it; the root `pnpm-lock.yaml` covers web's build (which imports tui source) | `tui/install.sh` installs the CLI with `bun install --frozen-lockfile`, so CI tests what users get | `tui/install.sh`, `.github/workflows/tui-ci.yml` |
 | D-09 | 2026-10-09 | Hand tracking runs on the server and is stateless; the client echoes a `trail` header with each frame | No per-device server state, so any `api-server` replica can answer any frame | `web/models/hand/README.md`, `tui/src/pi/track.ts` |
 | D-08 | 2026-10-09 | Default-deny ingress network policies in every namespace; only the proxy is reachable | A compromised pod can't reach Postgres directly | `k8s/base/network-policy.yaml` |
 | D-07 | 2026-10-09 | Python is only used for model training, and only through `uv` (`pyproject.toml` + `uv.lock`), with CPU-only torch on Linux | Reproducible env; avoids ~2 GB of CUDA wheels for seconds of training | `models/pyproject.toml` |

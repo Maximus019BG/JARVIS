@@ -1,6 +1,6 @@
 # Config
 
-Code: `tui/src/config/`, `tui/scripts/emit-schema.ts`, `tui/jarvis.jsonc` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/config/`, `tui/scripts/emit-schema.ts`, `tui/jarvis.jsonc` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Loads and validates `jarvis.jsonc`, defines every config key (one zod schema), resolves the XDG
@@ -14,12 +14,19 @@ Usage: [tui/README.md → Configuration](../../../../tui/README.md#configuration
 - `projectRoot(cwd)`: nearest ancestor with `.git`, else the filesystem root. Every upward walk
   stops here so a stray config above the repo cannot leak in.
 - `ancestors(cwd)`: root down to cwd, outermost first.
-- `jarvisDirs(cwd)`: `~/.config/jarvis`, then `<ancestor>/.jarvis` for each ancestor.
+- **Trust** (D-12): a repo's config can set `permission`, `baseURL`, `{secret:}`/`{file:}` values,
+  MCP and `check` commands, and `.jarvis/{plugins,tools}` is code imported at startup, so none of
+  it loads until the user trusts the directory. `trustedDirs()` reads
+  `~/.config/jarvis/trusted.json` (an array of absolute paths); `isTrusted(dir)` is true for a
+  listed directory or anything under it (`within`, which `cli/work.ts` also uses);
+  `trust(dir)` appends one (`jarvis trust`). `trustedAncestors(cwd)` = the trusted subset of
+  `ancestors(cwd)`. `untrustedConfig`/`trustNotice` name what was skipped, for the startup line.
+- `jarvisDirs(cwd)`: `~/.config/jarvis`, then `<ancestor>/.jarvis` for each **trusted** ancestor.
 - `resourceDirs(cwd, kind)` / `resourceFiles(cwd, kind, ext)`: existing `<dir>/<kind>` folders,
   singular and plural both accepted (`agent`/`agents`, …). Order = nearest last, so later wins.
 
 **Loading** (`config.ts` → `loadConfig`):
-1. `configFiles(cwd)`: global `jarvis.jsonc`/`jarvis.json`, then for each ancestor its
+1. `configFiles(cwd)`: global `jarvis.jsonc`/`jarvis.json`, then for each trusted ancestor its
    `jarvis.json[c]` and `.jarvis/jarvis.json[c]`.
 2. Each file: JSONC parse (trailing commas allowed) → `substitute` expands `{env:NAME}`,
    `{secret:name}` and `{file:path}` (relative to that file's directory).
@@ -51,7 +58,7 @@ option, and classifies it `ok`/`empty`/`absent`. `explainAuth` turns an auth-sha
 | File | Responsibility |
 |---|---|
 | `tui/src/config/config.ts` | `ConfigSchema` and sub-schemas, `loadConfig`, `configFiles`, `merge`, `substitute`, `ConfigError`, `DEFAULT_GESTURE_MAP`, types |
-| `tui/src/config/discover.ts` | `projectRoot`, `ancestors`, `jarvisDirs`, `resourceDirs`, `resourceFiles`, `ResourceKind` |
+| `tui/src/config/discover.ts` | `projectRoot`, `ancestors`, `within`, trust (`trustedDirs`, `isTrusted`, `trust`, `trustedAncestors`, `untrustedConfig`, `trustNotice`), `jarvisDirs`, `resourceDirs`, `resourceFiles`, `ResourceKind` |
 | `tui/src/config/paths.ts` | `configDir`, `dataDir`, `sessionDir`, `projectDir`, `configNames` |
 | `tui/src/config/persist.ts` | `persistConfig`, `persistPermission`, `configFileIn`, `globalConfigFile` |
 | `tui/src/config/provider-plan.ts` | `Write` plan type, `checkEntry`, `checkMerged`, `applyWrites` |
@@ -109,9 +116,10 @@ clear `ctrl+l`, palette `ctrl+p`, model picker `ctrl+o`, agent picker `shift+tab
 |---|---|
 | `~/.config/jarvis/jarvis.jsonc` (or `.json`) | Global config |
 | `~/.config/jarvis/secrets.json` | Stored API keys, mode 600 |
+| `~/.config/jarvis/trusted.json` | Directories whose project config and `.jarvis/` may load |
 | `~/.config/jarvis/{agents,commands,tools,plugins,skills,themes}/` | Global resources |
-| `<ancestor>/jarvis.json[c]`, `<ancestor>/.jarvis/jarvis.json[c]` | Project config |
-| `<ancestor>/.jarvis/<kind>/` | Project resources |
+| `<ancestor>/jarvis.json[c]`, `<ancestor>/.jarvis/jarvis.json[c]` | Project config (trusted ancestors only) |
+| `<ancestor>/.jarvis/<kind>/` | Project resources (trusted ancestors only) |
 | `~/.local/share/jarvis/` (`dataDir`) | Sessions (`sessions/`), metrics, packages, logs, credentials |
 | `tui/jarvis.schema.json` | Generated JSON schema |
 
@@ -128,7 +136,14 @@ config references through `{env:…}`. Nothing is cached; callers reload by call
 
 ## Gotchas
 - `configDir`/`dataDir` are module-level constants, which is why tests sandbox them with a
-  preload (`tui/test/setup.ts`), not per test.
+  preload (`tui/test/setup.ts`), not per test. The preload also trusts `tmpdir()` so tests can
+  build projects there; the trust tests empty the list on purpose.
+- Trust is a file, never an env var: Bun auto-loads a repo's `.env`, so an env switch would let
+  the repo trust itself.
+- Instruction files (`AGENTS.md`, `JARVIS.md`, … via `agent/prompt.ts`) still load from every
+  ancestor, trusted or not: they are text the model reads, not config or code.
+- With `persistGrants`, "always" grants in an untrusted repo are written to its
+  `.jarvis/jarvis.jsonc` but not loaded back until the repo is trusted.
 - `{secret:…}` resolving soft is deliberate: a deleted `secrets.json` must not make jarvis
   unstartable, since the TUI is where you fix it. Do not make it throw.
 - `loadConfig` output has already lost the env var names; anything that needs them must re-read
@@ -146,7 +161,7 @@ Run from `tui/`: `bun test`.
 | Test | Covers |
 |---|---|
 | `tui/test/config.test.ts` | `merge`, `substitute`, `configFiles`, `ConfigSchema`, `persistPermission` |
-| `tui/test/discover.test.ts` | `projectRoot`, `ancestors`, `resourceDirs`, themes, `configFiles` |
+| `tui/test/discover.test.ts` | `projectRoot`, `ancestors`, `resourceDirs`, themes, `configFiles`, trust |
 | `tui/test/provider-setup.test.ts` | `provider-plan.ts`, `secrets.ts` |
 | `tui/test/provider-runtime.test.ts` | `provider-status.ts` |
 | `tui/test/ui.test.ts` | keybinds, themes in the UI |

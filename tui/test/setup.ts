@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -17,3 +17,8 @@ import { join } from "node:path"
 const sandbox = mkdtempSync(join(tmpdir(), "jarvis-test-home-"))
 process.env.XDG_CONFIG_HOME = join(sandbox, "config")
 process.env.XDG_DATA_HOME = join(sandbox, "data")
+
+// Tests build their projects under tmpdir, so trust it; the trust tests empty this list on purpose.
+// Both spellings, because macOS's tmpdir is a symlink and process.cwd() returns the real path.
+mkdirSync(join(sandbox, "config", "jarvis"), { recursive: true })
+writeFileSync(join(sandbox, "config", "jarvis", "trusted.json"), JSON.stringify([tmpdir(), realpathSync(tmpdir())]))

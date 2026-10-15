@@ -1,6 +1,6 @@
 # Extensions
 
-Code: `tui/src/extend/`, `tui/assets/global/` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/extend/`, `tui/assets/global/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 Everything a `.jarvis` directory (project or global) can add without forking jarvis: slash
@@ -15,7 +15,8 @@ Usage: [tui/README.md → The .jarvis directory](../../../../tui/README.md#the-j
 
 All file discovery uses [config](../config/README.md)'s `resourceDirs`/`resourceFiles`: the
 global `~/.config/jarvis/<kind>/`, then `.jarvis/<kind>/` from project root down to cwd (singular
-or plural folder names). Nearest wins where names collide.
+or plural folder names), but only for directories the user trusted (`jarvis trust`, D-12).
+Nearest wins where names collide.
 
 **Startup** (`extensions.ts` → `loadExtensions`), once per process, in parallel:
 - `custom-tools.ts` → `loadCustomTools`: imports every `tools/*.{ts,tsx,js,mjs}`. Each export
@@ -131,7 +132,8 @@ the same name replaces the built-in entry.
   `builtin-commands.ts`, `pickers.ts`, `suggest.ts`, `use-turn.ts`).
 
 ## Gotchas
-- Custom tools and plugins are trusted code imported into the jarvis process. Custom tools gate
+- Custom tools and plugins are code imported into the jarvis process, which is why a repo's
+  `.jarvis/` only loads once the repo is trusted. Custom tools gate
   under their own name, which defaults to `allow`; MCP defaults to `ask`.
 - `wrapTools` runs `tool.execute.before` before the tool's own gate check, so a plugin can change
   the arguments the user is then asked to approve.

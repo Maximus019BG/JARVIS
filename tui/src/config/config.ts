@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join } from "node:path"
 import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 import { z } from "zod"
-import { ancestors } from "./discover.ts"
+import { trustedAncestors } from "./discover.ts"
 import { DEFAULT_KEYBINDS, type Action } from "./keybinds.ts"
 import { configDir, configNames } from "./paths.ts"
 import { readSecrets } from "./secrets.ts"
@@ -510,14 +510,14 @@ function findIn(dir: string): string | undefined {
 
 /**
  * Config files that apply to `cwd`, outermost first: the global one, then for every
- * directory from the project root down to cwd its `jarvis.json[c]` and then its
- * `.jarvis/jarvis.json[c]`. Nearest wins.
+ * trusted directory from the project root down to cwd its `jarvis.json[c]` and then its
+ * `.jarvis/jarvis.json[c]`. Nearest wins. Untrusted ones are skipped (`jarvis trust`).
  */
 export function configFiles(cwd: string): string[] {
   const found: string[] = []
   const global = findIn(configDir)
   if (global) found.push(global)
-  for (const dir of ancestors(cwd)) {
+  for (const dir of trustedAncestors(cwd)) {
     for (const candidate of [findIn(dir), findIn(join(dir, ".jarvis"))]) {
       if (candidate) found.push(candidate)
     }

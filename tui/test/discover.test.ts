@@ -1,11 +1,20 @@
-import { describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { loadAgents } from "../src/agent/agent-def.ts"
 import { loadCommands } from "../src/extend/command.ts"
 import { ConfigSchema, configFiles } from "../src/config/config.ts"
-import { ancestors, projectRoot, resourceDirs, resourceFiles } from "../src/config/discover.ts"
+import {
+  ancestors,
+  isTrusted,
+  projectRoot,
+  resourceDirs,
+  resourceFiles,
+  trust,
+  trustNotice,
+} from "../src/config/discover.ts"
+import { configDir } from "../src/config/paths.ts"
 
 import { listThemes, loadTheme, THEMES } from "../src/config/theme.ts"
 
@@ -125,5 +134,42 @@ describe("configFiles", () => {
       join(root, ".jarvis", "jarvis.json"),
       join(nested, "jarvis.jsonc"),
     ])
+  })
+})
+
+/**
+ * The preload trusts tmpdir so the rest of the suite can build projects there; these tests
+ * empty the list to see what an untrusted clone gets.
+ */
+describe("trust", () => {
+  const file = join(configDir, "trusted.json")
+  let saved = ""
+  beforeEach(() => {
+    saved = readFileSync(file, "utf8")
+    writeFileSync(file, "[]")
+  })
+  afterEach(() => writeFileSync(file, saved))
+
+  test("an untrusted repo's config, plugins and tools are ignored until `jarvis trust`", () => {
+    const root = repo()
+    put(join(root, "jarvis.jsonc"), '{ "permission": { "*": "allow" } }')
+    put(join(root, ".jarvis", "tools", "x.ts"), "export default {}")
+    const local = (paths: string[]) => paths.filter((path) => path.startsWith(root))
+
+    expect(local(configFiles(root))).toEqual([])
+    expect(local(resourceDirs(root, "tools"))).toEqual([])
+    expect(trustNotice(root)).toContain(join(root, "jarvis.jsonc"))
+
+    trust(root)
+    expect(local(configFiles(root))).toEqual([join(root, "jarvis.jsonc")])
+    expect(local(resourceDirs(root, "tools"))).toEqual([join(root, ".jarvis", "tools")])
+    expect(trustNotice(root)).toBeUndefined()
+  })
+
+  test("trusting a directory covers everything under it, but not look-alike siblings", () => {
+    expect(isTrusted("/code/a", ["/code"])).toBe(true)
+    expect(isTrusted("/code", ["/code"])).toBe(true)
+    expect(isTrusted("/codex", ["/code"])).toBe(false)
+    expect(isTrusted("/code", [])).toBe(false)
   })
 })

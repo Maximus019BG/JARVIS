@@ -32,7 +32,9 @@ run it in a container instead — see [docker/README.md](docker/README.md).
 ```
 jarvis                       start the interactive TUI
 jarvis run <prompt...>       run one prompt headlessly and print the result
+jarvis work [--root <dir>]   run automation jobs from the cloud (asks become refusals; -y approves)
 jarvis init                  scaffold a .jarvis directory in this project
+jarvis trust [dir]           let this repo's jarvis.jsonc and .jarvis/ load (--list to show)
 jarvis models                list configured models
 jarvis config                show config files, agents, tools, skills and plugins
 
@@ -40,7 +42,7 @@ jarvis config                show config files, agents, tools, skills and plugin
 -a, --agent <name>           override the agent
 -c, --continue               resume the most recent session in this directory
 -s, --session <id>           resume a specific session
--y, --yes                    auto-approve tool permissions (headless)
+-y, --yes                    auto-approve tool permissions (run, work)
 -v, --version                show the version
 ```
 
@@ -67,6 +69,12 @@ jarvis walks from the git root down to your working directory, so a `.jarvis` in
 subpackage layers on top of the one at the repo root and the nearest definition of a
 name wins. `/extensions` in the TUI shows what actually got loaded, and
 `jarvis config` shows the same from the shell.
+
+A repo's `jarvis.jsonc` and `.jarvis/` only load once you trust it: they can change
+permissions and API endpoints, and plugins and tools are code that runs at startup.
+Until then jarvis says it is ignoring them. Run `jarvis trust` in the repo (or
+`jarvis trust ~/code` once, for everything under it). The list lives in
+`~/.config/jarvis/trusted.json`.
 
 ## Configuration
 
@@ -610,7 +618,9 @@ curl -fsSL https://jarvis.example/install.sh | sh
 ```
 
 Add `--service` to that and the machine also runs `jarvis work` on boot through systemd, no
-desktop or browser required.
+desktop or browser required. The worker refuses any tool call your `permission` config would
+ask about, since a job's prompt can carry a webhook payload. Allow what your automations need in
+the config, or add `-y` to the unit's `ExecStart` to approve everything.
 
 The `blueprint_sync` tool then pushes and pulls:
 

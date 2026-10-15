@@ -1,6 +1,6 @@
 # Automations
 
-Code: `web/src/server/automations/`, `web/src/app/api/automations/`, `web/src/app/api/device/automation/`, `web/src/app/api/workstation/automation/`, `web/src/components/automations/`, `web/src/lib/automations/`, `web/src/lib/api/automations.ts`, `web/src/app/(protected)/app/automations/` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/server/automations/`, `web/src/app/api/automations/`, `web/src/app/api/device/automation/`, `web/src/app/api/workstation/automation/`, `web/src/components/automations/`, `web/src/lib/automations/`, `web/src/lib/api/automations.ts`, `web/src/app/(protected)/app/automations/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 A small node-graph workflow engine scoped to one workstation. A user draws a graph in a
@@ -111,7 +111,7 @@ web (advance) ── insert automation_job(pending) ──┐
                                                   ▼
 jarvis work ── POST /api/device/automation/claim ──► sweep timeouts → sweepCron → claim 1 job
             ◄── { job: { id, prompt, cwd, model, timeoutSec } } (or { job: null })
-            runs runHeadless(...) inside --root, permissions auto-approved
+            runs runHeadless(...) inside --root; "ask" tool calls refused unless -y
             ── POST /api/device/automation/result { jobId, ok, text, error, usage } ──►
                   job → succeeded/failed, step → output { text, usage }, advance(runId)
 ```
@@ -261,8 +261,10 @@ No in-memory state. Cron state is `automation_trigger.last_fired_at`.
   so the run is `failed` but its step row is never closed. The run page may still show the
   "waiting for a workstation" hint for that step.
 - **Device routes do not check scopes.** Any active device paired to the workstation can claim
-  agent jobs, and those jobs run with all permissions auto-approved. `--root` on the worker is
-  the only limit on where they run.
+  agent jobs. `--root` on the worker is the only limit on where they run.
+- **The webhook body is untrusted.** An `agent` prompt with `{{$json}}` carries text whoever
+  holds the URL wrote. `jarvis work` refuses `ask` tool calls unless started with `-y` (D-11);
+  `AutomationTriggers` says so under the webhook URL.
 - `attempts` is incremented but nothing retries. A failed job stays failed. `canceled` exists
   as a status but nothing writes it.
 - The edit page loads the graph from legacy `automation.metadata`, not from

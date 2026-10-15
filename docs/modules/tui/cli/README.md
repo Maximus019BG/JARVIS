@@ -1,6 +1,6 @@
 # CLI
 
-Code: `tui/src/index.tsx`, `tui/src/cli/` (except `cli/voice.ts`), `tui/install.sh`, `tui/docker/` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/index.tsx`, `tui/src/cli/` (except `cli/voice.ts`), `tui/install.sh`, `tui/docker/` · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 The `jarvis` entry point and its non-interactive subcommands: argument parsing and dispatch,
@@ -28,15 +28,24 @@ No `ask` callback is passed, so the `ask` and `find_item` tools are absent.
 
 **Worker** (`cli/work.ts` → `work`): the web app cannot reach a NATed machine, so this polls.
 Loop: `POST /api/device/automation/claim`; on a job, resolve `job.cwd` under `--root` and refuse
-anything outside (`within`); run `runHeadless` with `yes: true` and
-`AbortSignal.timeout(job.timeoutSec * 1000)`; post the outcome to
-`/api/device/automation/result`. Poll every 3 s, dropping to 15 s after 2 minutes idle.
+anything outside (`within`, from `config/discover.ts`); run `runHeadless` with `yes: options.yes`
+(default `false`, set by `-y`) and `AbortSignal.timeout(job.timeoutSec * 1000)`; post the outcome
+to `/api/device/automation/result`. Poll every 3 s, dropping to 15 s after 2 minutes idle. Without
+`-y`, a tool call the config's `permission` rules would `ask` about is refused (D-11): a job's
+prompt can carry a webhook payload, which anyone holding the webhook URL wrote. The device API
+calls time out after 30 s.
+
+**Trust** (`index.tsx`, `trust` case → `config/discover.ts` → `trust`): adds the repo root to
+`~/.config/jarvis/trusted.json`, or the current directory outside a repo, or the given path.
+`--list` prints the list. Until then a repo's `jarvis.jsonc` and `.jarvis/` are ignored, and
+`run`, `config` and the TUI say so in one line (`trustNotice`).
 
 **Pairing** (`cli/pair-flow.ts`, shared with the `/pair` wizard in the UI):
 1. `requestCode` → `POST /api/device/code` with `{name, fingerprint, platform, email?}`.
    `fingerprint` is a sha256 of `/etc/machine-id` (or hostname) + hostname, first 12 hex chars.
 2. `pollForToken` → `POST /api/device/token` with `{deviceCode}` every `interval` seconds:
-   `authorization_pending` continues, `slow_down` adds 5 s, anything else is terminal.
+   `authorization_pending` continues, `slow_down` adds 5 s, anything else is terminal. Each
+   request times out after 30 s.
 3. `cli/pair.ts` → `pair` writes the result with `writeCredentials` (mode 600). Base URL order:
    argument, `JARVIS_CLOUD_URL`, `config.cloud`, then an interactive prompt.
 `unpair` only deletes the local file; the token stays valid until revoked in the web app.
@@ -63,7 +72,7 @@ at `/config/jarvis`, and a `jarvis-data` volume at `/data`.
 |---|---|
 | `tui/src/index.tsx` | Entry point: `HELP`, `VERSION`, `parseArgs`, subcommand dispatch |
 | `tui/src/cli/headless.ts` | `runHeadless`: one prompt without the TUI |
-| `tui/src/cli/work.ts` | `work`: automation job worker, `within` |
+| `tui/src/cli/work.ts` | `work`: automation job worker |
 | `tui/src/cli/init.ts` | `init`: scaffold `.jarvis/` examples |
 | `tui/src/cli/pair-flow.ts` | Device grant protocol: `requestCode`, `pollForToken`, `pairArgs`, `fingerprint`, `platformLabel`, `defaultDeviceName`, `normaliseBaseUrl`, `PairCancelled` |
 | `tui/src/cli/pair.ts` | `pair`, `unpair`, `showDevice` (printing front end) |
@@ -82,7 +91,8 @@ at `/config/jarvis`, and a `jarvis-data` volume at `/data`.
 |---|---|---|
 | `jarvis` | Interactive TUI | `ui/start.tsx` → `startTui` |
 | `jarvis run <prompt…>` | Headless turn | `cli/headless.ts` |
-| `jarvis work [--root <dir>]` | Automation worker | `cli/work.ts` |
+| `jarvis work [--root <dir>] [-y]` | Automation worker; `-y` approves every tool call | `cli/work.ts` |
+| `jarvis trust [dir\|--list]` | Let a repo's `jarvis.jsonc` and `.jarvis/` load | `config/discover.ts` |
 | `jarvis init` | Scaffold `.jarvis/` + code project | `cli/init.ts`, `code/project.ts` |
 | `jarvis models` | List models, `*` marks the active one | `agent/provider.ts` |
 | `jarvis config` | Config files, agents, commands, tools, skills, plugins, themes | `index.tsx` |
@@ -129,8 +139,12 @@ at `/config/jarvis`, and a `jarvis-data` volume at `/data`.
   unit, the web app's served `install.sh`.
 
 ## Gotchas
-- `jarvis work` auto-approves every permission. `--root` (default cwd) is the only boundary, and
-  jobs whose `cwd` resolves outside it are refused and reported as failed.
+- `jarvis work` refuses "ask" tool calls unless started with `-y`. `--root` (default cwd) bounds
+  where jobs run; jobs whose `cwd` resolves outside it are refused and reported as failed. The
+  systemd unit (`assets/pi/jarvis-work.service`) runs without `-y`, so a job that needs bash or
+  edits needs `permission` rules in the config, or `-y` added to its `ExecStart`.
+- Trust is not required to run `jarvis work`: an untrusted root only means its `.jarvis/` code
+  doesn't load, which is the safe side.
 - `VERSION` is hardcoded in `index.tsx`; a compiled binary has no `package.json` to read.
 - `jarvis models` prints "add a `provider` entry" when nothing is configured, while
   `defaultModelID` points at ctrl+y or `jarvis pair`.
@@ -152,7 +166,8 @@ Run from `tui/`: `bun test`.
 | `tui/test/config.test.ts` | `parseArgs` |
 | `tui/test/headless.test.ts` | `runHeadless` with sessions |
 | `tui/test/work.test.ts` | `work`, `within`, root refusal |
-| `tui/test/pair-flow.test.ts` | `requestCode`, `pollForToken`, `pairArgs` |
-| `tui/test/pair.test.ts` | `pair`, `unpair`, credentials file |
+| `tui/test/discover.test.ts` | `trust`, `trustNotice` |
+| `tui/test/pair-flow.test.ts` | `requestCode`, `pollForToken` |
+| `tui/test/pair.test.ts` | `pair`, `unpair`, `pairArgs`, credentials file |
 | `tui/test/pair-setup.test.ts` | UI pairing setup over `pair-flow.ts` |
 | `tui/test/extensions.test.ts` | `init` output loads as working extensions |

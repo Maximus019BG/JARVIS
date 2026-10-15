@@ -126,6 +126,12 @@ export function AutomationTriggers({
                   POST with the <code>x-automation-secret</code> header set to your{" "}
                   <code>AUTOMATION_WEBHOOK_SECRET</code>. The body becomes <code>{"{{$json}}"}</code>.
                 </p>
+                <p className="text-muted-foreground text-xs">
+                  Treat the body as untrusted: whoever calls this URL writes it. An agent step that
+                  puts <code>{"{{$json}}"}</code> in its prompt runs on <code>jarvis work</code>,
+                  which refuses tool calls your permission rules would ask about unless started
+                  with <code>-y</code>.
+                </p>
               </>
             ) : (
               <>

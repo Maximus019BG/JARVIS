@@ -10,6 +10,7 @@ import { isPaired } from "../blueprint/credentials.ts"
 import { openSession } from "../agent/session.ts"
 import { pushSessions } from "../agent/session-sync.ts"
 import { loadTheme } from "../config/theme.ts"
+import { trustNotice } from "../config/discover.ts"
 import { killBackground } from "../tools/background.ts"
 import { App } from "./app.tsx"
 import { bootReport, collectBoot } from "./boot.ts"
@@ -40,6 +41,8 @@ export async function startTui(options: StartOptions) {
   })
 
   const notes = [...extensions.errors, ...mcp.status.filter((s) => s.error).map((s) => `mcp ${s.server}: ${s.error}`)]
+  const untrusted = trustNotice(cwd)
+  if (untrusted) notes.push(untrusted)
   // A fresh install has no providers yet. Say so in the transcript rather than refusing to
   // start — and the flow opens over the top of it, so this is the explanation behind the form
   // rather than a set of instructions to go and carry out somewhere else.

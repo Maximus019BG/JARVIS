@@ -1,6 +1,6 @@
 # UI
 
-Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-14 @ c9135de
 
 ## Purpose
 
@@ -33,7 +33,8 @@ engines live in other modules. Usage (keys, config, commands) is in
    entries for a paired device) and calls `startTui`.
 2. `startTui` opens or resumes the session, starts MCP and loads extensions in parallel, fires
    `pushSessions` (session mirror, never awaited) and collects startup notes (extension and MCP
-   errors, plus `hostedGuidance` when there is no model).
+   errors, `trustNotice` when the repo's own config is being ignored, plus `hostedGuidance` when
+   there is no model).
 3. `tui/src/ui/boot.ts` → `collectBoot` gathers the facts once (credentials, previous session,
    voice settings, enrolled voices). It never throws. `bootReport` turns them into the
    `link / loaded / voice / voices / last` rows that `Welcome` shows above an empty prompt.

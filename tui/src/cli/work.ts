@@ -1,6 +1,7 @@
-import { resolve, sep } from "node:path"
+import { resolve } from "node:path"
 import { requireCredentials, type Credentials } from "../blueprint/credentials.ts"
 import type { Config } from "../config/config.ts"
+import { within } from "../config/discover.ts"
 import { runHeadless } from "./headless.ts"
 
 /**
@@ -15,11 +16,16 @@ const IDLE_AFTER_MS = 120_000
 export type WorkOptions = {
   config: Config
   /**
-   * The only directory this worker will run an agent in. Not optional in spirit: jobs run
-   * with every permission auto-approved, so this is the one thing standing between a
+   * The only directory this worker will run an agent in: the one thing standing between a
    * mistyped `cwd` in a web editor and the rest of the filesystem.
    */
   root?: string
+  /**
+   * Approve every tool call. Off by default: a job's prompt can carry a webhook payload
+   * (`{{$json}}`), which is text anyone holding the webhook URL wrote. Without it, a call
+   * the config's `permission` rules would `ask` about is refused instead.
+   */
+  yes?: boolean
   intervalMs?: number
   /** Test seam: stop after this many polls instead of running forever. */
   maxPolls?: number
@@ -39,14 +45,11 @@ async function call(credentials: Credentials, route: string, body?: unknown): Pr
       ...(body === undefined ? {} : { "content-type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    // A half-open connection would otherwise stall this forever.
+    signal: AbortSignal.timeout(30_000),
   })
   if (!response.ok) throw new Error(`POST ${route} failed: ${response.status}`)
   return await response.json()
-}
-
-/** Whether `target` is `root` or lives underneath it. */
-export function within(root: string, target: string): boolean {
-  return target === root || target.startsWith(root + sep)
 }
 
 /**
@@ -63,7 +66,11 @@ export async function work(options: WorkOptions): Promise<void> {
   const idle = options.intervalMs ?? IDLE_MS
 
   process.stderr.write(`jarvis work: polling ${credentials.baseUrl} for jobs in ${root}\n`)
-  process.stderr.write("every job runs with permissions auto-approved — ctrl+c to stop\n")
+  process.stderr.write(
+    options.yes
+      ? "warning: --yes — every tool call in every job is auto-approved, including bash — ctrl+c to stop\n"
+      : "tool calls your `permission` config would ask about are refused (pass --yes to approve them) — ctrl+c to stop\n",
+  )
 
   let lastJobAt = Date.now()
   for (let poll = 0; options.maxPolls === undefined || poll < options.maxPolls; poll++) {
@@ -97,7 +104,7 @@ export async function work(options: WorkOptions): Promise<void> {
         config: options.config,
         prompt: job.prompt,
         model: job.model || undefined,
-        yes: true,
+        yes: options.yes ?? false,
         cwd,
         abort: AbortSignal.timeout(job.timeoutSec * 1000),
       })

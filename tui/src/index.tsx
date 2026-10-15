@@ -15,6 +15,9 @@ usage:
   jarvis                       start the interactive TUI
   jarvis run <prompt...>       run one prompt headlessly and print the result
   jarvis work [--root <dir>]   run automation agent jobs from the cloud in this directory
+                               (tool calls that would ask are refused; -y approves them)
+  jarvis trust [dir]           load this repo's jarvis.jsonc and .jarvis/ (plugins, tools, …)
+  jarvis trust --list          show trusted directories
   jarvis init                  scaffold .jarvis and make this directory a code project
   jarvis models                list configured models
   jarvis config                show config files, agents, tools, skills and plugins
@@ -41,7 +44,7 @@ options:
   -a, --agent <name>           override the agent
   -c, --continue               resume the most recent session in this directory
   -s, --session <id>           resume a specific session
-  -y, --yes                    auto-approve tool permissions (headless)
+  -y, --yes                    auto-approve tool permissions (run, work)
   -h, --help                   show this help
   -v, --version                show the version
 `
@@ -120,6 +123,9 @@ async function main() {
       const cwd = process.cwd()
       const files = configFiles(cwd)
       process.stdout.write(files.length ? `config files:\n${files.map((f) => `  ${f}`).join("\n")}\n` : "no config files found\n")
+      const { trustNotice } = await import("./config/discover.ts")
+      const notice = trustNotice(cwd)
+      if (notice) process.stdout.write(`${notice}\n`)
 
       const extensions = await loadExtensions(config, cwd)
       const lines = [
@@ -215,6 +221,9 @@ async function main() {
     }
     case "run": {
       const { runHeadless } = await import("./cli/headless.ts")
+      const { trustNotice } = await import("./config/discover.ts")
+      const notice = trustNotice()
+      if (notice) process.stderr.write(`${notice}\n`)
       await runHeadless({
         config,
         prompt: args.join(" "),
@@ -230,7 +239,20 @@ async function main() {
       const { work } = await import("./cli/work.ts")
       const index = flags.rest.indexOf("--root")
       const root = flags.rest.find((arg) => arg.startsWith("--root="))?.split("=")[1] ?? (index >= 0 ? flags.rest[index + 1] : undefined)
-      await work({ config, root })
+      await work({ config, root, yes: flags.yes })
+      return
+    }
+    case "trust": {
+      const { parse } = await import("node:path")
+      const { projectRoot, trust, trustedDirs } = await import("./config/discover.ts")
+      if (args[0] === "--list") {
+        process.stdout.write(`${trustedDirs().join("\n") || "nothing trusted yet"}\n`)
+        return
+      }
+      // Default to the repo root; outside a repo that's `/`, so fall back to this directory.
+      const root = projectRoot()
+      const target = args[0] ?? (parse(root).root === root ? process.cwd() : root)
+      process.stdout.write(`trusted ${trust(target)}\n`)
       return
     }
     case undefined: {
