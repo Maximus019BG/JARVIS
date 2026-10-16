@@ -40,7 +40,12 @@ export function GlobalSheet() {
         if (!open) close();
       }}
     >
-      <SheetContent side={state.side}>
+      <SheetContent
+        side={state.side}
+        // Non-modal sheets close on focus outside; a dropdown that opened this sheet hands focus
+        // back to its trigger as it closes, which would dismiss the sheet the moment it appeared.
+        onFocusOutside={(e) => e.preventDefault()}
+      >
         {(state.title ?? state.description) && (
           <SheetHeader>
             {state.title && <SheetTitle>{state.title}</SheetTitle>}

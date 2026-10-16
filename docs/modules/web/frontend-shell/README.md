@@ -1,6 +1,6 @@
 # Frontend shell
 
-Code: `web/src/app/{layout,global-error,opengraph-image,robots,sitemap}.tsx?`, `web/src/app/(home)/`, `web/src/app/api/{health,ready}/`, `web/src/app/(protected)/{layout,app/layout,app/page}.tsx`, `web/src/app/install.sh/`, `web/src/components/{landing,dashboard,common,providers,animate-ui,ui}/`, `web/src/components/*.tsx`, `web/src/config/`, `web/src/hooks/`, `web/src/lib/{utils,format,copy,image,ip-location,sheet-store,type-to-confirm-store}.ts`, `web/src/lib/api/error.ts`, `web/src/proxy.ts`, `web/src/env.js`, `web/src/styles/`, `web/scripts/embed-install-sh.mjs` · Verified: 2026-10-14 @ c9135de
+Code: `web/src/app/{layout,global-error,opengraph-image,robots,sitemap}.tsx?`, `web/src/app/(home)/`, `web/src/app/api/{health,ready}/`, `web/src/app/(protected)/{layout,app/layout,app/page}.tsx`, `web/src/app/install.sh/`, `web/src/components/{landing,dashboard,common,providers,animate-ui,ui}/`, `web/src/components/*.tsx`, `web/src/config/`, `web/src/hooks/`, `web/src/lib/{utils,format,copy,image,ip-location,sheet-store,type-to-confirm-store}.ts`, `web/src/lib/api/error.ts`, `web/src/proxy.ts`, `web/src/env.js`, `web/src/styles/`, `web/scripts/embed-install-sh.mjs` · Verified: 2026-10-16 @ 43a1209
 
 ## Purpose
 Everything around the feature pages: the root document and providers, the public landing page,
@@ -59,6 +59,9 @@ every mount), no refetch on window focus, and no retry on 400/401/403/404/500
 - The app-wide `TypeToConfirmAlertDialog` and `GlobalSheet` are mounted once here and driven
   by zustand stores (`web/src/lib/type-to-confirm-store.ts` → `typeToConfirm.show(...)` returns a
   `Promise<boolean>`; `web/src/lib/sheet-store.ts` → `useSheetStore().open({...})`).
+  The sheet is non-modal and ignores focus moving outside it, so a dropdown item can open it:
+  the menu hands focus back to its trigger as it closes, which would otherwise dismiss the sheet.
+  Clicking outside, Escape and the close button still close it.
 
 The sidebar has the workstation picker in the header (`WorkstationSidebarSelector`). The nav
 (`DashboardSidebarNav`) and the user menu (`UserSidebarMenu`) appear only once a workstation is
