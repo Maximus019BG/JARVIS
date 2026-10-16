@@ -1,6 +1,6 @@
 # CLI
 
-Code: `tui/src/index.tsx`, `tui/src/cli/` (except `cli/voice.ts`), `tui/install.sh`, `tui/docker/` · Verified: 2026-10-14 @ c9135de
+Code: `tui/src/index.tsx`, `tui/src/cli/` (except `cli/voice.ts`), `tui/install.sh`, `tui/docker/` · Verified: 2026-10-16 @ a86e287
 
 ## Purpose
 The `jarvis` entry point and its non-interactive subcommands: argument parsing and dispatch,
@@ -92,7 +92,7 @@ at `/config/jarvis`, and a `jarvis-data` volume at `/data`.
 | `jarvis` | Interactive TUI | `ui/start.tsx` → `startTui` |
 | `jarvis run <prompt…>` | Headless turn | `cli/headless.ts` |
 | `jarvis work [--root <dir>] [-y]` | Automation worker; `-y` approves every tool call | `cli/work.ts` |
-| `jarvis trust [dir\|--list]` | Let a repo's `jarvis.jsonc` and `.jarvis/` load | `config/discover.ts` |
+| `jarvis trust [dir\|--list]` | Let a repo's `jarvis.jsonc` and `.jarvis/` load (`/trust` does the same in the TUI) | `config/discover.ts` |
 | `jarvis init` | Scaffold `.jarvis/` + code project | `cli/init.ts`, `code/project.ts` |
 | `jarvis models` | List models, `*` marks the active one | `agent/provider.ts` |
 | `jarvis config` | Config files, agents, commands, tools, skills, plugins, themes | `index.tsx` |

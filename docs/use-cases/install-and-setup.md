@@ -1,6 +1,6 @@
 # Install and setup
 
-Modules: [tui/cli](../modules/tui/cli/README.md), [tui/config](../modules/tui/config/README.md), [tui/extensions](../modules/tui/extensions/README.md), [tui/engineering](../modules/tui/engineering/README.md), [web/frontend-shell](../modules/web/frontend-shell/README.md), [web/database](../modules/web/database/README.md), [`k8s/`](../../k8s/README.md) · Verified: 2026-10-15 @ aff1145
+Modules: [tui/cli](../modules/tui/cli/README.md), [tui/config](../modules/tui/config/README.md), [tui/extensions](../modules/tui/extensions/README.md), [tui/engineering](../modules/tui/engineering/README.md), [web/frontend-shell](../modules/web/frontend-shell/README.md), [web/database](../modules/web/database/README.md), [`k8s/`](../../k8s/README.md) · Verified: 2026-10-16 @ a86e287
 
 ## Who and why
 
@@ -71,7 +71,7 @@ drawing daemon.
     wizard go to `secrets.json` (mode 600), and the config only holds `{secret:…}` references.
     `jarvis config` lists what loaded.
 13. **Trust.** A repo's `jarvis.jsonc` and `.jarvis/` (permissions, MCP commands, plugins and tools that
-    are code) load only after `jarvis trust` adds it to `~/.config/jarvis/trusted.json`. Until then the TUI
+    are code) load only after `jarvis trust` (or `/trust` in the TUI) adds it to `~/.config/jarvis/trusted.json`. Until then the TUI
     says what it skipped. Instruction files such as `AGENTS.md` still load: they are text, not code.
 14. **Editor schema.** `tui/jarvis.schema.json` is generated from the zod schema with `bun run schema`.
     Never edit it by hand (AGENTS.md rule 5).
@@ -131,7 +131,7 @@ drawing daemon.
   (`curl … | sh -s -- --yes`).
 - **`jarvis: …` on start.** A `ConfigError` lists each bad key path. Fix the file. A missing `{secret:}`
   does not block startup, because the TUI is where you fix it.
-- **Repo config ignored.** Run `jarvis trust` in the repo.
+- **Repo config ignored.** Run `jarvis trust` in the repo, or `/trust` in the TUI. MCP servers and `.jarvis/` load on the next start.
 - **Pod not ready.** `/api/ready` returns 503 while Postgres is unreachable. Check `DATABASE_URL` and the
   `db-server` pod.
 - **Boot fails on env.** A variable is missing or invalid. Compare with `web/.env.example`.

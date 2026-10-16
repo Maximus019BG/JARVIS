@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, join, resolve, sep } from "node:path"
+import { dirname, join, parse, resolve, sep } from "node:path"
 import { configDir, configNames } from "./paths.ts"
 
 /** The kinds of thing a `.jarvis` directory can hold, by their plural directory name. */
@@ -82,6 +82,12 @@ export function trust(dir: string): string {
   return root
 }
 
+/** What `jarvis trust` / `/trust` trusts with no argument: the repo root, or `cwd` outside a repo (whose "root" is `/`). */
+export function defaultTrustTarget(cwd = process.cwd()): string {
+  const root = projectRoot(cwd)
+  return parse(root).root === root ? resolve(cwd) : root
+}
+
 /** `ancestors(cwd)` the user trusts: the only places project config and `.jarvis` load from. */
 export function trustedAncestors(cwd = process.cwd()): string[] {
   const trusted = trustedDirs()
@@ -101,7 +107,7 @@ export function untrustedConfig(cwd = process.cwd()): string[] {
 export function trustNotice(cwd = process.cwd()): string | undefined {
   const skipped = untrustedConfig(cwd)
   if (skipped.length === 0) return undefined
-  return `ignoring ${skipped.join(", ")} — this directory isn't trusted. Run \`jarvis trust\` to load it.`
+  return `ignoring ${skipped.join(", ")} — this directory isn't trusted. Run \`jarvis trust\` (or /trust) to load it.`
 }
 
 /**

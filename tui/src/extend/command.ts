@@ -48,6 +48,11 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: "gestures", description: "Hand gestures as commands — /gestures on, /gestures off", kind: "builtin" },
   { name: "tutorial", description: "Show what everything on screen does", kind: "builtin" },
   { name: "extensions", description: "Show loaded custom tools, skills and plugins", kind: "builtin" },
+  {
+    name: "trust",
+    description: "Let this repo's jarvis.jsonc and .jarvis/ load — /trust [dir], /trust list",
+    kind: "builtin",
+  },
   { name: "exit", description: "Quit jarvis", kind: "builtin" },
 ]
 

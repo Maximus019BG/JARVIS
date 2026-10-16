@@ -1,4 +1,6 @@
+import { resolve } from "node:path"
 import { blueprintCommand } from "./blueprint-command.ts"
+import { defaultTrustTarget, trust, trustedDirs } from "../config/discover.ts"
 import { errorMessage } from "../agent/agent.ts"
 import { readCredentials } from "../blueprint/credentials.ts"
 import { forgetItem, listItems } from "../pi/items-client.ts"
@@ -230,6 +232,16 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return openPanel(tutorialContent(keymap, KEY_HELP, panelBody(width)))
     case "extensions":
       return turn.note(extensionReport(extensions))
+    case "trust": {
+      const arg = args.trim()
+      if (arg === "list" || arg === "--list") return turn.note(trustedDirs().join("\n") || "nothing trusted yet")
+      const dir = trust(arg ? resolve(cwd, arg) : defaultTrustTarget(cwd))
+      // MCP servers, extensions and the command list load once at startup; only the config reloads live.
+      reload()
+      return turn.note(
+        `trusted ${dir} — jarvis.jsonc reloaded; restart jarvis for its mcp servers and .jarvis/ plugins, tools and commands`,
+      )
+    }
     case "exit":
       return quit()
     default:

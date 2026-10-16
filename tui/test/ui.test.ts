@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expand, loadCommands, parseCommandLine, type Command } from "../src/extend/command.ts"
@@ -18,6 +18,8 @@ import { pickRecorder } from "../src/ui/voice.ts"
 import { runCommand } from "../src/ui/builtin-commands.ts"
 import { ensureRepo, writeDoc } from "../src/blueprint/store.ts"
 import { emptyDoc } from "../src/blueprint/schema.ts"
+import { isTrusted } from "../src/config/discover.ts"
+import { configDir } from "../src/config/paths.ts"
 
 describe("outputBudget", () => {
   test("a call that worked collapses to its summary line", () => {
@@ -520,5 +522,35 @@ describe("runCommand /blueprint", () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-cmd-empty-"))
     ensureRepo(root)
     expect(run("", root)).toEqual({ picked: [], panels: ["blueprints"], opened: [] })
+  })
+})
+
+describe("runCommand /trust", () => {
+  // The preload trusts tmpdir; empty the list so the command has something to do.
+  const file = join(configDir, "trusted.json")
+  let saved = ""
+  beforeEach(() => {
+    saved = readFileSync(file, "utf8")
+    writeFileSync(file, "[]")
+  })
+  afterEach(() => writeFileSync(file, saved))
+
+  const run = (args: string, cwd: string) => {
+    const notes: string[] = []
+    let reloads = 0
+    const deps = { cwd, turn: { note: (text: string) => notes.push(text) }, reload: () => ++reloads > 0 }
+    runCommand({ name: "trust", description: "", kind: "builtin" }, args, deps as never)
+    return { notes, reloads }
+  }
+
+  test("bare /trust trusts the repo root and reloads the config; /trust list shows it", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "jarvis-trust-")))
+    mkdirSync(join(root, ".git"))
+    mkdirSync(join(root, "tui"))
+
+    expect(isTrusted(join(root, "tui"))).toBe(false)
+    expect(run("", join(root, "tui")).reloads).toBe(1)
+    expect(isTrusted(join(root, "tui"))).toBe(true)
+    expect(run("list", root).notes).toEqual([root])
   })
 })

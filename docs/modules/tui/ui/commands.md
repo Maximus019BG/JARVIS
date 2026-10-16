@@ -1,6 +1,6 @@
 # UI: commands and keys
 
-Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-15 @ 9d82895
+Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-16 @ a86e287
 
 Part of the [UI module](README.md). User-facing usage is in [`tui/README.md`](../../../../tui/README.md).
 
@@ -56,6 +56,7 @@ All rows are cases in `runCommand` unless another symbol is named.
 | `/gestures` | `on` · `off` (bare toggles) | Hand gestures as commands; the camera runs only while on. | `tui/src/ui/app.tsx` → `setGestures` |
 | `/tutorial` | — | Opens the tutorial panel. | `tui/src/ui/tutorial.ts` → `tutorialContent` |
 | `/extensions` | — | Notes loaded custom tools, skills and load errors. | `extensionReport` (module-private) |
+| `/trust` | `[dir]` · `list` | Trusts the repo root (or `dir`) like `jarvis trust`, then reloads the config; MCP and `.jarvis/` need a restart. | `tui/src/config/discover.ts` → `trust`, `defaultTrustTarget` |
 | `/exit` | — | Quits immediately. | `process.exit(0)` via `CommandDeps.quit` |
 
 ### `/provider` subcommands

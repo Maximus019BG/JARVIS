@@ -72,7 +72,7 @@ name wins. `/extensions` in the TUI shows what actually got loaded, and
 
 A repo's `jarvis.jsonc` and `.jarvis/` only load once you trust it: they can change
 permissions and API endpoints, and plugins and tools are code that runs at startup.
-Until then jarvis says it is ignoring them. Run `jarvis trust` in the repo (or
+Until then jarvis says it is ignoring them. Run `jarvis trust` in the repo, or `/trust` in the TUI (or
 `jarvis trust ~/code` once, for everything under it). The list lives in
 `~/.config/jarvis/trusted.json`.
 

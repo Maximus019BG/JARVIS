@@ -243,16 +243,12 @@ async function main() {
       return
     }
     case "trust": {
-      const { parse } = await import("node:path")
-      const { projectRoot, trust, trustedDirs } = await import("./config/discover.ts")
+      const { defaultTrustTarget, trust, trustedDirs } = await import("./config/discover.ts")
       if (args[0] === "--list") {
         process.stdout.write(`${trustedDirs().join("\n") || "nothing trusted yet"}\n`)
         return
       }
-      // Default to the repo root; outside a repo that's `/`, so fall back to this directory.
-      const root = projectRoot()
-      const target = args[0] ?? (parse(root).root === root ? process.cwd() : root)
-      process.stdout.write(`trusted ${trust(target)}\n`)
+      process.stdout.write(`trusted ${trust(args[0] ?? defaultTrustTarget())}\n`)
       return
     }
     case undefined: {

@@ -1,6 +1,6 @@
 # Config
 
-Code: `tui/src/config/`, `tui/scripts/emit-schema.ts`, `tui/jarvis.jsonc` · Verified: 2026-10-14 @ c9135de
+Code: `tui/src/config/`, `tui/scripts/emit-schema.ts`, `tui/jarvis.jsonc` · Verified: 2026-10-16 @ a86e287
 
 ## Purpose
 Loads and validates `jarvis.jsonc`, defines every config key (one zod schema), resolves the XDG
@@ -19,7 +19,7 @@ Usage: [tui/README.md → Configuration](../../../../tui/README.md#configuration
   it loads until the user trusts the directory. `trustedDirs()` reads
   `~/.config/jarvis/trusted.json` (an array of absolute paths); `isTrusted(dir)` is true for a
   listed directory or anything under it (`within`, which `cli/work.ts` also uses);
-  `trust(dir)` appends one (`jarvis trust`). `trustedAncestors(cwd)` = the trusted subset of
+  `trust(dir)` appends one (`jarvis trust`, `/trust`); `defaultTrustTarget(cwd)` is what they trust with no argument: the repo root, or `cwd` outside a repo. `trustedAncestors(cwd)` = the trusted subset of
   `ancestors(cwd)`. `untrustedConfig`/`trustNotice` name what was skipped, for the startup line.
 - `jarvisDirs(cwd)`: `~/.config/jarvis`, then `<ancestor>/.jarvis` for each **trusted** ancestor.
 - `resourceDirs(cwd, kind)` / `resourceFiles(cwd, kind, ext)`: existing `<dir>/<kind>` folders,
