@@ -47,7 +47,7 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: "find-cam", description: "Find taught items, showing the camera picture — /find-cam [name]", kind: "builtin" },
   { name: "calibrate", description: "Line the projector up with the camera, for /find and /learn", kind: "builtin" },
   { name: "items", description: "List items taught with /learn", kind: "builtin" },
-  { name: "forget", description: "Forget a taught item — /forget <name>", kind: "builtin" },
+  { name: "forget", description: "Forget taught items — /forget [name], or pick several", kind: "builtin" },
   { name: "gestures", description: "Hand gestures as commands — /gestures on, /gestures off", kind: "builtin" },
   { name: "tutorial", description: "Show what everything on screen does", kind: "builtin" },
   { name: "extensions", description: "Show loaded custom tools, skills and plugins", kind: "builtin" },

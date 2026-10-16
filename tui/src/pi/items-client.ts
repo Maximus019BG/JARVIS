@@ -34,16 +34,19 @@ async function attempt<T>(request: () => ReturnType<typeof call<T>>): ReturnType
   }
 }
 
-/** Teaches (or re-teaches, replacing) `name` from photos with the item boxed in each. */
+/**
+ * Teaches (or re-teaches, replacing) `name` from photos with the item boxed in each. A null
+ * box is a shot of the empty background, which keeps what is behind the item out of it.
+ */
 export async function teachItem(
   credentials: Credentials,
   name: string,
-  shots: readonly { jpeg: Uint8Array; box: Box }[],
+  shots: readonly { jpeg: Uint8Array; box: Box | null }[],
 ): Promise<{ id: string; name: string; samples: number }> {
   assertSecureUrl(credentials.baseUrl)
   const images = shots.map(({ jpeg, box }) => ({
     jpeg: Buffer.from(jpeg).toString("base64"),
-    box: [box.x, box.y, box.w, box.h].map(Math.round),
+    box: box && [box.x, box.y, box.w, box.h].map(Math.round),
   }))
   const result = await attempt(() =>
     call<{ id: string; name: string; samples: number }>(credentials, "/api/vision/items", {
@@ -67,10 +70,12 @@ export async function listItems(credentials: Credentials): Promise<Taught[]> {
 /** Forgets the item called `name`; false if nothing is. The route deletes by id, so this looks the name up first. */
 export async function forgetItem(credentials: Credentials, name: string): Promise<boolean> {
   const item = (await listItems(credentials)).find((taught) => taught.name === name)
-  if (!item) return false
-  const result = await attempt(() =>
-    call(credentials, `/api/vision/items?id=${encodeURIComponent(item.id)}`, { method: "DELETE" }),
-  )
+  return item ? deleteItem(credentials, item.id) : false
+}
+
+/** Forgets the item with this id; false if it is already gone. */
+export async function deleteItem(credentials: Credentials, id: string): Promise<boolean> {
+  const result = await attempt(() => call(credentials, `/api/vision/items?id=${encodeURIComponent(id)}`, { method: "DELETE" }))
   if (!result.ok && result.status === 404) return false
   if (!result.ok) throw new VisionError(problem(result.status, result.body))
   return true

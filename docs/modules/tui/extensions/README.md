@@ -1,6 +1,6 @@
 # Extensions
 
-Code: `tui/src/extend/`, `tui/assets/global/` · Verified: 2026-10-16 @ 43a1209
+Code: `tui/src/extend/`, `tui/assets/global/` · Verified: 2026-10-16 @ 8cde74a
 
 ## Purpose
 Everything a `.jarvis` directory (project or global) can add without forking jarvis: slash
@@ -111,7 +111,7 @@ copies `agents/*.md` into `~/.config/jarvis/agents/` when absent and each skill 
 **Built-in slash commands** (`BUILTIN_COMMANDS`, executed in `ui/builtin-commands.ts`): `help`,
 `new`, `clear`, `compact`, `model`, `agent`, `sessions`, `export`, `retry`, `undo`, `redo`,
 `theme`, `blueprint`, `code`, `pair`, `mcp`, `provider`, `stats`, `voice`, `speak`, `learn`, `learn-cam`,
-`find`, `find-cam`, `calibrate`, `items`, `forget`, `gestures`, `tutorial`, `extensions`, `exit`. A markdown command with
+`find`, `find-cam`, `calibrate`, `items`, `forget` (bare, a multi-select picker of taught items), `gestures`, `tutorial`, `extensions`, `exit`. A markdown command with
 the same name replaces the built-in entry.
 
 **Config keys**: `mcp.<name>` (see [config](../config/README.md)).

@@ -87,8 +87,10 @@ export function VisionView({
 
   // Learn mode.
   const [guide, setGuide] = useState<Box>({ x: camera.width * 0.3, y: camera.height * 0.225, w: camera.width * 0.4, h: camera.height * 0.55 })
-  const shots = useRef<{ jpeg: Uint8Array; box: Box }[]>([])
+  /** A null box is a shot of the empty spot: the server keeps what is behind the item out of it. */
+  const shots = useRef<{ jpeg: Uint8Array; box: Box | null }[]>([])
   const [shotCount, setShotCount] = useState(0)
+  const [hasBackground, setHasBackground] = useState(false)
   const lastShot = useRef(0)
   const [teaching, setTeaching] = useState(false)
   const [status, setStatus] = useState<string>()
@@ -162,28 +164,32 @@ export function VisionView({
           })),
         )
 
-  const snap = () => {
+  const counted = () => {
+    setShotCount(shots.current.filter((shot) => shot.box).length)
+    setHasBackground(shots.current.some((shot) => !shot.box))
+  }
+
+  const snap = (box: Box | null) => {
     const shot = feed?.latest()
     const now = performance.now()
     if (!shot) return setStatus("no picture from the camera yet")
     if (now - lastShot.current < SHOT_GAP_MS || shots.current.length >= MAX_SHOTS) return
     lastShot.current = now
-    shots.current.push({ jpeg: shot.jpeg, box: guide })
-    setShotCount(shots.current.length)
+    shots.current.push({ jpeg: shot.jpeg, box })
+    counted()
     setStatus(undefined)
   }
 
   const teach = async (name: string) => {
-    if (shots.current.length < MIN_SHOTS) {
-      setStatus(`${MIN_SHOTS - shots.current.length} more shot${MIN_SHOTS - shots.current.length === 1 ? "" : "s"} first`)
-      return
-    }
+    if (!shots.current.some((shot) => !shot.box)) return setStatus("first a shot with nothing in the box — press b")
+    const missing = MIN_SHOTS - shots.current.filter((shot) => shot.box).length
+    if (missing > 0) return setStatus(`${missing} more shot${missing === 1 ? "" : "s"} first`)
     setTeaching(true)
     setStatus(`teaching ${name}…`)
     try {
       const done = await teachItem(credentials, name, shots.current)
       shots.current = []
-      setShotCount(0)
+      counted()
       setStatus(undefined)
       onTaught(done.name, done.samples)
       refresh()
@@ -220,11 +226,12 @@ export function VisionView({
       setGuide((box) =>
         clampBox({ x: box.x - (box.w * (factor - 1)) / 2, y: box.y - (box.h * (factor - 1)) / 2, w: box.w * factor, h: box.h * factor }, camera),
       )
-    if (key.name === "space") snap()
+    if (key.name === "space") snap(guide)
+    else if (key.name === "b") snap(null)
     else if (key.name === "return") void teach(mode.name)
     else if (key.name === "backspace") {
       shots.current.pop()
-      setShotCount(shots.current.length)
+      counted()
     } else if (key.name === "left") move(-step.x, 0)
     else if (key.name === "right") move(step.x, 0)
     else if (key.name === "up") move(0, -step.y)
@@ -242,11 +249,12 @@ export function VisionView({
   const footer = mode.kind === "learn" ? (status ?? "") : (findError ?? (found ? `${found.ms}ms on the server` : live ? "looking…" : ""))
   const keys =
     mode.kind === "learn"
-      ? " space shot · backspace undo · enter teach · arrows move · +/- size · c projector · esc close"
+      ? " b empty shot · space shot · backspace undo · enter teach · arrows move · +/- size · c projector · esc close"
       : " ↑↓ pick · enter only this · a all · c projector · esc/q close"
 
-  const advice =
-    shotCount === 0
+  const advice = !hasBackground
+    ? "clear the box, then press b — a shot of what is behind the item"
+    : shotCount === 0
       ? "hold it inside the box and press space"
       : shotCount < GOAL_SHOTS
         ? "turn it a little, or move it, then space again"
@@ -269,7 +277,7 @@ export function VisionView({
         : (findError ?? (found ? `${found.items.filter((item) => item.found).length}/${found.items.length} in view` : "looking…"))
     const projectorKeys =
       mode.kind === "learn"
-        ? "space shot · backspace undo · enter teach · arrows move · +/- size · c camera · esc close"
+        ? "b empty shot · space shot · backspace undo · enter teach · arrows move · +/- size · c camera · esc close"
         : "a all · c camera · esc/q close"
     return (
       <Projection
@@ -305,7 +313,9 @@ export function VisionView({
             <box style={{ height: 1 }} />
             {mode.kind === "learn" ? (
               <>
-                <text fg={shotCount >= MIN_SHOTS ? theme.success : theme.fg}>{`${shotCount}/${GOAL_SHOTS} shots`}</text>
+                <text fg={shotCount >= MIN_SHOTS && hasBackground ? theme.success : theme.fg}>
+                  {`${shotCount}/${GOAL_SHOTS} shots · empty ${hasBackground ? "✓" : "—"}`}
+                </text>
                 {wrap(advice, width).map((line, index) => (
                   <text key={`a${index}`} fg={theme.muted}>
                     {line}

@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test"
 import { calibrate, matrixOf, toScreen, type Pt } from "../src/pi/calibration.ts"
-import { findItems, forgetItem, ITEM_COLOURS, itemColours, listItems } from "../src/pi/items-client.ts"
+import { deleteItem, findItems, forgetItem, ITEM_COLOURS, itemColours, listItems } from "../src/pi/items-client.ts"
 
 /** Stand-in for `GET` / `DELETE /api/vision/items`: a list, and a delete by id only. */
 const items = [
@@ -14,6 +14,7 @@ const server = Bun.serve({
     const url = new URL(request.url)
     if (request.method === "GET") return Response.json({ items })
     const id = url.searchParams.get("id")!
+    if (!items.some((item) => item.id === id)) return Response.json({ error: "not_found" }, { status: 404 })
     deleted.push(id)
     return Response.json({ success: true })
   },
@@ -46,6 +47,12 @@ test("lists taught items, and forgets one by name through its id", async () => {
   expect(deleted).toEqual([])
   expect(await forgetItem(credentials, "mug")).toBe(true)
   expect(deleted).toEqual(["i1"])
+})
+
+test("deletes by id, the /forget picker's path, and says false for one already gone", async () => {
+  expect(await deleteItem(credentials, "i2")).toBe(true)
+  expect(await deleteItem(credentials, "gone")).toBe(false)
+  expect(deleted).toEqual(["i1", "i2"])
 })
 
 test("gives each item a stable colour: by name, whatever order they arrive in, wrapping after the palette", () => {

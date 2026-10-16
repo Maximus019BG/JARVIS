@@ -1,6 +1,6 @@
 # UI: commands and keys
 
-Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-16 @ 43a1209
+Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-16 @ 8cde74a
 
 Part of the [UI module](README.md). User-facing usage is in [`tui/README.md`](../../../../tui/README.md).
 
@@ -55,7 +55,7 @@ All rows are cases in `runCommand` unless another symbol is named.
 | `/find-cam` | `[name]` | The same, showing the camera picture with the outlines and the items panel. | same |
 | `/calibrate` | | Pinch four projected markers so the projector view lands on the real items; saved to `<dataDir>/find-calibration.json`. | `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` |
 | `/items` | — | Notes the taught items and their shot counts. | `itemsCommand` (module-private), `tui/src/pi/items-client.ts` → `listItems` |
-| `/forget` | `<name>` | Forgets a taught item. | `itemsCommand`, `tui/src/pi/items-client.ts` → `forgetItem` |
+| `/forget` | `[name]` | Forgets a taught item. Bare, it opens a `Picker` of taught items: `space` marks several, `enter` forgets them. | `itemsCommand` → `openForget`, `tui/src/pi/items-client.ts` → `forgetItem` / `deleteItem` |
 | `/gestures` | `on` · `off` (bare toggles) | Hand gestures as commands; the camera runs only while on. | `tui/src/ui/app.tsx` → `setGestures` |
 | `/tutorial` | — | Opens the tutorial panel. | `tui/src/ui/tutorial.ts` → `tutorialContent` |
 | `/extensions` | — | Notes loaded custom tools, skills and load errors. | `extensionReport` (module-private) |
@@ -125,12 +125,12 @@ Each overlay owns the keyboard while open (`App`'s handler returns early), excep
 
 | Overlay | Keys | Source |
 |---|---|---|
-| `Picker` (pickers and `ask` questions) | type to filter, `backspace`, `space`, `↑↓`, `enter` pick, `esc` cancel, `shift+D` then `y` delete (sessions, providers), `Other…` opens a field (`enter` send, `esc` back) | `tui/src/ui/components/dialog.tsx` → `Picker` |
+| `Picker` (pickers and `ask` questions) | type to filter, `backspace`, `space`, `↑↓`, `enter` pick, `esc` cancel, `shift+D` then `y` delete (sessions, providers), `Other…` opens a field (`enter` send, `esc` back); with `onPickMany` (`/forget`), `space` marks instead of filtering and `enter` hands over the marked entries | `tui/src/ui/components/dialog.tsx` → `Picker` |
 | `PermissionPrompt` | `y` or `enter` allow once, `a` always, `n` or `esc` reject, `ctrl+u` / `ctrl+d` scroll | `tui/src/ui/components/dialog.tsx` → `PermissionPrompt` |
 | `Panel` | `esc`, `q` or `ctrl+g` close, `↑↓`, `pageup` / `pagedown`, `ctrl+u` / `ctrl+d` | `tui/src/ui/components/panel.tsx` → `Panel` |
 | `Wizard` (provider setup) | `enter` next (toggles on the models step), `ctrl+b` back, `tab` switch between pasting a key and an env var, `esc` cancel | `tui/src/ui/components/wizard.tsx` → `Wizard` |
 | `PairWizard` | `enter` next, `tab` skip email, `ctrl+b` back, `esc` cancel | `tui/src/ui/components/pair-wizard.tsx` → `PairWizard` |
-| `VisionView` (learn) | `space` shot, `backspace` drop last shot, `enter` teach, arrows move the box, `+` / `-` resize, `c` camera ↔ projector view, `esc` close | `tui/src/ui/components/vision-view.tsx` → `VisionView` |
+| `VisionView` (learn) | `b` empty shot (nothing in the box, needed once), `space` shot, `backspace` drop last shot, `enter` teach, arrows move the box, `+` / `-` resize, `c` camera ↔ projector view, `esc` close | `tui/src/ui/components/vision-view.tsx` → `VisionView` |
 | `VisionView` (find) | `↑` / `↓` pick an item, `enter` find only that one, `a` find all, `c` camera ↔ projector view, `esc` or `q` close | same |
 | `CalibrateView` | pinch each marker, `backspace` drop the last point, `r` start over, `enter` / `esc` close | `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` |
 | `BlueprintEditor` | tool keys from `tui/src/blueprint/draw.ts` → `TOOLS` (`v` select, `f` hand on/off, `l` line, `p` polyline, `r` rect, `c` circle, `a` arc, `t` text, `d` dimension, `s` symbol), arrows move the cursor (`shift` ×10), `ctrl+arrows` pan, `enter` start/finish a shape or select, `n` connect ports, `A` arrange, `x` delete selection, `u` undo, `ctrl+r` redo, `w` save, `tab` next layer, `+` / `-` zoom, `0` fit, `g` grid, `esc` or `q` backs out one level then closes (saving) | `tui/src/ui/components/blueprint-editor.tsx` → `BlueprintEditor` |

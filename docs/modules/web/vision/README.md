@@ -1,6 +1,6 @@
 # Vision
 
-Code: `web/src/server/vision.ts`, `web/src/server/hand/`, `web/src/app/api/vision/`, `web/src/app/api/device/hand/`, `web/models/` · Verified: 2026-10-13 @ c292f2f
+Code: `web/src/server/vision.ts`, `web/src/server/hand/`, `web/src/app/api/vision/`, `web/src/app/api/device/hand/`, `web/models/` · Verified: 2026-10-16 @ 8cde74a
 
 ## Purpose
 Runs the camera models for paired devices, so a laptop or a Pi needs no ONNX runtime and no
@@ -50,7 +50,7 @@ frame becomes landmarks.
 ### Items (`/api/vision/items`, `/api/vision/detect`)
 - **Teach** (`POST /api/vision/items`):
   1. Each base64 JPEG is decoded (`decodeJpeg`, capped at 4 MP) and embedded.
-  2. `learn(samples)` builds the `pos` and `neg` banks.
+  2. `learn(samples)` builds the `pos` and `neg` banks. A photo whose `box` is `null` is an empty shot and goes wholly to `neg`. Then `pos` patches that match the background are dropped (`BACKGROUND_SIM`).
   3. Each bank is packed by `packBank`: each unit vector component × 127 as int8, then base64. That is a quarter of the size of float32, with rounding error far below any useful threshold.
   4. The item is upserted into `vision_item` on `(workstationId, name)`, so teaching a name again replaces it.
 - **Find** (`POST /api/vision/detect`): the item query and the embedding run in parallel. Each item's banks are unpacked (`unpackBank`) and passed to `locate`. Coordinates are rounded, and `best` is returned even on a miss so the threshold can be tuned per camera.
@@ -78,7 +78,7 @@ frame becomes landmarks.
 |---|---|---|---|
 | `POST /api/device/hand/ticket` | Device token (`authenticateDevice`); no scope check | — | `{ticket, expiresAt}` (ms epoch) |
 | `POST /api/device/hand` | Ticket only (`verifyTicket`); scopes not checked | Body `image/jpeg` ≤ 300 KB. Headers `x-hand-detect: 0\|1`, `x-hand-roi`, `x-hand-trail` | `{hands: Hand[], rois?, trail?, motion?, ms}` |
-| `POST /api/vision/items` | Device token + `vision:write` (`deviceFor`) | JSON ≤ 10 MB: `{name (1–64), images: [{jpeg: base64, box: [x,y,w,h]}] (1–20)}` | `{id, name, samples}` |
+| `POST /api/vision/items` | Device token + `vision:write` (`deviceFor`) | JSON ≤ 10 MB: `{name (1–64), images: [{jpeg: base64, box: [x,y,w,h] \| null}] (1–20, at least one boxed)}` | `{id, name, samples}` |
 | `GET /api/vision/items` | Device token + `vision:read` | — | `{items: [{id, name, samples, updatedAt}]}`, ordered by name |
 | `DELETE /api/vision/items?id=` | Device token + `vision:write` | `id` query | `{success: true}` or 404 `not_found` |
 | `POST /api/vision/detect?item=&threshold=` | Ticket or device token + `vision:read` (`callerFor`) | Body `image/jpeg` ≤ 2 MB. `item` is an id or name; `threshold` is in [0,1] | `{items: [{id, name, found, best, boxes: [{x,y,w,h,score}]}], ms}` |
@@ -92,7 +92,7 @@ Error responses:
 |---|---|
 | 401 | Bad or expired ticket or token |
 | 403 | Device lacks the scope |
-| 400 | Undecodable JPEG, bad header, bad body, or box too small (`ItemError`) |
+| 400 | Undecodable JPEG, bad header, bad body, a box too small, no boxed photo, or an item that is all background (`ItemError`) |
 | 404 | No items taught, or no such item |
 | 413 | Body too large |
 | 415 | Not `image/jpeg` |
@@ -146,7 +146,7 @@ Model sources and retraining: [web/models/hand/README.md](../../../../web/models
 
 | File | Covers |
 |---|---|
-| `web/src/__tests__/vision-items.test.ts` | `@pi/items.ts` → `learn` (edge ring, too-small box), `locate` (connected boxes, no false match), `packBank`/`unpackBank` round trip |
+| `web/src/__tests__/vision-items.test.ts` | `@pi/items.ts` → `learn` (edge ring, too-small box, empty shot and background prune, all-background and box-less teaches), `locate` (connected boxes, no false match), `packBank`/`unpackBank` round trip |
 | `web/src/__tests__/hand-ticket.test.ts` | `signTicket`/`verifyTicket`: round trip, legacy ticket without workstation, expiry, tampered payload, wrong secret, device tokens refused |
 
 The routes themselves have no tests. The tracker is covered on the TUI side (`tui/test/pi-track.test.ts`, `tui/test/pi-detect.test.ts`).

@@ -100,10 +100,20 @@ export async function createEmbedder(ort: Ort, path: string, size = 448): Promis
 const vectorAt = (vectors: Float32Array, index: number) => vectors.subarray(index * DIMS, (index + 1) * DIMS)
 
 function pack(list: readonly Float32Array[]): Float32Array {
-  const kept =
-    list.length <= MAX_BANK ? list : Array.from({ length: MAX_BANK }, (_, i) => list[Math.floor((i * list.length) / MAX_BANK)]!)
-  const out = new Float32Array(kept.length * DIMS)
-  kept.forEach((vector, i) => out.set(vector, i * DIMS))
+  return join(list.length <= MAX_BANK ? list : Array.from({ length: MAX_BANK }, (_, i) => list[Math.floor((i * list.length) / MAX_BANK)]!))
+}
+
+/**
+ * A box patch this close to any background patch is background seen through the box, not
+ * the item: the wall or table behind it, in every shot, at the same place.
+ * ponytail: a calibration knob, set just above the 0.6 that unrelated content rarely passes
+ * (see `DEFAULT_THRESHOLD`); untuned on real cameras.
+ */
+export const BACKGROUND_SIM = 0.7
+
+const join = (list: readonly Float32Array[]) => {
+  const out = new Float32Array(list.length * DIMS)
+  list.forEach((vector, i) => out.set(vector, i * DIMS))
   return out
 }
 
@@ -112,10 +122,17 @@ function pack(list: readonly Float32Array[]): Float32Array {
  * the box, and as background when its centre is more than a patch clear of it. The ones
  * on the edge are part item, part table, and neither bank wants them: measured, letting
  * edge patches into `pos` made the training backgrounds themselves match at 0.79.
+ *
+ * A photo with no box is a background shot, the empty spot the item is held in: all of it
+ * is background. The box is always bigger than the item, so what is behind the item lands
+ * in `pos` too; any `pos` patch that matches a background patch is dropped. Without that,
+ * the empty spot matched the item at the same place once the item was gone.
+ * ponytail: the prune is pos × every neg patch × 384 (~1 s for 7 photos); once per teach.
  */
-export function learn(samples: readonly { patches: Patches; box: Roi }[]): Item {
+export function learn(samples: readonly { patches: Patches; box: Roi | null }[]): Item {
   const pos: Float32Array[] = []
   const neg: Float32Array[] = []
+  if (!samples.some((sample) => sample.box)) throw new ItemError("no photo has the item in a box")
   samples.forEach(({ patches, box }, photo) => {
     const { cols, rows, camera } = patches
     const pw = camera.width / cols
@@ -126,7 +143,8 @@ export function learn(samples: readonly { patches: Patches; box: Roi }[]): Item 
         const x = (c + 0.5) * pw
         const y = (r + 0.5) * ph
         const vector = vectorAt(patches.vectors, r * cols + c)
-        if (c * pw >= box.x && (c + 1) * pw <= box.x + box.w && r * ph >= box.y && (r + 1) * ph <= box.y + box.h) {
+        if (!box) neg.push(vector)
+        else if (c * pw >= box.x && (c + 1) * pw <= box.x + box.w && r * ph >= box.y && (r + 1) * ph <= box.y + box.h) {
           pos.push(vector)
           inside++
         } else if (x < box.x - pw || x >= box.x + box.w + pw || y < box.y - ph || y >= box.y + box.h + ph) {
@@ -134,11 +152,18 @@ export function learn(samples: readonly { patches: Patches; box: Roi }[]): Item 
         }
       }
     }
-    if (inside < MIN_PATCHES) {
+    if (box && inside < MIN_PATCHES) {
       throw new ItemError(`photo ${photo}: the box covers ${inside} patch(es), needs ${MIN_PATCHES} — the item is too small, send a closer shot`)
     }
   })
-  return { pos: pack(pos), neg: pack(neg) }
+  // Against every background patch, not the packed bank: packing keeps 256 of thousands and
+  // would usually drop the very spot behind the item.
+  const background = join(neg)
+  const item = pos.filter((vector) => nearest(vector, background) < BACKGROUND_SIM)
+  if (item.length < MIN_PATCHES) {
+    throw new ItemError("the item looks like what is behind it — try a plainer background or a tighter box")
+  }
+  return { pos: pack(item), neg: pack(neg) }
 }
 
 /** Highest dot product of `vector` against every vector in `bank`; -Infinity for an empty bank. */

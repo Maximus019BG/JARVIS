@@ -44,6 +44,7 @@ import { CalibrateView } from "./components/calibrate-view.tsx"
 import { VisionView, type VisionMode } from "./components/vision-view.tsx"
 import { GLYPHS, useGestures } from "./use-gestures.ts"
 import { onCameraNotice, setCameraOverride } from "../pi/camera.ts"
+import { deleteItem, type Taught } from "../pi/items-client.ts"
 import { clip, tail, PermissionPrompt, Picker, type Choice } from "./components/dialog.tsx"
 import { Wizard, type TestState } from "./components/wizard.tsx"
 import { PairWizard } from "./components/pair-wizard.tsx"
@@ -258,6 +259,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   const [opened, setOpened] = useState<{ name: string; after: number }>()
   /** The camera overlay for /learn and /find, and the pairing it talks to. Another exclusive overlay. */
   const [vision, setVision] = useState<{ mode: VisionMode; credentials: Credentials; camera?: boolean } | null>(null)
+  /** Bare `/forget`'s list of taught items to pick from. */
+  const [forgetting, setForgetting] = useState<{ credentials: Credentials; items: Taught[] } | null>(null)
   /** Hand gestures as commands. The camera runs only while this is on. */
   const [gesturesOn, setGesturesOn] = useState(() => config.vision.autostart)
   /** Set once the pane has opened itself, so a reader who closed it is not reopened on. */
@@ -845,7 +848,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   // `find_item` opens the screen too, unless something else owns it. An open one is left be:
   // swapping it would throw away a teach half done.
   showItems.current = (item) => {
-    if (!vision && !picker && !panel && !setup && !pairing && blueprintView !== "full") openVision({ kind: "find", item })
+    if (!vision && !picker && !forgetting && !panel && !setup && !pairing && blueprintView !== "full") openVision({ kind: "find", item })
   }
 
   const setGestures = useCallback((on?: boolean) => setGesturesOn((current) => on ?? !current), [])
@@ -886,6 +889,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         reload: reloadConfig,
         testProvider: runTest,
         openVision,
+        openForget: (credentials, items) => setForgetting({ credentials, items }),
         setGestures,
         openBlueprint,
         quit: () => process.exit(0),
@@ -1313,7 +1317,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         return toast(`${glyph} ${action === "approve" ? "approved" : "rejected"}`)
       }
       // Stop and talk always work; the rest wait for whatever overlay owns the keyboard.
-      if ((turn.permission || turn.question || picker || panel || setup || pairing || vision) && action !== "interrupt" && action !== "voice") return
+      if ((turn.permission || turn.question || picker || forgetting || panel || setup || pairing || vision) && action !== "interrupt" && action !== "voice") return
       perform(action as Action)
       toast(`${glyph} ${KEY_HELP.find(([name]) => name === action)?.[1] ?? action}`)
     },
@@ -1362,7 +1366,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     }
 
     // Otherwise the prompt and the overlays own the keyboard; each closes itself.
-    if (turn.permission || turn.question || picker || panel || setup || vision || blueprintView === "full") return
+    if (turn.permission || turn.question || picker || forgetting || panel || setup || vision || blueprintView === "full") return
 
     // Normal-mode keys are commands, not text, so vim gets the first look. It declines
     // anything it does not map — including ctrl chords and everything in insert mode.
@@ -1513,7 +1517,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           keymap={keymap}
           motion={motion}
           busy={turn.busy}
-          focused={!picker && !panel && !setup && !vision && !turn.question}
+          focused={!picker && !forgetting && !panel && !setup && !vision && !turn.question}
           handle={editor}
           onSubmit={submit}
           onChange={change}
@@ -1603,6 +1607,26 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
                 : undefined
           }
           onCancel={() => setPicker(null)}
+        />
+      )}
+
+      {forgetting && !picker && !turn.permission && !turn.question && !setup && (
+        <Picker
+          title="forget items"
+          choices={forgetting.items.map((item) => ({ value: item.id, label: item.name, hint: `${item.samples} shots` }))}
+          theme={theme}
+          motion={motion}
+          onPick={() => {}}
+          onPickMany={(ids) => {
+            const { credentials, items } = forgetting
+            setForgetting(null)
+            const names = ids.map((id) => items.find((item) => item.id === id)?.name ?? id)
+            void Promise.all(ids.map((id) => deleteItem(credentials, id))).then(
+              () => turn.note(`forgot ${names.join(", ")}`),
+              (error: unknown) => turn.note(errorMessage(error), "error"),
+            )
+          }}
+          onCancel={() => setForgetting(null)}
         />
       )}
 

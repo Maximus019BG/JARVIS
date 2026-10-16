@@ -27,8 +27,8 @@ const bodySchema = z.object({
     .array(
       z.object({
         jpeg: z.string().min(1),
-        /** Where the item is in that photo, in its pixels: left, top, width, height. */
-        box: z.tuple([z.number().finite(), z.number().finite(), z.number().positive(), z.number().positive()]),
+        /** Where the item is in that photo, in its pixels: left, top, width, height. Null: a shot of the empty background. */
+        box: z.tuple([z.number().finite(), z.number().finite(), z.number().positive(), z.number().positive()]).nullable(),
       }),
     )
     .min(1)
@@ -62,11 +62,10 @@ export async function POST(request: Request) {
     return modelMissing(error);
   }
 
-  const samples: { patches: Patches; box: { x: number; y: number; w: number; h: number } }[] = [];
+  const samples: { patches: Patches; box: { x: number; y: number; w: number; h: number } | null }[] = [];
   for (const [index, image] of body.images.entries()) {
     const rgb = decodeJpeg(Buffer.from(image.jpeg, "base64"));
     if (!rgb) return NextResponse.json({ error: "invalid_image", detail: `photo ${index} is not a decodable JPEG` }, { status: 400 });
-    const [x, y, w, h] = image.box;
     let patches: Patches;
     try {
       patches = await embedder.embed(rgb.data, rgb);
@@ -74,7 +73,8 @@ export async function POST(request: Request) {
       // Only the model can fail here: the photo already decoded.
       return modelMissing(error);
     }
-    samples.push({ patches, box: { x, y, w, h } });
+    const box = image.box && { x: image.box[0], y: image.box[1], w: image.box[2], h: image.box[3] };
+    samples.push({ patches, box });
   }
 
   let item: ReturnType<typeof learn>;

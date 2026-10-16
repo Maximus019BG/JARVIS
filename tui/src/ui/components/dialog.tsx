@@ -75,6 +75,7 @@ export function Picker({
   motion,
   allowOther,
   onPick,
+  onPickMany,
   onDelete,
   onCancel,
 }: {
@@ -87,6 +88,8 @@ export function Picker({
   /** Adds an `Other…` entry that opens a one-line field, so the answer is not list-bound. */
   allowOther?: boolean
   onPick: (value: string) => void
+  /** When given, space marks entries and enter hands over every marked one (or the highlighted one). */
+  onPickMany?: (values: string[]) => void
   /** When given, `shift+D` removes the highlighted entry after a confirmation. */
   onDelete?: (value: string) => void
   onCancel: () => void
@@ -96,6 +99,7 @@ export function Picker({
   const [pending, setPending] = useState<Choice | null>(null)
   /** The free-text answer, once `Other…` has been chosen. Null means the list is up. */
   const [other, setOther] = useState<string | null>(null)
+  const [marked, setMarked] = useState<ReadonlySet<string>>(new Set())
   const box = useRef<BoxRenderable>(null)
   // Read at press time rather than mirrored into state: the select owns the highlight, and
   // a copy would only be a second thing that can be wrong.
@@ -138,7 +142,16 @@ export function Picker({
       return
     }
     if (key.name === "escape") onCancel()
-    else if (key.name === "backspace") setQuery((value) => value.slice(0, -1))
+    else if (onPickMany && key.name === "space") {
+      const target = filtered[list.current?.getSelectedIndex() ?? 0]
+      if (target) {
+        setMarked((was) => {
+          const next = new Set(was)
+          if (!next.delete(target.value)) next.add(target.value)
+          return next
+        })
+      }
+    } else if (key.name === "backspace") setQuery((value) => value.slice(0, -1))
     // opentui names the space bar "space", so it needs its own case or multi-word
     // queries are impossible.
     else if (key.name === "space") setQuery((value) => `${value} `)
@@ -146,7 +159,7 @@ export function Picker({
   })
 
   const options: SelectOption[] = filtered.map((choice) => ({
-    name: choice.label,
+    name: onPickMany ? `${marked.has(choice.value) ? "◉" : "○"} ${choice.label}` : choice.label,
     description: choice.hint ?? "",
     value: choice.value,
   }))
@@ -181,7 +194,7 @@ export function Picker({
             ? "y delete · any other key keeps it"
             : other !== null
               ? "enter send · esc back"
-              : `↑↓ enter${onDelete ? " · shift+D del" : ""} · esc · ${filtered.length}/${choices.length}`,
+              : `↑↓${onPickMany ? ` · space mark${marked.size > 0 ? ` (${marked.size})` : ""}` : ""} enter${onDelete ? " · shift+D del" : ""} · esc · ${filtered.length}/${choices.length}`,
           width - 4,
         )}
         style={{
@@ -235,6 +248,7 @@ export function Picker({
               if (!option) return
               const value = String(option.value)
               if (value === OTHER) setOther("")
+              else if (onPickMany) onPickMany(marked.size > 0 ? [...marked] : [value])
               else onPick(value)
             }}
             style={{ flexGrow: 1 }}

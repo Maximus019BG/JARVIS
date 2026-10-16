@@ -1,6 +1,6 @@
 # Pi vision
 
-Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-16 @ 43a1209
+Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-16 @ 8cde74a
 
 ## Purpose
 Turns a camera into hands, and hands into actions. It drives three features: drawing on a
@@ -115,11 +115,12 @@ web app runs it.
   - Patches entirely inside the box go to the `pos` bank.
   - Patches whose centre is more than one patch outside the box go to `neg`.
   - Edge patches go to neither, because including them made the training backgrounds match too.
+  - A sample with `box: null` (the overlay's empty shot) goes wholly to `neg`.
 
-  Each bank keeps at most `MAX_BANK` (256), sampled evenly. A box with fewer than `MIN_PATCHES` (4) patches inside throws `ItemError`.
+  Then every `pos` patch whose `nearest` against the whole unpacked `neg` list reaches `BACKGROUND_SIM` (0.7) is dropped: it is the background seen through the box, and left in, it matched the empty spot once the item was gone. Each bank keeps at most `MAX_BANK` (256), sampled evenly, after the prune. A box with fewer than `MIN_PATCHES` (4) patches inside, fewer than 4 `pos` patches left, or no boxed photo at all throws `ItemError`.
 - `locate` marks a scene patch when its nearest `pos` match beats its nearest `neg` match and reaches `threshold` (`DEFAULT_THRESHOLD` 0.65). It returns one box per connected group of at least 4 patches (up to 8 boxes), plus `best`, the closest score even when nothing was found.
 - `items-client.ts` is the TUI client:
-  - `teachItem`, `listItems` and `forgetItem` call `/api/vision/items` with the device token through `blueprint/sync.ts` → `call`. `forgetItem` looks the name up first, because the route deletes by id.
+  - `teachItem`, `listItems`, `forgetItem` and `deleteItem` call `/api/vision/items` with the device token through `blueprint/sync.ts` → `call`. A `teachItem` shot with `box: null` is the empty shot. `forgetItem` looks the name up first and then calls `deleteItem`, because the route deletes by id. `/forget`'s picker calls `deleteItem` directly.
   - `findItems` POSTs a JPEG to `/api/vision/detect` with the hand ticket. On a 401 or a 403 it fetches a fresh ticket and retries once: a ticket carries the scopes it was minted with, so a vision scope granted a moment ago needs a new one.
   - A 5xx with no message reads "the server failed (500) — see the web server log", because a route that threw answers with an empty body.
   - `describeFound` and `where` turn a box into "left · top" (thirds of the mirrored view).
@@ -161,8 +162,8 @@ stored the credentials and `jarvis pi calibrate` stored the calibration.
 | `tui/src/pi/detect.ts` | Pure tensor math: anchors, `decodeDetections`, `nms`, `roiFromPalm`, `landmarksToCamera`, `cropToTensor`, `palmCentre`, `pushTrail`, `trailToTensor` |
 | `tui/src/pi/gestures.ts` | Landmark indices, `Hand`/`Frame`/`Label` types, `GestureReader` (pen), `GestureCommands` (label → action), `oneEuro`, `DEFAULT_GESTURES` |
 | `tui/src/pi/models.ts` | `MODELS` URLs, `modelPaths`, `missingModels`, `fetchModels`, `gesturePaths` |
-| `tui/src/pi/items.ts` | Runtime-neutral DINOv2 item matching: `createEmbedder`, `learn`, `locate`, `ItemError`, constants; shared with web |
-| `tui/src/pi/items-client.ts` | TUI client for `/api/vision/*`: `teachItem`, `listItems`, `forgetItem`, `findItems`, `describeFound`, `where`, `itemColours`, `VisionError` |
+| `tui/src/pi/items.ts` | Runtime-neutral DINOv2 item matching: `createEmbedder`, `learn`, `locate`, `ItemError`, constants (`BACKGROUND_SIM` among them); shared with web |
+| `tui/src/pi/items-client.ts` | TUI client for `/api/vision/*`: `teachItem`, `listItems`, `forgetItem`, `deleteItem`, `findItems`, `describeFound`, `where`, `itemColours`, `VisionError` |
 | `tui/src/pi/calibration.ts` | Homography solve, `calibrate`, `TARGETS`, `usableCalibration`, load/save `calibration.json`; `findCalibrationPath` (`find-calibration.json`, the TUI's `/calibrate`: mirrored 480×360 feed → screen fractions) and `toScreen` (a camera box → screen fractions, bounds of the warped corners) |
 | `tui/src/pi/projector-page.ts` | `projectorPage`: the self-contained kiosk HTML/canvas client |
 | `tui/src/pi/onnxruntime-node.d.ts` | Ambient types for `onnxruntime-node`, which is deliberately not a TUI dependency |
@@ -245,7 +246,8 @@ Default label map (`DEFAULT_GESTURE_MAP`):
 - **Other `ponytail:` shortcuts:**
   - `cropToTensor` samples nearest-neighbour.
   - `toPixelValues` samples nearest-neighbour.
-  - `DEFAULT_THRESHOLD` was tuned only on synthetic scenes.
+  - `DEFAULT_THRESHOLD` was tuned only on synthetic scenes, and `BACKGROUND_SIM` is untuned on real cameras.
+  - `learn`'s background prune is brute force, `pos` × every `neg` patch × 384, once per teach.
   - `locate` is a brute-force nearest-neighbour search, about 150M multiply-adds per item at 448 px.
 - **`remoteSource` refuses non-https URLs** other than localhost (`assertSecureUrl`), and so do `teachItem` and `findItems`.
 
@@ -261,6 +263,6 @@ Default label map (`DEFAULT_GESTURE_MAP`):
 | `tui/test/pi-remote.test.ts` | `splitJpegs`; `remoteSource` against a local server: https rule, stale answers, ticket refresh, two hands, legacy `roi`, revoked device |
 | `tui/test/pi-camera.test.ts` | `cameraCommands` per platform and override; `parseDshowCameras` |
 | `tui/test/gesture-commands.test.ts` | `GestureCommands` hold, re-arm, motion cooldown |
-| `tui/test/vision-items.test.ts` | `listItems`, `forgetItem` against a stub server |
+| `tui/test/vision-items.test.ts` | `listItems`, `forgetItem`, `deleteItem` against a stub server |
 
 The matching math in `items.ts` is tested on the web side (`web/src/__tests__/vision-items.test.ts`).

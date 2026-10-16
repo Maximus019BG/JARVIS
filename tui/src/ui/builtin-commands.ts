@@ -2,8 +2,8 @@ import { resolve } from "node:path"
 import { blueprintCommand } from "./blueprint-command.ts"
 import { defaultTrustTarget, trust, trustedDirs } from "../config/discover.ts"
 import { errorMessage } from "../agent/agent.ts"
-import { readCredentials } from "../blueprint/credentials.ts"
-import { forgetItem, listItems } from "../pi/items-client.ts"
+import { readCredentials, type Credentials } from "../blueprint/credentials.ts"
+import { forgetItem, listItems, type Taught } from "../pi/items-client.ts"
 import { codeCommand } from "./code-command.ts"
 import { blueprintRoot, listBlueprints } from "../blueprint/store.ts"
 import type { Config } from "../config/config.ts"
@@ -78,9 +78,16 @@ function extensionReport(extensions: Extensions): string {
   ].join("\n")
 }
 
-/** `/items` and `/forget <name>`. Over the network, so the answer arrives as a note. */
-function itemsCommand(command: "items" | "forget", name: string, note: (text: string, level?: "info" | "error") => void): void {
-  if (command === "forget" && !name) return note("usage: /forget <name> — /items lists what is taught", "error")
+/**
+ * `/items`, `/forget <name>`, and bare `/forget`, which lists the items to pick from. Over the
+ * network, so the answer arrives as a note.
+ */
+function itemsCommand(
+  command: "items" | "forget",
+  name: string,
+  note: (text: string, level?: "info" | "error") => void,
+  openForget: CommandDeps["openForget"],
+): void {
   let credentials
   try {
     credentials = readCredentials()
@@ -88,6 +95,14 @@ function itemsCommand(command: "items" | "forget", name: string, note: (text: st
     return note(errorMessage(error), "error")
   }
   if (!credentials) return note("pair first (/pair) — items are taught and found on your cloud", "error")
+  if (command === "forget" && !name) {
+    const paired = credentials
+    void listItems(paired).then(
+      (items) => (items.length > 0 ? openForget(paired, items) : note("no items taught yet — /learn <name>")),
+      (error: unknown) => note(errorMessage(error), "error"),
+    )
+    return
+  }
   const answer =
     command === "items"
       ? listItems(credentials).then((items) =>
@@ -127,6 +142,8 @@ export type CommandDeps = {
   reload: (changed?: string) => boolean
   /** Runs a connection test and shows the result. Async, so the caller owns the await. */
   testProvider: (id: string) => void
+  /** Opens the picker that forgets taught items, several at once. */
+  openForget: (credentials: Credentials, items: Taught[]) => void
   /** Opens the camera overlay to teach or find an item. */
   openVision: (mode: VisionMode, options?: { camera?: boolean }) => void
   /** Turns hand gestures on or off; `undefined` flips them. */
@@ -227,7 +244,7 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
       return deps.openVision({ kind: "calibrate" })
     case "items":
     case "forget":
-      return itemsCommand(command.name, args.trim(), (text, level) => turn.note(text, level))
+      return itemsCommand(command.name, args.trim(), (text, level) => turn.note(text, level), deps.openForget)
     case "gestures": {
       const arg = args.trim().toLowerCase()
       return deps.setGestures(arg === "on" ? true : arg === "off" ? false : undefined)

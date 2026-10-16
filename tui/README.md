@@ -764,9 +764,13 @@ show the camera picture instead, and `c` switches between the two views on eithe
 - **`/calibrate`** lines the projector up with the camera. Pinch the middle of each of the four
   markers as it appears. Redo it whenever the projector or the camera moves. Until then the
   rectangles assume the camera sees exactly the projected area.
-- **`/learn <name>`** lights a box on the table. Put the item inside it and press space, turn
-  the item, and repeat about six times. Then press enter. Arrow keys move the box and +/- resize
-  it. Teaching an existing name replaces it.
+- **`/learn <name>`** lights a box on the table. With nothing in it, press `b` once: that shot
+  shows what is behind the item, so the background is not learnt as part of it. Then put the item
+  inside the box and press space, turn the item, and repeat about six times. Then press enter.
+  Arrow keys move the box and +/- resize it. Teaching an existing name replaces it. Re-teach
+  items taught before the empty shot existed.
+- **`/forget [name]`** forgets an item. With no name it lists them: space marks several, enter
+  forgets the marked ones.
 - **`/find [name]`** lights a rectangle in each found item's colour where it is. With
   `/find-cam`, a side panel lists every item with its colour and where it is; up/down and enter
   show only one item, `a` shows all of them again. Teaching opens the find view automatically.

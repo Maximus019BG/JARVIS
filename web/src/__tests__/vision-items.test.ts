@@ -41,6 +41,26 @@ describe("vision items", () => {
     expect(() => learn([{ patches: photo(8, 8, 800, 800), box: box(0, 0, 50, 50) }])).toThrow(ItemError);
   });
 
+  it("keeps the background behind the item out of it, given a shot of the empty spot", () => {
+    // A poster sits behind the item, inside the box, so only the empty shot shows it as background.
+    const POSTER = unit(2);
+    const held = { "3,3": ITEM, "4,3": ITEM, "3,4": ITEM, "4,4": POSTER };
+    const item = learn([
+      { patches: photo(8, 8, 800, 800, { "4,4": POSTER }), box: null },
+      { patches: photo(8, 8, 800, 800, held), box: box(300, 300, 200, 200) },
+      { patches: photo(8, 8, 800, 800, { ...held, "4,4": ITEM, "5,5": ITEM }), box: box(300, 300, 300, 300) },
+    ]);
+    // The empty shot is all background, the poster patch is pruned from the item.
+    expect(item.pos.length / DIMS).toBe(3 + 5);
+    for (let i = 0; i < item.pos.length; i += DIMS) expect(item.pos[i]).toBe(1);
+    expect(locate(photo(8, 8, 800, 800, { "4,4": POSTER }), item)).toEqual({ best: 0, boxes: [] });
+  });
+
+  it("refuses an item that is all background, and a teach with no boxed photo", () => {
+    expect(() => learn([{ patches: photo(8, 8, 800, 800), box: box(300, 300, 200, 200) }])).toThrow(/behind it/);
+    expect(() => learn([{ patches: photo(8, 8, 800, 800), box: null }])).toThrow(ItemError);
+  });
+
   it("boxes the connected item patches in scene pixels and ignores what is closer to background", () => {
     const mixed = new Float32Array(DIMS);
     mixed[0] = 0.6; // 0.6 like the item clears the 0.55 bar, but 0.8 like the background wins

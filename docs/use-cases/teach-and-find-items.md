@@ -1,6 +1,6 @@
 # Teach and find items
 
-Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 43a1209
+Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 8cde74a
 
 ## Who and why
 
@@ -23,11 +23,13 @@ workstation, so every device paired to it can find them.
    gestures, and `c` switches views. The projector view is black with only the guide box lit on the
    table (`toScreen` through the calibration). The camera view shows the picture with the box over it.
    The box is kept in camera pixels either way. A fixed guide box sits in the middle. The arrow keys move it and `+`/`-` resize it.
-   The user holds the item inside the box and presses space for each shot, turning it between shots.
-   Backspace drops the last shot. Enter teaches. The overlay asks for at least 3 shots and suggests 6.
+   First the user clears the box and presses `b`: one **empty shot** of whatever is behind the item
+   (a table, a wall, a shelf, lights). Then they hold the item inside the box and press space for each
+   shot, turning it between shots. Backspace drops the last shot of either kind. Enter teaches. The
+   overlay asks for the empty shot and at least 3 item shots, and suggests 6.
 2. **Upload.** `tui/src/pi/items-client.ts` → `teachItem` sends `POST /api/vision/items` with the device token.
-   The body is JSON: `{name, images: [{jpeg: base64, box: [x, y, w, h]}]}`, with the box in that photo's
-   pixels.
+   The body is JSON: `{name, images: [{jpeg: base64, box: [x, y, w, h] | null}]}`, with the box in that
+   photo's pixels. `null` marks the empty shot.
 3. **Check** (`web/src/app/api/vision/items/route.ts` → `POST`). The device token is looked up in the
    database and must hold `vision:write` (`web/src/server/vision.ts` → `deviceFor`). Then the body size,
    the schema and the model load are checked.
@@ -39,9 +41,14 @@ workstation, so every device paired to it can find them.
    - a patch wholly inside the box goes to the **pos** bank (what the item looks like);
    - a patch whose centre is more than one patch outside the box goes to the **neg** bank (what it
      was photographed against);
-   - edge patches go to neither, because they are part item and part table.
+   - edge patches go to neither, because they are part item and part table;
+   - every patch of an empty shot (no box) goes to **neg**.
 
-   A box that covers fewer than 4 whole patches fails the request. Each bank keeps at most 256 vectors,
+   The box is always bigger than the item, so what is behind the item lands in pos too, at the same
+   place in every shot. Left there, that spot matched the item once the item was gone. So each pos
+   patch whose nearest neg patch (all of them, before sampling) reaches `BACKGROUND_SIM` (0.7) is
+   dropped. A box that covers fewer than 4 whole patches fails the request, and so does an item with
+   fewer than 4 patches left after the drop, or a teach with no boxed photo. Each bank keeps at most 256 vectors,
    sampled evenly so every photo stays represented.
 6. **Pack and store.** `packBank` multiplies each component by 127, stores it as int8, and encodes the
    result as base64. That is a quarter of the float32 size, and the rounding is at most 1/254 per
@@ -77,7 +84,9 @@ workstation, so every device paired to it can find them.
     open the screen when another overlay is open, and it never replaces one that is already open.
 11. **List and forget.** `/items` lists names and shot counts (`GET /api/vision/items`, `vision:read`).
     `/forget <name>` looks the name up, then deletes by id (`DELETE /api/vision/items?id=`,
-    `vision:write`).
+    `vision:write`). A bare `/forget` opens a list of the taught items: space marks one or more, enter
+    forgets the marked ones (or the highlighted one when none is marked), and escape forgets nothing.
+    One `DELETE` per item, in parallel (`items-client.ts` → `deleteItem`).
 
 ## Business rules
 
@@ -88,7 +97,8 @@ workstation, so every device paired to it can find them.
 | Find scope | `vision:read`, from a `jvh_` ticket's scopes or the device token | `web/src/server/vision.ts` → `callerFor` |
 | Teach body | JSON ≤ 10 MB (413 above), sized under nginx's 10 MB cap | `web/src/app/api/vision/items/route.ts` → `MAX_BODY_BYTES` |
 | Name | trimmed, 1–64 characters, unique per workstation | same file, `web/src/server/db/schemas/vision_item.ts` |
-| Photos per teach | 1–20 on the server; the overlay needs at least 3 and caps at 20, one shot per 250 ms | same file, `tui/src/ui/components/vision-view.tsx` |
+| Photos per teach | 1–20 on the server, at least one boxed; the overlay needs an empty shot and at least 3 item shots, and caps at 20, one shot per 250 ms | same file, `tui/src/ui/components/vision-view.tsx` |
+| Background in the box | a pos patch at cosine ≥ 0.7 (`BACKGROUND_SIM`) to any neg patch is dropped | `tui/src/pi/items.ts` → `learn` |
 | Photo decode | at most 4 MP and 64 MB | `web/src/server/vision.ts` → `decodeJpeg` |
 | Find body | `image/jpeg` only (415), 1 byte to 2,000,000 bytes (413) | `web/src/app/api/vision/detect/route.ts` |
 | Threshold | default 0.65 (`DEFAULT_THRESHOLD`); must be in [0, 1]; the TUI sends `vision.threshold` when set | `tui/src/pi/items.ts`, `tui/src/config/config.ts` |
@@ -123,7 +133,10 @@ those cannot be turned back into a picture.
   fails. Apply them with `pnpm --filter web db:migrate`. Do not use `db:doctor -- --fix` for this: it
   only marks migrations as applied, which hides the missing table.
 - **400 on teach.** The photo is not a JPEG, the schema is wrong, or the box is too small: "the item
-  is too small, send a closer shot".
+  is too small, send a closer shot". Or the item looks like the empty shot everywhere: "the item looks
+  like what is behind it". Use a plainer background or a tighter box.
+- **Found where it is not.** An item taught before the empty shot existed still holds the background
+  behind it. Teach it again under the same name, which replaces it.
 - **404 on find.** "no items taught yet" or "no such item". The overlay stops polling. `find_item` turns
   both into advice to run `/learn <name>`.
 - **413 / 415.** Too large or not a JPEG. Downscale before sending.

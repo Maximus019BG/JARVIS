@@ -1,6 +1,6 @@
 # UI
 
-Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 43a1209
+Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 8cde74a
 
 ## Purpose
 
@@ -204,7 +204,7 @@ visual mode, `:` commands, search.
   saves (`writeDoc` commits). `f` draws by hand through `tui/src/ui/components/use-hand-pen.ts` → `useHandPen`
   (pinch-to-draw from `tui/src/pi/gestures.ts`, One-Euro smoothed, `fitStroke` on release).
 - `tui/src/ui/components/vision-view.tsx` → `VisionView`: the full screen for `/learn`
-  (aim a box, take shots, `teachItem`) and `/find` (`findItems` on the newest frame, one request
+  (aim a box, take one empty shot with `b` and the item shots with space, `teachItem`) and `/find` (`findItems` on the newest frame, one request
   in flight). Two views, `c` switching between them. The **projector view** (`/learn`, `/find`, and
   `find_item`) is for the terminal projected over a table: `components/projection.tsx` → `Projection`
   draws a black screen with only heavy-bordered rectangles, the guide box or each found item in its
@@ -218,6 +218,8 @@ visual mode, `:` commands, search.
   tool opens it too, through `showItems` (`app.tsx` → `showItems.current`): only when no other overlay
   is open, and never replacing an open one. Hidden, not closed, while a permission or question is up,
   so shots survive.
+- Bare `/forget` opens a `Picker` with `onPickMany` over the taught items (`app.tsx` → `forgetting`, set
+  through `CommandDeps.openForget`): `space` marks, `enter` runs `deleteItem` for each and notes the names.
 - `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` (`/calibrate`): the four `TARGETS` on
   black, one at a time; a pinch (`useHandPen` over `remoteSource`) records where the camera saw each.
   `calibrate` with a 1×1 sheet gives a camera px → screen fraction mapping, so a terminal resize keeps
