@@ -757,12 +757,19 @@ command that writes MJPEG to stdout. Everything below shares one camera process.
   permission prompt, 👎 rejects it, a held ✋ stops the turn, 🤙 starts or stops voice, and
   swiping up or down scrolls. The status line shows `✋ fps rtt` while gestures are on. Gestures
   need `hand_gesture.onnx` from `models/hand_gestgures.ipynb` on the server.
-- **`/learn <name>`** opens a live preview with a box. Hold the item inside it and press space,
-  turn the item, and repeat about six times. Then press enter. Arrow keys move the box and +/-
-  resize it. Teaching an existing name replaces it.
-- **`/find [name]`** opens the camera full screen. Each item it finds gets an outline box in its
-  own colour, and a side panel lists every item with its colour and where it is. Up/down and enter
-  show only one item, `a` shows all of them again. Teaching opens this view automatically.
+`/learn` and `/find` assume the terminal is projected over a table. They show a black screen
+with only rectangles lit, so the light lands on the real items. `/learn-cam` and `/find-cam`
+show the camera picture instead, and `c` switches between the two views on either screen.
+
+- **`/calibrate`** lines the projector up with the camera. Pinch the middle of each of the four
+  markers as it appears. Redo it whenever the projector or the camera moves. Until then the
+  rectangles assume the camera sees exactly the projected area.
+- **`/learn <name>`** lights a box on the table. Put the item inside it and press space, turn
+  the item, and repeat about six times. Then press enter. Arrow keys move the box and +/- resize
+  it. Teaching an existing name replaces it.
+- **`/find [name]`** lights a rectangle in each found item's colour where it is. With
+  `/find-cam`, a side panel lists every item with its colour and where it is; up/down and enter
+  show only one item, `a` shows all of them again. Teaching opens the find view automatically.
 - **`find_item`** is the agent's tool for "where are my keys?". It takes one camera shot behind
   the normal permission prompt, answers, and opens the find view on that item.
 

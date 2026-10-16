@@ -1,6 +1,6 @@
 # Teach and find items
 
-Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-15 @ 9d82895
+Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 43a1209
 
 ## Who and why
 
@@ -12,9 +12,17 @@ workstation, so every device paired to it can find them.
 
 ## Flow
 
-1. **Teach: `/learn <name>`.** The TUI opens the camera overlay
-   (`tui/src/ui/components/vision-view.tsx` → `VisionView`), using the same shared 480×360 mirrored feed as
-   hand gestures. A fixed guide box sits in the middle. The arrow keys move it and `+`/`-` resize it.
+0. **Calibrate: `/calibrate`** (once per projector/camera placement). The TUI is meant to be projected
+   over a table. `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` shows the four `TARGETS` on
+   black, one at a time, and the user pinches the middle of each. The camera points and the screen
+   fractions solve a homography (`tui/src/pi/calibration.ts` → `calibrate`, 1×1 sheet), saved to
+   `<dataDir>/find-calibration.json`. It is ignored when the camera resolution differs. Without one, the
+   projector view stretches the camera frame over the screen.
+1. **Teach: `/learn <name>`** (projector view) **or `/learn-cam <name>`** (camera view). Both open
+   `tui/src/ui/components/vision-view.tsx` → `VisionView` on the same shared 480×360 mirrored feed as hand
+   gestures, and `c` switches views. The projector view is black with only the guide box lit on the
+   table (`toScreen` through the calibration). The camera view shows the picture with the box over it.
+   The box is kept in camera pixels either way. A fixed guide box sits in the middle. The arrow keys move it and `+`/`-` resize it.
    The user holds the item inside the box and presses space for each shot, turning it between shots.
    Backspace drops the last shot. Enter teaches. The overlay asks for at least 3 shots and suggests 6.
 2. **Upload.** `tui/src/pi/items-client.ts` → `teachItem` sends `POST /api/vision/items` with the device token.
@@ -39,13 +47,15 @@ workstation, so every device paired to it can find them.
    result as base64. That is a quarter of the float32 size, and the rounding is at most 1/254 per
    component. The row is upserted into `vision_item` on `(workstation_id, name)`. Teaching a name again
    replaces its banks, sample count, device and `updatedAt`. The answer is `{id, name, samples}`.
-7. **Land in find mode.** After teaching, the overlay switches to find mode on that item, so the user
-   sees it work at once.
+7. **Land in find mode.** After teaching, the screen switches to find mode on that item, in the same
+   view, so the user sees it work at once.
 8. **Find: `/find [name]`.** The overlay loops: take the newest frame and call `findItems`, one request
    at a time. `findItems` posts the raw JPEG to `POST /api/vision/detect?item=&threshold=` with the
    hand ticket (`jvh_`, see [Hand gestures and drawing](hand-gestures-and-drawing.md)), not the device
    token. A ticket check is an HMAC, so a live find saves a database round trip per frame. On a 401 the
-   ticket is refreshed and the request retried once. The screen fills the terminal, laid out like the
+   ticket is refreshed and the request retried once. `/find` opens the projector view: a black screen
+   with a heavy rectangle in each found item's colour, with its name, lit where the item is on the
+   table. `/find-cam` (or `c`) opens the camera view instead. It fills the terminal, laid out like the
    blueprint editor. Each found item is outlined (an unfilled rectangle) where it is, in its own colour,
    with its name and score. The side panel lists every taught item with a swatch in the same colour and
    its place ("left · top"), or "not in view". A colour belongs to an item by its place in the taught list
@@ -85,6 +95,7 @@ workstation, so every device paired to it can find them.
 | Box too small | fewer than 4 whole patches inside → 400 | `tui/src/pi/items.ts` → `MIN_PATCHES` |
 | Bank size | at most 256 vectors per bank (`MAX_BANK`) | `tui/src/pi/items.ts` |
 | Boxes per item | at most 8, groups of 4+ patches | `tui/src/pi/items.ts` → `locate` |
+| Projector calibration | 4 pinched markers → camera px to screen fractions, `<dataDir>/find-calibration.json`, ignored at another camera resolution | `tui/src/pi/calibration.ts`, `tui/src/ui/components/calibrate-view.tsx` |
 | `find_item` availability | only in the interactive TUI and only when paired; permission `ask` | `tui/src/tools/index.ts` |
 | Transport | https only, except localhost | `tui/src/pi/items-client.ts` |
 
@@ -104,7 +115,13 @@ those cannot be turned back into a picture.
 - **401.** "this device is no longer authorised — run `jarvis pair`". A find retries once with a fresh
   ticket first.
 - **403.** "this device has no vision access — enable Vision for it in the web app, under Devices".
-  Turn on the vision scope for that device. A ticket keeps its old scopes until it expires (up to 5 minutes).
+  Turn on the vision scope for that device. A find retries once with a fresh ticket, so a scope just
+  granted works at once, not when the old ticket expires.
+- **500.** "the server failed (500) — see the web server log". The route threw. On a self-hosted
+  server, check `pnpm --filter web db:doctor`: when the vision migrations (`0016_vision_items`,
+  `0017_vision_scope_backfill`) were never applied, `vision_item` is missing and every teach and find
+  fails. Apply them with `pnpm --filter web db:migrate`. Do not use `db:doctor -- --fix` for this: it
+  only marks migrations as applied, which hides the missing table.
 - **400 on teach.** The photo is not a JPEG, the schema is wrong, or the box is too small: "the item
   is too small, send a closer shot".
 - **404 on find.** "no items taught yet" or "no such item". The overlay stops polling. `find_item` turns

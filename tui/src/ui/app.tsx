@@ -40,6 +40,7 @@ import { useVim } from "./vim.ts"
 import { Activity } from "./components/activity.tsx"
 import { BlueprintEditor } from "./components/blueprint-editor.tsx"
 import { BlueprintPane } from "./components/blueprint-view.tsx"
+import { CalibrateView } from "./components/calibrate-view.tsx"
 import { VisionView, type VisionMode } from "./components/vision-view.tsx"
 import { GLYPHS, useGestures } from "./use-gestures.ts"
 import { onCameraNotice, setCameraOverride } from "../pi/camera.ts"
@@ -256,7 +257,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
    */
   const [opened, setOpened] = useState<{ name: string; after: number }>()
   /** The camera overlay for /learn and /find, and the pairing it talks to. Another exclusive overlay. */
-  const [vision, setVision] = useState<{ mode: VisionMode; credentials: Credentials } | null>(null)
+  const [vision, setVision] = useState<{ mode: VisionMode; credentials: Credentials; camera?: boolean } | null>(null)
   /** Hand gestures as commands. The camera runs only while this is on. */
   const [gesturesOn, setGesturesOn] = useState(() => config.vision.autostart)
   /** Set once the pane has opened itself, so a reader who closed it is not reopened on. */
@@ -829,7 +830,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   )
 
   const openVision = useCallback(
-    (mode: VisionMode) => {
+    (mode: VisionMode, options?: { camera?: boolean }) => {
       let credentials: Credentials | undefined
       try {
         credentials = readCredentials()
@@ -837,7 +838,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         return turn.note(errorMessage(error), "error")
       }
       if (!credentials) return turn.note("pair first (/pair) — items are taught and found on your cloud", "error")
-      setVision({ mode, credentials })
+      setVision({ mode, credentials, camera: options?.camera })
     },
     [turn],
   )
@@ -1659,10 +1660,20 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
         />
       )}
 
-      {vision && (
+      {vision?.mode.kind === "calibrate" && (
+        <CalibrateView
+          credentials={vision.credentials}
+          theme={theme}
+          paused={Boolean(turn.permission || turn.question)}
+          onClose={() => setVision(null)}
+        />
+      )}
+
+      {vision && vision.mode.kind !== "calibrate" && (
         <VisionView
           credentials={vision.credentials}
           initial={vision.mode}
+          camera={vision.camera}
           threshold={config.vision.threshold}
           theme={theme}
           // Hidden, not closed, while a prompt is up: closing would drop the shots taken so far.

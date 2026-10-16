@@ -1,6 +1,6 @@
 # Pi vision
 
-Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-15 @ 9d82895
+Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-16 @ 43a1209
 
 ## Purpose
 Turns a camera into hands, and hands into actions. It drives three features: drawing on a
@@ -120,7 +120,8 @@ web app runs it.
 - `locate` marks a scene patch when its nearest `pos` match beats its nearest `neg` match and reaches `threshold` (`DEFAULT_THRESHOLD` 0.65). It returns one box per connected group of at least 4 patches (up to 8 boxes), plus `best`, the closest score even when nothing was found.
 - `items-client.ts` is the TUI client:
   - `teachItem`, `listItems` and `forgetItem` call `/api/vision/items` with the device token through `blueprint/sync.ts` → `call`. `forgetItem` looks the name up first, because the route deletes by id.
-  - `findItems` POSTs a JPEG to `/api/vision/detect` with the hand ticket.
+  - `findItems` POSTs a JPEG to `/api/vision/detect` with the hand ticket. On a 401 or a 403 it fetches a fresh ticket and retries once: a ticket carries the scopes it was minted with, so a vision scope granted a moment ago needs a new one.
+  - A 5xx with no message reads "the server failed (500) — see the web server log", because a route that threw answers with an empty body.
   - `describeFound` and `where` turn a box into "left · top" (thirds of the mirrored view).
   - `itemColours` gives each item a fixed colour from `ITEM_COLOURS` (8 RGB values, not theme colours, because they are drawn over camera pixels). The colour is its place in the taught list sorted by name, so it does not change between frames or filters. An id that is not in the list is hashed to a colour. Colours repeat after 8 items.
 
@@ -162,7 +163,7 @@ stored the credentials and `jarvis pi calibrate` stored the calibration.
 | `tui/src/pi/models.ts` | `MODELS` URLs, `modelPaths`, `missingModels`, `fetchModels`, `gesturePaths` |
 | `tui/src/pi/items.ts` | Runtime-neutral DINOv2 item matching: `createEmbedder`, `learn`, `locate`, `ItemError`, constants; shared with web |
 | `tui/src/pi/items-client.ts` | TUI client for `/api/vision/*`: `teachItem`, `listItems`, `forgetItem`, `findItems`, `describeFound`, `where`, `itemColours`, `VisionError` |
-| `tui/src/pi/calibration.ts` | Homography solve, `calibrate`, `TARGETS`, `usableCalibration`, load/save `calibration.json` |
+| `tui/src/pi/calibration.ts` | Homography solve, `calibrate`, `TARGETS`, `usableCalibration`, load/save `calibration.json`; `findCalibrationPath` (`find-calibration.json`, the TUI's `/calibrate`: mirrored 480×360 feed → screen fractions) and `toScreen` (a camera box → screen fractions, bounds of the warped corners) |
 | `tui/src/pi/projector-page.ts` | `projectorPage`: the self-contained kiosk HTML/canvas client |
 | `tui/src/pi/onnxruntime-node.d.ts` | Ambient types for `onnxruntime-node`, which is deliberately not a TUI dependency |
 | `tui/assets/pi/jarvis-pi.service` | systemd unit running `jarvis pi` as `%i`; `KillMode=control-group` so the worker dies with it |

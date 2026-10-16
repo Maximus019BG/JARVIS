@@ -1,6 +1,6 @@
 # UI: commands and keys
 
-Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-16 @ a86e287
+Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-16 @ 43a1209
 
 Part of the [UI module](README.md). User-facing usage is in [`tui/README.md`](../../../../tui/README.md).
 
@@ -49,8 +49,11 @@ All rows are cases in `runCommand` unless another symbol is named.
 | `/stats` | `[days]` | Spend and tokens by model, agent and session (default 7 days). | `tui/src/ui/stats-command.ts` → `statsCommand` |
 | `/voice` | — | Opens the provider wizard for transcription. | `tui/src/ui/app.tsx` → `openVoiceSetup` |
 | `/speak` | `on` · `off` · `toggle` · `test` · `setup` (bare toggles) | Turns spoken replies on or off (persisted globally), speaks a test line, or opens the speech-provider wizard. Turning on with nothing able to speak opens the wizard. | `tui/src/ui/speak-command.ts` → `runSpeak`, `speakAction` |
-| `/learn` | `<name>` | Opens the camera overlay to teach an item. Needs pairing. | `tui/src/ui/app.tsx` → `openVision` |
-| `/find` | `[name]` | Opens the full-screen camera finding taught items (one, or all), each outlined in its own colour. Needs pairing. | `tui/src/ui/app.tsx` → `openVision` |
+| `/learn` | `<name>` | Teaches an item in the projector view: black, with only the guide box lit on the table. Needs pairing. | `tui/src/ui/app.tsx` → `openVision` |
+| `/learn-cam` | `<name>` | The same, showing the camera picture with the box. | same |
+| `/find` | `[name]` | Finds taught items (one, or all) in the projector view: black, with a rectangle in each item's colour lit where it is on the table. Needs pairing. | same |
+| `/find-cam` | `[name]` | The same, showing the camera picture with the outlines and the items panel. | same |
+| `/calibrate` | | Pinch four projected markers so the projector view lands on the real items; saved to `<dataDir>/find-calibration.json`. | `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` |
 | `/items` | — | Notes the taught items and their shot counts. | `itemsCommand` (module-private), `tui/src/pi/items-client.ts` → `listItems` |
 | `/forget` | `<name>` | Forgets a taught item. | `itemsCommand`, `tui/src/pi/items-client.ts` → `forgetItem` |
 | `/gestures` | `on` · `off` (bare toggles) | Hand gestures as commands; the camera runs only while on. | `tui/src/ui/app.tsx` → `setGestures` |
@@ -127,8 +130,9 @@ Each overlay owns the keyboard while open (`App`'s handler returns early), excep
 | `Panel` | `esc`, `q` or `ctrl+g` close, `↑↓`, `pageup` / `pagedown`, `ctrl+u` / `ctrl+d` | `tui/src/ui/components/panel.tsx` → `Panel` |
 | `Wizard` (provider setup) | `enter` next (toggles on the models step), `ctrl+b` back, `tab` switch between pasting a key and an env var, `esc` cancel | `tui/src/ui/components/wizard.tsx` → `Wizard` |
 | `PairWizard` | `enter` next, `tab` skip email, `ctrl+b` back, `esc` cancel | `tui/src/ui/components/pair-wizard.tsx` → `PairWizard` |
-| `VisionView` (learn) | `space` shot, `backspace` drop last shot, `enter` teach, arrows move the box, `+` / `-` resize, `esc` close | `tui/src/ui/components/vision-view.tsx` → `VisionView` |
-| `VisionView` (find) | `↑` / `↓` pick an item, `enter` find only that one, `a` find all, `esc` or `q` close | same |
+| `VisionView` (learn) | `space` shot, `backspace` drop last shot, `enter` teach, arrows move the box, `+` / `-` resize, `c` camera ↔ projector view, `esc` close | `tui/src/ui/components/vision-view.tsx` → `VisionView` |
+| `VisionView` (find) | `↑` / `↓` pick an item, `enter` find only that one, `a` find all, `c` camera ↔ projector view, `esc` or `q` close | same |
+| `CalibrateView` | pinch each marker, `backspace` drop the last point, `r` start over, `enter` / `esc` close | `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` |
 | `BlueprintEditor` | tool keys from `tui/src/blueprint/draw.ts` → `TOOLS` (`v` select, `f` hand on/off, `l` line, `p` polyline, `r` rect, `c` circle, `a` arc, `t` text, `d` dimension, `s` symbol), arrows move the cursor (`shift` ×10), `ctrl+arrows` pan, `enter` start/finish a shape or select, `n` connect ports, `A` arrange, `x` delete selection, `u` undo, `ctrl+r` redo, `w` save, `tab` next layer, `+` / `-` zoom, `0` fit, `g` grid, `esc` or `q` backs out one level then closes (saving) | `tui/src/ui/components/blueprint-editor.tsx` → `BlueprintEditor` |
 
 Polyline and arc need three points and report "needs the web editor" from the terminal.

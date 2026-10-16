@@ -100,6 +100,12 @@ export type Calibration = z.infer<typeof CalibrationSchema>
 export const calibrationPath = join(dataDir, "calibration.json")
 
 /**
+ * `/calibrate`'s, for the TUI projected over a table. Its own file: a different camera feed
+ * (the mirrored 480×360 one), and it maps onto screen fractions rather than a sheet in mm.
+ */
+export const findCalibrationPath = join(dataDir, "find-calibration.json")
+
+/**
  * The four targets, as fractions of the sheet. Inset from the corners because a projector
  * aimed at a desk usually has its worst focus and keystone right at the edges, and a
  * fingertip pressed into a corner is also the least accurately tracked.
@@ -169,3 +175,25 @@ export function calibrate(
 }
 
 export const matrixOf = (calibration: Calibration): Homography => calibration.matrix as unknown as Homography
+
+type Rect = { x: number; y: number; w: number; h: number }
+
+/**
+ * A box in camera pixels as fractions of the projected screen: its corners through `matrix`,
+ * bounded. Without a matrix, the camera frame stretched over the screen.
+ * ponytail: axis-aligned bounds ignore keystone skew; draw the warped quad if that shows.
+ */
+export function toScreen(box: Rect, camera: { width: number; height: number }, matrix?: Homography): Rect {
+  const corners: Pt[] = [
+    [box.x, box.y],
+    [box.x + box.w, box.y],
+    [box.x + box.w, box.y + box.h],
+    [box.x, box.y + box.h],
+  ]
+  const mapped = corners.map((at): Pt => (matrix ? applyHomography(matrix, at) : [at[0] / camera.width, at[1] / camera.height]))
+  const xs = mapped.map(([x]) => x)
+  const ys = mapped.map(([, y]) => y)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
+}

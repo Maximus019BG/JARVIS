@@ -2,12 +2,16 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { Credentials } from "../../blueprint/credentials.ts"
 import type { Theme } from "../../config/theme.ts"
+import { findCalibrationPath, matrixOf, toScreen, usableCalibration, type Homography } from "../../pi/calibration.ts"
 import { openFeed, type Feed } from "../../pi/camera.ts"
 import { findItems, itemColours, listItems, teachItem, VisionError, where, type Box, type Found, type Taught } from "../../pi/items-client.ts"
 import { CameraCanvas, fit, hexRgb, rgbHex, type Mark } from "./camera-canvas.tsx"
 import { Modal } from "./dialog.tsx"
+import { Projection, type Spot } from "./projection.tsx"
 
-export type VisionMode = { kind: "learn"; name: string } | { kind: "find"; item?: string }
+/** `calibrate` is its own screen (`calibrate-view.tsx`); the other two are this one. */
+export type VisionMode = { kind: "learn"; name: string } | { kind: "find"; item?: string } | { kind: "calibrate" }
+type Mode = Exclude<VisionMode, { kind: "calibrate" }>
 
 /** Holding space takes a burst at this spacing rather than twenty copies of one frame. */
 const SHOT_GAP_MS = 250
@@ -27,6 +31,16 @@ const clampBox = (box: Box, camera: { width: number; height: number }): Box => {
 /** Wrapped, not clipped: the end of a camera error is the part that says what to do. */
 const wrap = (text: string, width: number) => Array.from({ length: Math.ceil(text.length / width) }, (_, at) => text.slice(at * width, (at + 1) * width))
 
+/** `/calibrate`'s mapping for this camera, or undefined: missing, unreadable, or from another resolution. */
+function projectorMatrix(camera: { width: number; height: number }): Homography | undefined {
+  try {
+    const usable = usableCalibration(camera, findCalibrationPath)
+    return "calibration" in usable ? matrixOf(usable.calibration) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * The webcam full screen, laid out like the blueprint editor: the picture, a side panel, a
  * status line and the keys. Learning is "hold it in the box, press space, turn it, again": a
@@ -34,10 +48,15 @@ const wrap = (text: string, width: number) => Array.from({ length: Math.ceil(tex
  * of drawing one. Finding outlines every taught item where it is, each in its own colour, with
  * the same colour against its row in the panel. Teaching lands in find mode on the same item,
  * so the first thing after teaching is seeing it work.
+ *
+ * Two views of the same thing, `c` switching between them. The camera view is the above. The
+ * projector view is for the terminal projected over a table: black, with only the guide box or
+ * the found items lit, placed through `/calibrate`'s mapping so they land on the real things.
  */
 export function VisionView({
   credentials,
   initial,
+  camera: cameraView,
   threshold,
   theme,
   paused,
@@ -45,7 +64,9 @@ export function VisionView({
   onTaught,
 }: {
   credentials: Credentials
-  initial: VisionMode
+  initial: Mode
+  /** Open on the camera picture rather than the projector view. */
+  camera?: boolean
   threshold?: number
   theme: Theme
   /** Something else owns the screen for now: draw nothing, take no keys, keep the shots. */
@@ -54,13 +75,15 @@ export function VisionView({
   onTaught: (name: string, samples: number) => void
 }) {
   const { width: termColumns, height: termRows } = useTerminalDimensions()
-  const [mode, setMode] = useState<VisionMode>(initial)
+  const [mode, setMode] = useState<Mode>(initial)
+  const [showCamera, setShowCamera] = useState(Boolean(cameraView))
   const [feed, setFeed] = useState<Feed>()
   const [cameraError, setCameraError] = useState<string>()
   const [live, setLive] = useState(false)
 
   const camera = feed?.camera ?? { width: 480, height: 360 }
   const view = fit(camera, termColumns - SIDE - 2, termRows - 3)
+  const matrix = useMemo(() => projectorMatrix(camera), [camera.width, camera.height])
 
   // Learn mode.
   const [guide, setGuide] = useState<Box>({ x: camera.width * 0.3, y: camera.height * 0.225, w: camera.width * 0.4, h: camera.height * 0.55 })
@@ -142,7 +165,8 @@ export function VisionView({
   const snap = () => {
     const shot = feed?.latest()
     const now = performance.now()
-    if (!shot || now - lastShot.current < SHOT_GAP_MS || shots.current.length >= MAX_SHOTS) return
+    if (!shot) return setStatus("no picture from the camera yet")
+    if (now - lastShot.current < SHOT_GAP_MS || shots.current.length >= MAX_SHOTS) return
     lastShot.current = now
     shots.current.push({ jpeg: shot.jpeg, box: guide })
     setShotCount(shots.current.length)
@@ -176,6 +200,10 @@ export function VisionView({
     const stop = () => key.stopPropagation()
     if (key.name === "escape" || (mode.kind === "find" && key.name === "q")) {
       onClose()
+      return stop()
+    }
+    if (key.name === "c" && !teaching) {
+      setShowCamera((shown) => !shown)
       return stop()
     }
     if (mode.kind === "find") {
@@ -214,8 +242,8 @@ export function VisionView({
   const footer = mode.kind === "learn" ? (status ?? "") : (findError ?? (found ? `${found.ms}ms on the server` : live ? "looking…" : ""))
   const keys =
     mode.kind === "learn"
-      ? " space shot · backspace undo · enter teach · arrows move · +/- size · esc close"
-      : " ↑↓ pick · enter only this · a all · esc/q close"
+      ? " space shot · backspace undo · enter teach · arrows move · +/- size · c projector · esc close"
+      : " ↑↓ pick · enter only this · a all · c projector · esc/q close"
 
   const advice =
     shotCount === 0
@@ -223,6 +251,34 @@ export function VisionView({
       : shotCount < GOAL_SHOTS
         ? "turn it a little, or move it, then space again"
         : "enough to teach — more angles never hurt"
+
+  if (!showCamera) {
+    const spots: Spot[] =
+      mode.kind === "learn"
+        ? [{ box: toScreen(guide, camera, matrix), rgb: hexRgb(theme.accent), label: ` ${mode.name} ${shotCount}/${GOAL_SHOTS} ` }]
+        : (found?.items ?? []).flatMap((item) =>
+            item.boxes.map((box, index) => ({
+              box: toScreen(box, camera, matrix),
+              rgb: colourOf(item.id),
+              label: index === 0 ? ` ${item.name} ` : undefined,
+            })),
+          )
+    const message =
+      mode.kind === "learn"
+        ? (cameraError ?? status ?? `${shotCount}/${GOAL_SHOTS} shots — ${advice}`)
+        : (findError ?? (found ? `${found.items.filter((item) => item.found).length}/${found.items.length} in view` : "looking…"))
+    const projectorKeys =
+      mode.kind === "learn"
+        ? "space shot · backspace undo · enter teach · arrows move · +/- size · c camera · esc close"
+        : "a all · c camera · esc/q close"
+    return (
+      <Projection
+        spots={spots}
+        footer={[`${title} · ${message}${matrix ? "" : " · not calibrated — /calibrate"}`, projectorKeys]}
+        colour={theme.dim}
+      />
+    )
+  }
 
   return (
     <Modal>

@@ -19,7 +19,9 @@ function problem(status: number, body: unknown): string {
   if (status === 403) return "this device has no vision access — enable Vision for it in the web app, under Devices"
   if (status === 503) return "the vision model is not installed on the server — see web/models/items/README.md"
   if (typeof detail === "string") return detail
-  return typeof error === "string" ? error : `vision request failed: ${status}`
+  if (typeof error === "string") return error
+  // A route that threw answers 500 with an empty body; the cause is only in the server's log.
+  return status >= 500 ? `the server failed (${status}) — see the web server log` : `vision request failed: ${status}`
 }
 
 /** `call` parses every body as JSON; a proxy's HTML error page should still read as an error. */
@@ -99,7 +101,9 @@ export async function findItems(
 
   let ticket = await ticketFor(base, credentials.token)
   let result = await post(ticket)
-  if (!result.ok && result.status === 401) {
+  // 403 too: a ticket carries the scopes it was minted with, so a scope just granted in the
+  // web app needs a fresh one rather than the cached ticket's remaining minutes.
+  if (!result.ok && (result.status === 401 || result.status === 403)) {
     ticket = await ticketFor(base, credentials.token, ticket)
     result = await post(ticket)
   }

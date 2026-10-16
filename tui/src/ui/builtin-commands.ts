@@ -128,7 +128,7 @@ export type CommandDeps = {
   /** Runs a connection test and shows the result. Async, so the caller owns the await. */
   testProvider: (id: string) => void
   /** Opens the camera overlay to teach or find an item. */
-  openVision: (mode: VisionMode) => void
+  openVision: (mode: VisionMode, options?: { camera?: boolean }) => void
   /** Turns hand gestures on or off; `undefined` flips them. */
   setGestures: (on?: boolean) => void
   /** Opens a blueprint in the fullscreen editor, creating it if it does not exist. */
@@ -214,13 +214,17 @@ export function runCommand(command: Command, args: string, deps: CommandDeps): v
         openSetup: deps.openSpeakSetup,
         reload: () => reload(),
       })
-    case "learn": {
+    case "learn":
+    case "learn-cam": {
       const name = args.trim()
       if (!name) return turn.note("usage: /learn <name> — e.g. /learn mug, then hold it up to the camera", "error")
-      return deps.openVision({ kind: "learn", name })
+      return deps.openVision({ kind: "learn", name }, { camera: command.name === "learn-cam" })
     }
     case "find":
-      return deps.openVision({ kind: "find", item: args.trim() || undefined })
+    case "find-cam":
+      return deps.openVision({ kind: "find", item: args.trim() || undefined }, { camera: command.name === "find-cam" })
+    case "calibrate":
+      return deps.openVision({ kind: "calibrate" })
     case "items":
     case "forget":
       return itemsCommand(command.name, args.trim(), (text, level) => turn.note(text, level))

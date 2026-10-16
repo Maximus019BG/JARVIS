@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test"
-import { forgetItem, ITEM_COLOURS, itemColours, listItems } from "../src/pi/items-client.ts"
+import { calibrate, matrixOf, toScreen, type Pt } from "../src/pi/calibration.ts"
+import { findItems, forgetItem, ITEM_COLOURS, itemColours, listItems } from "../src/pi/items-client.ts"
 
 /** Stand-in for `GET` / `DELETE /api/vision/items`: a list, and a delete by id only. */
 const items = [
@@ -17,7 +18,25 @@ const server = Bun.serve({
     return Response.json({ success: true })
   },
 })
-afterAll(() => server.stop(true))
+/**
+ * Stand-in for the ticket and detect routes: the first ticket predates a scope grant and is
+ * refused with 403, the second one is minted after it and works.
+ */
+let minted = 0
+const vision = Bun.serve({
+  port: 0,
+  fetch: (request) => {
+    if (new URL(request.url).pathname === "/api/device/hand/ticket") {
+      return Response.json({ ticket: `jvh_${++minted}`, expiresAt: Date.now() + 300_000 })
+    }
+    if (request.headers.get("authorization") !== "Bearer jvh_2") return Response.json({ error: "Forbidden" }, { status: 403 })
+    return Response.json({ items: [], ms: 1 })
+  },
+})
+afterAll(() => {
+  server.stop(true)
+  vision.stop(true)
+})
 
 const credentials = { baseUrl: `http://localhost:${server.port}`, deviceId: "d", token: "t", workstationId: "w" }
 
@@ -38,4 +57,33 @@ test("gives each item a stable colour: by name, whatever order they arrive in, w
   expect(forward("i1")).toEqual(ITEM_COLOURS[1]!)
   expect(forward(`i${ITEM_COLOURS.length}`)).toEqual(ITEM_COLOURS[0]!)
   expect(ITEM_COLOURS).toContainEqual(forward("taught-since"))
+})
+
+test("a find refused 403 retries once with a fresh ticket, so a scope granted a moment ago works", async () => {
+  const fresh = { baseUrl: `http://localhost:${vision.port}`, deviceId: "d", token: "t", workstationId: "w" }
+  expect(await findItems(fresh, new Uint8Array([0xff, 0xd8]))).toEqual({ items: [], ms: 1 })
+  expect(minted).toBe(2)
+})
+
+test("maps a camera box onto screen fractions: stretched without a calibration, through it with one", () => {
+  const camera = { width: 480, height: 360 }
+  expect(toScreen({ x: 120, y: 90, w: 240, h: 180 }, camera)).toEqual({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+
+  // The projected screen seen in the right half of the camera, upside down.
+  const seen: Pt[] = [
+    [240 + 0.85 * 240, 0.85 * 360],
+    [240 + 0.15 * 240, 0.85 * 360],
+    [240 + 0.15 * 240, 0.15 * 360],
+    [240 + 0.85 * 240, 0.15 * 360],
+  ]
+  const result = calibrate(seen, camera, { width: 1, height: 1 }, "now")
+  if ("error" in result) throw new Error(result.error)
+  const screen = toScreen({ x: 240, y: 0, w: 120, h: 180 }, camera, matrixOf(result.calibration))
+  for (const [got, want] of [
+    [screen.x, 0.5],
+    [screen.y, 0.5],
+    [screen.w, 0.5],
+    [screen.h, 0.5],
+  ] as const)
+    expect(got).toBeCloseTo(want, 6)
 })

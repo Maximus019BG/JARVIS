@@ -1,6 +1,6 @@
 # UI
 
-Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-15 @ 9d82895
+Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 43a1209
 
 ## Purpose
 
@@ -203,15 +203,25 @@ visual mode, `:` commands, search.
   editor's `TOOLS`, `shapeFrom`, `applyOps`, `hitTest`. Edits are a local op journal; leaving
   saves (`writeDoc` commits). `f` draws by hand through `tui/src/ui/components/use-hand-pen.ts` → `useHandPen`
   (pinch-to-draw from `tui/src/pi/gestures.ts`, One-Euro smoothed, `fitStroke` on release).
-- `tui/src/ui/components/vision-view.tsx` → `VisionView`: the full-screen camera for `/learn`
+- `tui/src/ui/components/vision-view.tsx` → `VisionView`: the full screen for `/learn`
   (aim a box, take shots, `teachItem`) and `/find` (`findItems` on the newest frame, one request
-  in flight). It is laid out like the blueprint editor: the picture, a 30-column side panel, a status
+  in flight). Two views, `c` switching between them. The **projector view** (`/learn`, `/find`, and
+  `find_item`) is for the terminal projected over a table: `components/projection.tsx` → `Projection`
+  draws a black screen with only heavy-bordered rectangles, the guide box or each found item in its
+  colour, placed by `tui/src/pi/calibration.ts` → `toScreen` through `/calibrate`'s mapping (a plain
+  stretch of the camera frame until there is one). The guide box stays in camera pixels in both
+  views, so what is sent to the server does not depend on the view. The **camera view**
+  (`/learn-cam`, `/find-cam`) is laid out like the blueprint editor: the picture, a 30-column side panel, a status
   line and a key line. In find mode the panel lists every taught item (`listItems`, fetched when it
   opens and after a teach) with a swatch in its `itemColours` colour, its score and its place, or
   "not in view". `↑`/`↓` pick a row, `enter` finds only that item, `a` finds all again. The `find_item`
   tool opens it too, through `showItems` (`app.tsx` → `showItems.current`): only when no other overlay
   is open, and never replacing an open one. Hidden, not closed, while a permission or question is up,
   so shots survive.
+- `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` (`/calibrate`): the four `TARGETS` on
+  black, one at a time; a pinch (`useHandPen` over `remoteSource`) records where the camera saw each.
+  `calibrate` with a 1×1 sheet gives a camera px → screen fraction mapping, so a terminal resize keeps
+  it; saved to `findCalibrationPath`. The error is shown as a percentage of the screen.
 - `tui/src/ui/components/camera-canvas.tsx` → `CameraCanvas`: the live feed in half-block pixels, with
   `Mark`s (`{box, rgb, label?}` in camera pixels) drawn over it as unfilled 1-pixel rectangles and label
   chips. It reads the size and the marks through a ref, so the frame loop never restarts. The caller owns
@@ -260,7 +270,9 @@ visual mode, `:` commands, search.
 | `tui/src/ui/components/blueprint-view.tsx` | `BlueprintPane`, `Picture`, `Cells`, `useDoc`, `palette` |
 | `tui/src/ui/components/blueprint-editor.tsx` | `BlueprintEditor` fullscreen editor, `cameraToSheet` |
 | `tui/src/ui/components/use-hand-pen.ts` | `useHandPen`, `readHand`, `HAND_LEGEND` |
-| `tui/src/ui/components/vision-view.tsx` | `VisionView`, the full-screen camera for `/learn` and `/find`: the items panel and the keys |
+| `tui/src/ui/components/vision-view.tsx` | `VisionView`, `/learn` and `/find` in the projector or the camera view: the items panel and the keys |
+| `tui/src/ui/components/projection.tsx` | `Projection`: black screen with lit rectangles in screen fractions, for the projected table |
+| `tui/src/ui/components/calibrate-view.tsx` | `CalibrateView`, `/calibrate`: pinch four markers, save the projector mapping |
 | `tui/src/ui/components/camera-canvas.tsx` | `CameraCanvas`: half-block camera feed with `Mark` outlines; `fit`, `hexRgb`, `rgbHex` |
 
 ## Interfaces
@@ -343,5 +355,5 @@ Run from `tui/`: `bun test` (all) or `bun test test/<file>`.
 | `tui/test/provider-runtime.test.ts` | Status line provider warning (`segments`); mostly agent/hosted tests |
 
 No direct tests: `tui/src/ui/app.tsx`, `tui/src/ui/start.tsx`, `tui/src/ui/use-gestures.ts`, `tui/src/ui/provider-command.ts`,
-`tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/tutorial.ts`, `tui/src/ui/components/vision-view.tsx`, `tui/src/ui/components/camera-canvas.tsx`, `tui/src/ui/components/pair-wizard.tsx`,
+`tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/tutorial.ts`, `tui/src/ui/components/vision-view.tsx`, `tui/src/ui/components/projection.tsx`, `tui/src/ui/components/calibrate-view.tsx`, `tui/src/ui/components/camera-canvas.tsx`, `tui/src/ui/components/pair-wizard.tsx`,
 `tui/src/ui/components/wizard.tsx`, `tui/src/ui/components/toast.tsx`, `tui/src/ui/components/welcome.tsx`.
