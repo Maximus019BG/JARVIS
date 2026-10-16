@@ -6,8 +6,7 @@ import { findCalibrationPath, matrixOf, toScreen, usableCalibration, type Homogr
 import { openFeed, type Feed } from "../../pi/camera.ts"
 import { findItems, itemColours, listItems, teachItem, VisionError, where, type Box, type Found, type Taught } from "../../pi/items-client.ts"
 import { CameraCanvas, fit, hexRgb, rgbHex, type Mark } from "./camera-canvas.tsx"
-import { Modal } from "./dialog.tsx"
-import { Projection, type LegendRow, type Spot } from "./projection.tsx"
+import { Projection, Screen, SIDE, type Spot } from "./projection.tsx"
 
 /** `calibrate` is its own screen (`calibrate-view.tsx`); the other two are this one. */
 export type VisionMode = { kind: "learn"; name: string } | { kind: "find"; item?: string } | { kind: "calibrate" }
@@ -19,8 +18,6 @@ const MIN_SHOTS = 3
 const GOAL_SHOTS = 6
 /** The server's cap. */
 const MAX_SHOTS = 20
-/** The side panel, as wide as the blueprint editor's. */
-const SIDE = 30
 
 const clampBox = (box: Box, camera: { width: number; height: number }): Box => {
   const w = Math.min(camera.width, Math.max(camera.width * 0.1, box.w))
@@ -253,11 +250,20 @@ export function VisionView({
   const width = SIDE - 2
   const clip = (text: string) => (text.length > width ? `${text.slice(0, width - 1)}…` : text)
   const title = mode.kind === "learn" ? `teach · ${mode.name}` : `find · ${mode.item ?? "everything"}`
-  const footer = mode.kind === "learn" ? (status ?? "") : (findError ?? (found ? `${found.ms}ms on the server` : live ? "looking…" : ""))
-  const keys =
+  const footer = [
+    mode.kind === "learn" ? (status ?? "") : (findError ?? (found ? `${found.ms}ms on the server` : live ? "looking…" : "")),
+    showCamera || matrix ? "" : "not calibrated — /calibrate",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const footerColour = findError || (mode.kind === "learn" && status) ? (teaching ? theme.accent : theme.warning) : theme.dim
+  const keys = [
     mode.kind === "learn"
-      ? " b empty shot · space shot · backspace undo · enter teach · arrows move · +/- size · c projector · esc close"
-      : " ↑↓ pick · enter only this · a all · c projector · esc/q close"
+      ? "b empty shot · space shot · backspace undo · enter teach · arrows move · +/- size"
+      : "↑↓ pick · enter only this · a all",
+    `c ${showCamera ? "projector" : "camera"}`,
+    mode.kind === "learn" ? "esc close" : "esc/q close",
+  ].join(" · ")
 
   const advice = !hasBackground
     ? "clear the box, then press b — a shot of what is behind the item"
@@ -266,6 +272,42 @@ export function VisionView({
       : shotCount < GOAL_SHOTS
         ? "turn it a little, or move it, then space again"
         : "enough to teach — more angles never hurt"
+
+  const panel = (
+    <>
+      <text fg={theme.accent}>{clip(title)}</text>
+      {cameraError && wrap(cameraError, width).map((line, index) => <text key={`e${index}`} fg={theme.error}>{line}</text>)}
+      {showCamera && !cameraError && !live && <text fg={theme.muted}>starting the camera…</text>}
+      <box style={{ height: 1 }} />
+      {mode.kind === "learn" ? (
+        <>
+          <text fg={shotCount >= MIN_SHOTS && hasBackground ? theme.success : theme.fg}>
+            {`${shotCount}/${GOAL_SHOTS} shots · empty ${hasBackground ? "✓" : "—"}`}
+          </text>
+          {wrap(advice, width).map((line, index) => (
+            <text key={`a${index}`} fg={theme.muted}>
+              {line}
+            </text>
+          ))}
+        </>
+      ) : (
+        <>
+          <text fg={theme.accent}>items</text>
+          {listed.length === 0 && <text fg={theme.dim}>{taught ? "nothing taught — /learn <name>" : "…"}</text>}
+          {legend.map(({ item, box, place }, index) => (
+            <box key={item.id} style={{ flexDirection: "column", flexShrink: 0 }}>
+              <text fg={index === row ? theme.fg : theme.muted}>
+                {index === row ? "▸ " : "  "}
+                <span fg={rgbHex(colourOf(item.id))}>{box ? "■" : "□"}</span>
+                {clip(` ${item.name}${box ? ` ${box.score.toFixed(2)}` : ""}`).slice(0, width - 3)}
+              </text>
+              {place && <text fg={box ? theme.success : theme.dim}>{clip(`    ${place}`)}</text>}
+            </box>
+          ))}
+        </>
+      )}
+    </>
+  )
 
   if (!showCamera) {
     const spots: Spot[] =
@@ -278,88 +320,31 @@ export function VisionView({
               label: index === 0 ? ` ${item.name} ` : undefined,
             })),
           )
-    const message =
-      mode.kind === "learn"
-        ? (cameraError ?? status ?? `${shotCount}/${GOAL_SHOTS} shots — ${advice}`)
-        : (findError ?? (found ? `${found.items.filter((item) => item.found).length}/${found.items.length} in view` : "looking…"))
-    const projectorKeys =
-      mode.kind === "learn"
-        ? "b empty shot · space shot · backspace undo · enter teach · arrows move · +/- size · c camera · esc close"
-        : "↑↓ pick · enter only this · a all · c camera · esc/q close"
-    const legendRows: LegendRow[] =
-      mode.kind === "find"
-        ? legend.map(({ item, box, place }, index) => ({
-            rgb: colourOf(item.id),
-            on: Boolean(box),
-            text: `${index === row ? "▸" : " "} ${item.name}${place ? ` · ${place}` : ""}`,
-            colour: index === row ? theme.fg : box ? theme.muted : theme.dim,
-          }))
-        : []
-    return (
-      <Projection
-        spots={spots}
-        legend={legendRows}
-        footer={[`${title} · ${message}${matrix ? "" : " · not calibrated — /calibrate"}`, projectorKeys]}
-        colour={theme.dim}
-      />
-    )
+    return <Projection spots={spots} side={panel} status={footer} keys={keys} colour={footerColour} theme={theme} />
   }
 
   return (
-    <Modal>
-      <box style={{ width: "100%", height: "100%", backgroundColor: theme.bg, flexDirection: "column" }}>
-        <box style={{ flexDirection: "row", flexGrow: 1, flexBasis: 0, overflow: "hidden" }}>
-          <box style={{ flexGrow: 1, flexDirection: "column", alignItems: "center", paddingLeft: 1 }}>
-            {feed && (
-              <CameraCanvas
-                feed={feed}
-                columns={view.columns}
-                rows={view.rows}
-                marks={marks}
-                theme={theme}
-                onLive={() => setLive(true)}
-                onError={setCameraError}
-              />
-            )}
-          </box>
-
-          <box style={{ width: SIDE, flexDirection: "column", flexShrink: 0, paddingLeft: 1, overflow: "hidden" }}>
-            <text fg={theme.accent}>{clip(title)}</text>
-            {cameraError && wrap(cameraError, width).map((line, index) => <text key={`e${index}`} fg={theme.error}>{line}</text>)}
-            {!cameraError && !live && <text fg={theme.muted}>starting the camera…</text>}
-            <box style={{ height: 1 }} />
-            {mode.kind === "learn" ? (
-              <>
-                <text fg={shotCount >= MIN_SHOTS && hasBackground ? theme.success : theme.fg}>
-                  {`${shotCount}/${GOAL_SHOTS} shots · empty ${hasBackground ? "✓" : "—"}`}
-                </text>
-                {wrap(advice, width).map((line, index) => (
-                  <text key={`a${index}`} fg={theme.muted}>
-                    {line}
-                  </text>
-                ))}
-              </>
-            ) : (
-              <>
-                <text fg={theme.accent}>items</text>
-                {listed.length === 0 && <text fg={theme.dim}>{taught ? "nothing taught — /learn <name>" : "…"}</text>}
-                {legend.map(({ item, box, place }, index) => (
-                  <box key={item.id} style={{ flexDirection: "column", flexShrink: 0 }}>
-                    <text fg={index === row ? theme.fg : theme.muted}>
-                      {index === row ? "▸ " : "  "}
-                      <span fg={rgbHex(colourOf(item.id))}>{box ? "■" : "□"}</span>
-                      {clip(` ${item.name}${box ? ` ${box.score.toFixed(2)}` : ""}`).slice(0, width - 3)}
-                    </text>
-                    {place && <text fg={box ? theme.success : theme.dim}>{clip(`    ${place}`)}</text>}
-                  </box>
-                ))}
-              </>
-            )}
-          </box>
+    <Screen
+      picture={
+        <box style={{ flexGrow: 1, flexDirection: "column", alignItems: "center", paddingLeft: 1 }}>
+          {feed && (
+            <CameraCanvas
+              feed={feed}
+              columns={view.columns}
+              rows={view.rows}
+              marks={marks}
+              theme={theme}
+              onLive={() => setLive(true)}
+              onError={setCameraError}
+            />
+          )}
         </box>
-        <text fg={findError || (mode.kind === "learn" && status) ? (teaching ? theme.accent : theme.warning) : theme.dim}>{` ${footer}`}</text>
-        <text fg={theme.dim}>{keys}</text>
-      </box>
-    </Modal>
+      }
+      side={panel}
+      status={footer}
+      keys={keys}
+      colour={footerColour}
+      theme={theme}
+    />
   )
 }

@@ -757,13 +757,15 @@ command that writes MJPEG to stdout. Everything below shares one camera process.
   permission prompt, 👎 rejects it, a held ✋ stops the turn, 🤙 starts or stops voice, and
   swiping up or down scrolls. The status line shows `✋ fps rtt` while gestures are on. Gestures
   need `hand_gesture.onnx` from `models/hand_gestgures.ipynb` on the server.
-`/learn` and `/find` assume the terminal is projected over a table. They show a black screen
-with only rectangles lit, so the light lands on the real items. `/learn-cam` and `/find-cam`
+`/learn` and `/find` assume the terminal is projected over a table. Like the camera screens,
+they have a side panel and the key lines, but the picture area is black with only rectangles
+lit, so the light lands on the real items. `/learn-cam` and `/find-cam`
 show the camera picture instead, and `c` switches between the two views on either screen.
 
 - **`/calibrate`** lines the projector up with the camera. Pinch the middle of each of the four
-  markers as it appears. Redo it whenever the projector or the camera moves. Until then the
-  rectangles assume the camera sees exactly the projected area.
+  markers as it appears. Redo it whenever the projector or the camera moves, and once after
+  updating to the side-panel layout. Until then the rectangles assume the camera sees exactly
+  the projected area.
 - **`/learn <name>`** lights a box on the table. With nothing in it, press `b` once: that shot
   shows what is behind the item, so the background is not learnt as part of it. Then put the item
   inside the box and press space, turn the item, and repeat about six times. Then press enter.
@@ -771,10 +773,9 @@ show the camera picture instead, and `c` switches between the two views on eithe
   items taught before the empty shot existed.
 - **`/forget [name]`** forgets an item. With no name it lists them: space marks several, enter
   forgets the marked ones.
-- **`/find [name]`** lights a rectangle in each found item's colour where it is, and lists every
-  item down the right edge in its colour with where it is. With
-  `/find-cam`, a side panel lists every item with its colour and where it is; up/down and enter
-  show only one item, `a` shows all of them again. Teaching opens the find view automatically.
+- **`/find [name]`** lights a rectangle in each found item's colour where it is (`/find-cam`
+  outlines it on the camera picture). The side panel lists every item with its colour and where
+  it is; up/down and enter show only one item, `a` shows all of them again. Teaching opens the find view automatically.
 - **`find_item`** is the agent's tool for "where are my keys?". It takes one camera shot behind
   the normal permission prompt, answers, and opens the find view on that item.
 

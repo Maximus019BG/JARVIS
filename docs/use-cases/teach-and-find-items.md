@@ -14,10 +14,12 @@ workstation, so every device paired to it can find them.
 
 0. **Calibrate: `/calibrate`** (once per projector/camera placement). The TUI is meant to be projected
    over a table. `tui/src/ui/components/calibrate-view.tsx` → `CalibrateView` shows the four `TARGETS` on
-   black, one at a time, and the user pinches the middle of each. The camera points and the screen
-   fractions solve a homography (`tui/src/pi/calibration.ts` → `calibrate`, 1×1 sheet), saved to
+   black, one at a time, and the user pinches the middle of each. Like every camera screen, it has the
+   30-column side panel and the status and key lines, so the projected area is the black part left of
+   the panel. The camera points and fractions of that area solve a homography (`tui/src/pi/calibration.ts` → `calibrate`, 1×1 sheet), saved to
    `<dataDir>/find-calibration.json`. It is ignored when the camera resolution differs. Without one, the
-   projector view stretches the camera frame over the screen.
+   projector view stretches the camera frame over the black area. A calibration saved before the side
+   panel was added mapped onto the whole terminal and lands too far right, so run `/calibrate` again.
 1. **Teach: `/learn <name>`** (projector view) **or `/learn-cam <name>`** (camera view). Both open
    `tui/src/ui/components/vision-view.tsx` → `VisionView` on the same shared 480×360 mirrored feed as hand
    gestures, and `c` switches views. The projector view is black with only the guide box lit on the
@@ -60,11 +62,11 @@ workstation, so every device paired to it can find them.
    at a time. `findItems` posts the raw JPEG to `POST /api/vision/detect?item=&threshold=` with the
    hand ticket (`jvh_`, see [Hand gestures and drawing](hand-gestures-and-drawing.md)), not the device
    token. A ticket check is an HMAC, so a live find saves a database round trip per frame. On a 401 the
-   ticket is refreshed and the request retried once. `/find` opens the projector view: a black screen
-   with a heavy rectangle in each found item's colour, with its name, lit where the item is on the
-   table, and a legend down the right edge: one line per taught item, with a swatch in its colour
-   (filled when in view), its name and its place. `/find-cam` (or `c`) opens the camera view instead. It fills the terminal, laid out like the
-   blueprint editor. Each found item is outlined (an unfilled rectangle) where it is, in its own colour,
+   ticket is refreshed and the request retried once. Both views fill the terminal, laid out like the
+   blueprint editor: the picture, the side panel, a status line and a key line. `/find` opens the
+   projector view, where the picture is black, with a heavy rectangle in each found item's colour, with
+   its name, lit where the item is on the table. `/find-cam` (or `c`) opens the camera view instead,
+   where each found item is outlined (an unfilled rectangle) where it is, in its own colour,
    with its name and score. The side panel lists every taught item with a swatch in the same colour and
    its place ("left · top"), or "not in view". A colour belongs to an item by its place in the taught list
    sorted by name, so it holds still between frames. `↑`/`↓` and `enter` find only one item, `a` finds all
@@ -106,7 +108,7 @@ workstation, so every device paired to it can find them.
 | Box too small | fewer than 4 whole patches inside → 400 | `tui/src/pi/items.ts` → `MIN_PATCHES` |
 | Bank size | at most 256 vectors per bank (`MAX_BANK`) | `tui/src/pi/items.ts` |
 | Boxes per item | at most 8, groups of 4+ patches | `tui/src/pi/items.ts` → `locate` |
-| Projector calibration | 4 pinched markers → camera px to screen fractions, `<dataDir>/find-calibration.json`, ignored at another camera resolution | `tui/src/pi/calibration.ts`, `tui/src/ui/components/calibrate-view.tsx` |
+| Projector calibration | 4 pinched markers → camera px to fractions of the black area left of the side panel, `<dataDir>/find-calibration.json`, ignored at another camera resolution | `tui/src/pi/calibration.ts`, `tui/src/ui/components/calibrate-view.tsx` |
 | `find_item` availability | only in the interactive TUI and only when paired; permission `ask` | `tui/src/tools/index.ts` |
 | Transport | https only, except localhost | `tui/src/pi/items-client.ts` |
 

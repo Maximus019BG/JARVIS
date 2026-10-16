@@ -207,13 +207,15 @@ visual mode, `:` commands, search.
   (aim a box, take one empty shot with `b` and the item shots with space, `teachItem`) and `/find` (`findItems` on the newest frame, one request
   in flight). Two views, `c` switching between them. The **projector view** (`/learn`, `/find`, and
   `find_item`) is for the terminal projected over a table: `components/projection.tsx` → `Projection`
-  draws a black screen with only heavy-bordered rectangles, the guide box or each found item in its
-  colour (plus, in find mode, a `legend` of the taught items down the right edge, the same rows as the
-  camera view's panel), placed by `tui/src/pi/calibration.ts` → `toScreen` through `/calibrate`'s mapping (a plain
+  draws a black picture with only heavy-bordered rectangles, the guide box or each found item in its
+  colour, placed by `tui/src/pi/calibration.ts` → `toScreen` through `/calibrate`'s mapping (a plain
   stretch of the camera frame until there is one). The guide box stays in camera pixels in both
   views, so what is sent to the server does not depend on the view. The **camera view**
-  (`/learn-cam`, `/find-cam`) is laid out like the blueprint editor: the picture, a 30-column side panel, a status
-  line and a key line. In find mode the panel lists every taught item (`listItems`, fetched when it
+  (`/learn-cam`, `/find-cam`) shows the camera picture instead. Both views, and `/calibrate`, use
+  `projection.tsx` → `Screen`, laid out like the blueprint editor: the picture, a 30-column (`SIDE`)
+  side panel, a status line and a key line. The panel is the same in both views. Spots are fractions of
+  `pictureArea` (the terminal less the panel and the footer), which is also what `/calibrate` maps
+  onto. In find mode the panel lists every taught item (`listItems`, fetched when it
   opens and after a teach) with a swatch in its `itemColours` colour, its score and its place, or
   "not in view". `↑`/`↓` pick a row, `enter` finds only that item, `a` finds all again. The `find_item`
   tool opens it too, through `showItems` (`app.tsx` → `showItems.current`): only when no other overlay
@@ -274,7 +276,7 @@ visual mode, `:` commands, search.
 | `tui/src/ui/components/blueprint-editor.tsx` | `BlueprintEditor` fullscreen editor, `cameraToSheet` |
 | `tui/src/ui/components/use-hand-pen.ts` | `useHandPen`, `readHand`, `HAND_LEGEND` |
 | `tui/src/ui/components/vision-view.tsx` | `VisionView`, `/learn` and `/find` in the projector or the camera view: the items panel and the keys |
-| `tui/src/ui/components/projection.tsx` | `Projection`: black screen with lit rectangles in screen fractions and an optional right-edge `legend`, for the projected table |
+| `tui/src/ui/components/projection.tsx` | `Screen` (picture, side panel, status and key lines; every camera screen), `Projection` (a black picture with lit rectangles in fractions of `pictureArea`, for the projected table), `SIDE` |
 | `tui/src/ui/components/calibrate-view.tsx` | `CalibrateView`, `/calibrate`: pinch four markers, save the projector mapping |
 | `tui/src/ui/components/camera-canvas.tsx` | `CameraCanvas`: half-block camera feed with `Mark` outlines; `fit`, `hexRgb`, `rgbHex` |
 
@@ -351,6 +353,7 @@ Run from `tui/`: `bun test` (all) or `bun test test/<file>`.
 | `tui/test/thinking.test.tsx` | Reasoning blocks and tool-card diffs folding on click in `Messages` |
 | `tui/test/editor-ui.test.tsx` | `Editor` push-to-talk button (label, narrow width, click) |
 | `tui/test/dialog-ui.test.tsx` | `wrapText`, the `ask` question `Picker` and its `Other…` field |
+| `tui/test/projection-ui.test.tsx` | `Projection` keeps the side panel and footer, and spots stay left of the panel |
 | `tui/test/blueprint-ui.test.tsx` | `BlueprintEditor`, `BlueprintPane` |
 | `tui/test/boot.test.ts` | `bootReport`, `since` |
 | `tui/test/provider-setup.test.ts` | Provider wizard reducer and `presetChoices` |

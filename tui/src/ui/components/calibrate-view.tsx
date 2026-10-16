@@ -6,7 +6,8 @@ import { calibrate, findCalibrationPath, saveCalibration, TARGETS, type Pt } fro
 import { DEFAULT_GESTURES } from "../../pi/gestures.ts"
 import { remoteSource } from "../../pi/hand-source.ts"
 import { hexRgb } from "./camera-canvas.tsx"
-import { Projection } from "./projection.tsx"
+import { wrapText } from "./dialog.tsx"
+import { pictureArea, Projection, SIDE } from "./projection.tsx"
 import { useHandPen, type HandSourceFactory } from "./use-hand-pen.ts"
 
 /** The marker, in cells: wide enough to pinch the middle of, small enough to be precise. */
@@ -16,7 +17,8 @@ const MARKER = { columns: 5, rows: 3 }
  * `/calibrate`: where the projected screen lands in the camera, so `/find` and `/learn` can
  * light up the real thing. The four `jarvis pi` targets, one at a time, on black; a pinch on
  * each records where the camera saw it. The solved mapping goes camera pixels → fractions of
- * the screen, so it survives a terminal resize. Redo it whenever the projector or camera moves.
+ * the black area beside the side panel (the same layout `/find` uses), so it survives a
+ * terminal resize. Redo it whenever the projector or camera moves.
  */
 export function CalibrateView({
   credentials,
@@ -80,13 +82,45 @@ export function CalibrateView({
   if (paused) return null
 
   const [fx, fy] = TARGETS[count]!
-  const w = MARKER.columns / columns
-  const h = MARKER.rows / rows
+  const area = pictureArea(columns, rows)
+  const w = MARKER.columns / area.columns
+  const h = MARKER.rows / area.rows
   const spots = result?.ok ? [] : [{ box: { x: fx - w / 2, y: fy - h / 2, w, h }, rgb: hexRgb(theme.accent), label: `${count + 1}` }]
-  const message = result?.ok
-    ? result.text
-    : `${result ? `${result.text} · ` : ""}${pen.error ?? `pinch the middle of marker ${count + 1}/${TARGETS.length}`} · ${pen.seen ?? "starting the camera…"}`
+  const status = result?.text ?? pen.error ?? ""
   const keys = result?.ok ? "enter/esc close · r redo" : "backspace undo · r restart · esc cancel"
+  const lines = (text: string, fg: string, key: string) =>
+    wrapText(text, SIDE - 2).map((line, index) => (
+      <text key={`${key}${index}`} fg={fg}>
+        {line}
+      </text>
+    ))
+  const side = (
+    <>
+      <text fg={theme.accent}>calibrate</text>
+      <box style={{ height: 1 }} />
+      {result?.ok ? (
+        <text fg={theme.success}>calibrated</text>
+      ) : (
+        <>
+          <text fg={theme.fg}>{`marker ${count + 1}/${TARGETS.length}`}</text>
+          {lines("pinch the middle of the lit marker", theme.muted, "p")}
+        </>
+      )}
+      <box style={{ height: 1 }} />
+      {lines(pen.seen ?? "starting the camera…", theme.dim, "s")}
+      <box style={{ height: 1 }} />
+      {lines("redo whenever the projector or the camera moves", theme.dim, "r")}
+    </>
+  )
 
-  return <Projection spots={spots} footer={[`calibrate · ${message}`, keys]} colour={result && !result.ok ? theme.warning : theme.dim} />
+  return (
+    <Projection
+      spots={spots}
+      side={side}
+      status={status}
+      keys={keys}
+      colour={result && !result.ok ? theme.warning : theme.dim}
+      theme={theme}
+    />
+  )
 }
