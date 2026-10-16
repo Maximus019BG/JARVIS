@@ -1,6 +1,6 @@
 # UI
 
-Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 8cde74a
+Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 29accf1
 
 ## Purpose
 
@@ -208,7 +208,8 @@ visual mode, `:` commands, search.
   in flight). Two views, `c` switching between them. The **projector view** (`/learn`, `/find`, and
   `find_item`) is for the terminal projected over a table: `components/projection.tsx` → `Projection`
   draws a black screen with only heavy-bordered rectangles, the guide box or each found item in its
-  colour, placed by `tui/src/pi/calibration.ts` → `toScreen` through `/calibrate`'s mapping (a plain
+  colour (plus, in find mode, a `legend` of the taught items down the right edge, the same rows as the
+  camera view's panel), placed by `tui/src/pi/calibration.ts` → `toScreen` through `/calibrate`'s mapping (a plain
   stretch of the camera frame until there is one). The guide box stays in camera pixels in both
   views, so what is sent to the server does not depend on the view. The **camera view**
   (`/learn-cam`, `/find-cam`) is laid out like the blueprint editor: the picture, a 30-column side panel, a status
@@ -273,7 +274,7 @@ visual mode, `:` commands, search.
 | `tui/src/ui/components/blueprint-editor.tsx` | `BlueprintEditor` fullscreen editor, `cameraToSheet` |
 | `tui/src/ui/components/use-hand-pen.ts` | `useHandPen`, `readHand`, `HAND_LEGEND` |
 | `tui/src/ui/components/vision-view.tsx` | `VisionView`, `/learn` and `/find` in the projector or the camera view: the items panel and the keys |
-| `tui/src/ui/components/projection.tsx` | `Projection`: black screen with lit rectangles in screen fractions, for the projected table |
+| `tui/src/ui/components/projection.tsx` | `Projection`: black screen with lit rectangles in screen fractions and an optional right-edge `legend`, for the projected table |
 | `tui/src/ui/components/calibrate-view.tsx` | `CalibrateView`, `/calibrate`: pinch four markers, save the projector mapping |
 | `tui/src/ui/components/camera-canvas.tsx` | `CameraCanvas`: half-block camera feed with `Mark` outlines; `fit`, `hexRgb`, `rgbHex` |
 

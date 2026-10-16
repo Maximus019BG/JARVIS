@@ -7,7 +7,7 @@ import { openFeed, type Feed } from "../../pi/camera.ts"
 import { findItems, itemColours, listItems, teachItem, VisionError, where, type Box, type Found, type Taught } from "../../pi/items-client.ts"
 import { CameraCanvas, fit, hexRgb, rgbHex, type Mark } from "./camera-canvas.tsx"
 import { Modal } from "./dialog.tsx"
-import { Projection, type Spot } from "./projection.tsx"
+import { Projection, type LegendRow, type Spot } from "./projection.tsx"
 
 /** `calibrate` is its own screen (`calibrate-view.tsx`); the other two are this one. */
 export type VisionMode = { kind: "learn"; name: string } | { kind: "find"; item?: string } | { kind: "calibrate" }
@@ -152,6 +152,13 @@ export function VisionView({
   const colourOf = useMemo(() => itemColours(listed), [listed])
   const results = new Map(found?.items.map((item) => [item.id, item]))
   const row = Math.min(selected, Math.max(0, listed.length - 1))
+  /** The items panel's rows, shared by the camera view's side panel and the projector's legend. */
+  const legend = listed.map((item) => {
+    const result = results.get(item.id)
+    const box = result?.boxes[0]
+    const place = box ? where(box, camera) : result ? `not in view (best ${result.best.toFixed(2)})` : found ? "not shown" : ""
+    return { item, box, place }
+  })
 
   const marks: Mark[] =
     mode.kind === "learn"
@@ -278,10 +285,20 @@ export function VisionView({
     const projectorKeys =
       mode.kind === "learn"
         ? "b empty shot · space shot · backspace undo · enter teach · arrows move · +/- size · c camera · esc close"
-        : "a all · c camera · esc/q close"
+        : "↑↓ pick · enter only this · a all · c camera · esc/q close"
+    const legendRows: LegendRow[] =
+      mode.kind === "find"
+        ? legend.map(({ item, box, place }, index) => ({
+            rgb: colourOf(item.id),
+            on: Boolean(box),
+            text: `${index === row ? "▸" : " "} ${item.name}${place ? ` · ${place}` : ""}`,
+            colour: index === row ? theme.fg : box ? theme.muted : theme.dim,
+          }))
+        : []
     return (
       <Projection
         spots={spots}
+        legend={legendRows}
         footer={[`${title} · ${message}${matrix ? "" : " · not calibrated — /calibrate"}`, projectorKeys]}
         colour={theme.dim}
       />
@@ -326,27 +343,16 @@ export function VisionView({
               <>
                 <text fg={theme.accent}>items</text>
                 {listed.length === 0 && <text fg={theme.dim}>{taught ? "nothing taught — /learn <name>" : "…"}</text>}
-                {listed.map((item, index) => {
-                  const result = results.get(item.id)
-                  const box = result?.boxes[0]
-                  const place = box
-                    ? where(box, camera)
-                    : result
-                      ? `not in view (best ${result.best.toFixed(2)})`
-                      : found
-                        ? "not shown"
-                        : ""
-                  return (
-                    <box key={item.id} style={{ flexDirection: "column", flexShrink: 0 }}>
-                      <text fg={index === row ? theme.fg : theme.muted}>
-                        {index === row ? "▸ " : "  "}
-                        <span fg={rgbHex(colourOf(item.id))}>{box ? "■" : "□"}</span>
-                        {clip(` ${item.name}${box ? ` ${box.score.toFixed(2)}` : ""}`).slice(0, width - 3)}
-                      </text>
-                      {place && <text fg={box ? theme.success : theme.dim}>{clip(`    ${place}`)}</text>}
-                    </box>
-                  )
-                })}
+                {legend.map(({ item, box, place }, index) => (
+                  <box key={item.id} style={{ flexDirection: "column", flexShrink: 0 }}>
+                    <text fg={index === row ? theme.fg : theme.muted}>
+                      {index === row ? "▸ " : "  "}
+                      <span fg={rgbHex(colourOf(item.id))}>{box ? "■" : "□"}</span>
+                      {clip(` ${item.name}${box ? ` ${box.score.toFixed(2)}` : ""}`).slice(0, width - 3)}
+                    </text>
+                    {place && <text fg={box ? theme.success : theme.dim}>{clip(`    ${place}`)}</text>}
+                  </box>
+                ))}
               </>
             )}
           </box>

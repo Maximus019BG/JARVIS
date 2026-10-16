@@ -771,7 +771,8 @@ show the camera picture instead, and `c` switches between the two views on eithe
   items taught before the empty shot existed.
 - **`/forget [name]`** forgets an item. With no name it lists them: space marks several, enter
   forgets the marked ones.
-- **`/find [name]`** lights a rectangle in each found item's colour where it is. With
+- **`/find [name]`** lights a rectangle in each found item's colour where it is, and lists every
+  item down the right edge in its colour with where it is. With
   `/find-cam`, a side panel lists every item with its colour and where it is; up/down and enter
   show only one item, `a` shows all of them again. Teaching opens the find view automatically.
 - **`find_item`** is the agent's tool for "where are my keys?". It takes one camera shot behind

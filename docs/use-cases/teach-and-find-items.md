@@ -1,6 +1,6 @@
 # Teach and find items
 
-Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 8cde74a
+Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 29accf1
 
 ## Who and why
 
@@ -62,7 +62,8 @@ workstation, so every device paired to it can find them.
    token. A ticket check is an HMAC, so a live find saves a database round trip per frame. On a 401 the
    ticket is refreshed and the request retried once. `/find` opens the projector view: a black screen
    with a heavy rectangle in each found item's colour, with its name, lit where the item is on the
-   table. `/find-cam` (or `c`) opens the camera view instead. It fills the terminal, laid out like the
+   table, and a legend down the right edge: one line per taught item, with a swatch in its colour
+   (filled when in view), its name and its place. `/find-cam` (or `c`) opens the camera view instead. It fills the terminal, laid out like the
    blueprint editor. Each found item is outlined (an unfilled rectangle) where it is, in its own colour,
    with its name and score. The side panel lists every taught item with a swatch in the same colour and
    its place ("left · top"), or "not in view". A colour belongs to an item by its place in the taught list
