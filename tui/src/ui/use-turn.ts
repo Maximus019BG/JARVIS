@@ -93,6 +93,8 @@ export type UseTurnOptions = {
   notes: string[]
   agent: string
   model: string
+  /** Hands `find_item` the identify screen. Read when a turn starts, so it may change between renders. */
+  showItems?: (item?: string) => void
 }
 
 /**
@@ -307,6 +309,7 @@ export function useTurn({ config, cwd, extensions, mcpTools, agent, model, ...in
           read: read.current,
           abort: controller.signal,
           ask: askUser,
+          showItems: initial.showItems,
           onEvent: (event) => {
             setItems((current) => applyEvent(current, event))
             if (event.type === "usage") setInFlight(event.usage)

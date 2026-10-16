@@ -33,6 +33,7 @@ export const findItemTool = (ctx: ToolContext, options: { threshold?: number } =
       try {
         const shot = await snapshot(feed)
         const { items } = await findItems(credentials, shot.jpeg, { item, threshold: options.threshold })
+        ctx.showItems?.(item)
         return items.map((found) => describeFound(found, feed.camera)).join("\n")
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)

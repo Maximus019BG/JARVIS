@@ -122,3 +122,38 @@ export function describeFound(item: Found, camera: Pick<Camera, "width" | "heigh
     ? `${item.name}: in view, ${where(box, camera)} (${box.score.toFixed(2)})`
     : `${item.name}: not in view (closest ${item.best.toFixed(2)})`
 }
+
+export type Rgb = [number, number, number]
+
+/**
+ * One colour per item for outlines drawn over camera pixels, so not theme colours: these must
+ * read on any photo, not on the theme's background. Picked to stay apart from one another.
+ */
+export const ITEM_COLOURS: readonly Rgb[] = [
+  [255, 64, 64],
+  [64, 200, 255],
+  [255, 214, 32],
+  [96, 255, 96],
+  [255, 96, 255],
+  [255, 150, 40],
+  [120, 120, 255],
+  [255, 255, 255],
+]
+
+/**
+ * A stable colour per item: its place in the taught list by name, so the same item keeps its
+ * colour across frames, across "everything" and "just this one", and across sessions while
+ * nothing is taught before it. An id that is not in the list (taught since) hashes to one.
+ * ponytail: colours repeat after 8 items; a bigger palette or a dash pattern per item if that bites.
+ */
+export function itemColours(items: readonly { id: string; name: string }[]): (id: string) => Rgb {
+  const order = new Map([...items].sort((a, b) => a.name.localeCompare(b.name)).map((item, index) => [item.id, index]))
+  return (id) => {
+    let index = order.get(id)
+    if (index === undefined) {
+      index = 0
+      for (const char of id) index = (index * 31 + char.charCodeAt(0)) >>> 0
+    }
+    return ITEM_COLOURS[index % ITEM_COLOURS.length]!
+  }
+}

@@ -1,6 +1,6 @@
 # Pi vision
 
-Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-14 @ c9135de
+Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-15 @ 9d82895
 
 ## Purpose
 Turns a camera into hands, and hands into actions. It drives three features: drawing on a
@@ -122,6 +122,7 @@ web app runs it.
   - `teachItem`, `listItems` and `forgetItem` call `/api/vision/items` with the device token through `blueprint/sync.ts` → `call`. `forgetItem` looks the name up first, because the route deletes by id.
   - `findItems` POSTs a JPEG to `/api/vision/detect` with the hand ticket.
   - `describeFound` and `where` turn a box into "left · top" (thirds of the mirrored view).
+  - `itemColours` gives each item a fixed colour from `ITEM_COLOURS` (8 RGB values, not theme colours, because they are drawn over camera pixels). The colour is its place in the taught list sorted by name, so it does not change between frames or filters. An id that is not in the list is hashed to a colour. Colours repeat after 8 items.
 
   Callers: `tui/src/ui/components/vision-view.tsx` (`/learn`, `/find`), `tui/src/ui/builtin-commands.ts` (`/items`, `/forget`) and `tui/src/tools/vision.ts` → `findItemTool`.
 
@@ -160,7 +161,7 @@ stored the credentials and `jarvis pi calibrate` stored the calibration.
 | `tui/src/pi/gestures.ts` | Landmark indices, `Hand`/`Frame`/`Label` types, `GestureReader` (pen), `GestureCommands` (label → action), `oneEuro`, `DEFAULT_GESTURES` |
 | `tui/src/pi/models.ts` | `MODELS` URLs, `modelPaths`, `missingModels`, `fetchModels`, `gesturePaths` |
 | `tui/src/pi/items.ts` | Runtime-neutral DINOv2 item matching: `createEmbedder`, `learn`, `locate`, `ItemError`, constants; shared with web |
-| `tui/src/pi/items-client.ts` | TUI client for `/api/vision/*`: `teachItem`, `listItems`, `forgetItem`, `findItems`, `describeFound`, `where`, `VisionError` |
+| `tui/src/pi/items-client.ts` | TUI client for `/api/vision/*`: `teachItem`, `listItems`, `forgetItem`, `findItems`, `describeFound`, `where`, `itemColours`, `VisionError` |
 | `tui/src/pi/calibration.ts` | Homography solve, `calibrate`, `TARGETS`, `usableCalibration`, load/save `calibration.json` |
 | `tui/src/pi/projector-page.ts` | `projectorPage`: the self-contained kiosk HTML/canvas client |
 | `tui/src/pi/onnxruntime-node.d.ts` | Ambient types for `onnxruntime-node`, which is deliberately not a TUI dependency |
@@ -226,7 +227,7 @@ Default label map (`DEFAULT_GESTURE_MAP`):
   - config (`tui/src/config/`)
   - external binaries `rpicam-vid` and `ffmpeg`; `cage` and `chromium-browser` for the kiosk
 - **Used by**:
-  - TUI UI (`tui/src/ui/app.tsx`, `use-gestures.ts`, `components/blueprint-editor.tsx`, `components/use-hand-pen.ts`, `components/vision-view.tsx`, `builtin-commands.ts`), see [tui/ui](../ui/README.md)
+  - TUI UI (`tui/src/ui/app.tsx`, `use-gestures.ts`, `components/blueprint-editor.tsx`, `components/use-hand-pen.ts`, `components/vision-view.tsx`, `components/camera-canvas.tsx`, `builtin-commands.ts`), see [tui/ui](../ui/README.md)
   - the `find_item` tool, see [tui/tools](../tools/README.md)
   - the CLI, see [tui/cli](../cli/README.md)
   - the web app imports `track.ts`, `detect.ts` and `items.ts` as `@pi/*`, see [web/vision](../../web/vision/README.md)

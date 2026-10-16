@@ -760,10 +760,11 @@ command that writes MJPEG to stdout. Everything below shares one camera process.
 - **`/learn <name>`** opens a live preview with a box. Hold the item inside it and press space,
   turn the item, and repeat about six times. Then press enter. Arrow keys move the box and +/-
   resize it. Teaching an existing name replaces it.
-- **`/find [name]`** shows the live preview with boxes around the items it finds. Teaching opens
-  this view automatically.
+- **`/find [name]`** opens the camera full screen. Each item it finds gets an outline box in its
+  own colour, and a side panel lists every item with its colour and where it is. Up/down and enter
+  show only one item, `a` shows all of them again. Teaching opens this view automatically.
 - **`find_item`** is the agent's tool for "where are my keys?". It takes one camera shot behind
-  the normal permission prompt.
+  the normal permission prompt, answers, and opens the find view on that item.
 
 You can remap gestures and tune them under `vision` in `jarvis.jsonc`:
 

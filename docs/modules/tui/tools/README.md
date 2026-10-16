@@ -1,6 +1,6 @@
 # Tools
 
-Code: `tui/src/tools/`, `tui/src/permission.ts` · Verified: 2026-10-14 @ c9135de
+Code: `tui/src/tools/`, `tui/src/permission.ts` · Verified: 2026-10-15 @ 9d82895
 
 ## Purpose
 The built-in tools the agent can call (file I/O, shell, search, web fetch, todo, subagents,
@@ -89,7 +89,7 @@ spawns `bash -c` with stdout/stderr to a log file; `bash_output` reads it and ca
 | `tui/src/tools/task.ts` | `task` (subagent delegation), `MAX_DEPTH = 1` |
 | `tui/src/tools/todo.ts` | `todo` |
 | `tui/src/tools/tool-search.ts` | `tool_search` |
-| `tui/src/tools/vision.ts` | `find_item`: webcam snapshot matched on the paired cloud |
+| `tui/src/tools/vision.ts` | `find_item`: webcam snapshot matched on the paired cloud; then `ctx.showItems` opens the live identify screen |
 | `tui/src/tools/webfetch.ts` | `webfetch`, `textFromHtml` |
 | `tui/src/tools/write.ts` | `write` |
 

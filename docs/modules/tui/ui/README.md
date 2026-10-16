@@ -1,6 +1,6 @@
 # UI
 
-Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-14 @ c9135de
+Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-15 @ 9d82895
 
 ## Purpose
 
@@ -203,9 +203,19 @@ visual mode, `:` commands, search.
   editor's `TOOLS`, `shapeFrom`, `applyOps`, `hitTest`. Edits are a local op journal; leaving
   saves (`writeDoc` commits). `f` draws by hand through `tui/src/ui/components/use-hand-pen.ts` → `useHandPen`
   (pinch-to-draw from `tui/src/pi/gestures.ts`, One-Euro smoothed, `fitStroke` on release).
-- `tui/src/ui/components/vision-view.tsx` → `VisionView`: webcam preview in half-block pixels for `/learn`
+- `tui/src/ui/components/vision-view.tsx` → `VisionView`: the full-screen camera for `/learn`
   (aim a box, take shots, `teachItem`) and `/find` (`findItems` on the newest frame, one request
-  in flight). Hidden, not closed, while a permission or question is up so shots survive.
+  in flight). It is laid out like the blueprint editor: the picture, a 30-column side panel, a status
+  line and a key line. In find mode the panel lists every taught item (`listItems`, fetched when it
+  opens and after a teach) with a swatch in its `itemColours` colour, its score and its place, or
+  "not in view". `↑`/`↓` pick a row, `enter` finds only that item, `a` finds all again. The `find_item`
+  tool opens it too, through `showItems` (`app.tsx` → `showItems.current`): only when no other overlay
+  is open, and never replacing an open one. Hidden, not closed, while a permission or question is up,
+  so shots survive.
+- `tui/src/ui/components/camera-canvas.tsx` → `CameraCanvas`: the live feed in half-block pixels, with
+  `Mark`s (`{box, rgb, label?}` in camera pixels) drawn over it as unfilled 1-pixel rectangles and label
+  chips. It reads the size and the marks through a ref, so the frame loop never restarts. The caller owns
+  the `Feed`. Anything that can produce marks can draw on the camera with it.
 - `tui/src/ui/use-gestures.ts` → `useGestures`: hand frames from `remoteSource` (the paired cloud) through
   `GestureCommands`, mapped by `vision.gestures`. `approve`/`reject` answer a permission prompt;
   other actions call the same `perform` a key would, except while an overlay is open (only
@@ -250,7 +260,8 @@ visual mode, `:` commands, search.
 | `tui/src/ui/components/blueprint-view.tsx` | `BlueprintPane`, `Picture`, `Cells`, `useDoc`, `palette` |
 | `tui/src/ui/components/blueprint-editor.tsx` | `BlueprintEditor` fullscreen editor, `cameraToSheet` |
 | `tui/src/ui/components/use-hand-pen.ts` | `useHandPen`, `readHand`, `HAND_LEGEND` |
-| `tui/src/ui/components/vision-view.tsx` | `VisionView` camera overlay for `/learn` and `/find` |
+| `tui/src/ui/components/vision-view.tsx` | `VisionView`, the full-screen camera for `/learn` and `/find`: the items panel and the keys |
+| `tui/src/ui/components/camera-canvas.tsx` | `CameraCanvas`: half-block camera feed with `Mark` outlines; `fit`, `hexRgb`, `rgbHex` |
 
 ## Interfaces
 
@@ -332,5 +343,5 @@ Run from `tui/`: `bun test` (all) or `bun test test/<file>`.
 | `tui/test/provider-runtime.test.ts` | Status line provider warning (`segments`); mostly agent/hosted tests |
 
 No direct tests: `tui/src/ui/app.tsx`, `tui/src/ui/start.tsx`, `tui/src/ui/use-gestures.ts`, `tui/src/ui/provider-command.ts`,
-`tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/tutorial.ts`, `tui/src/ui/components/vision-view.tsx`, `tui/src/ui/components/pair-wizard.tsx`,
+`tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/tutorial.ts`, `tui/src/ui/components/vision-view.tsx`, `tui/src/ui/components/camera-canvas.tsx`, `tui/src/ui/components/pair-wizard.tsx`,
 `tui/src/ui/components/wizard.tsx`, `tui/src/ui/components/toast.tsx`, `tui/src/ui/components/welcome.tsx`.

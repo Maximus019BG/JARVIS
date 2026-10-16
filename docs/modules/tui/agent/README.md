@@ -1,6 +1,6 @@
 # Agent
 
-Code: `tui/src/agent/` · Verified: 2026-10-14 @ c9135de
+Code: `tui/src/agent/` · Verified: 2026-10-15 @ 9d82895
 
 ## Purpose
 The agent loop and everything around a turn: resolving agents and models, building the system
@@ -21,7 +21,10 @@ Usage of agents, providers and sessions is in [tui/README.md](../../../../tui/RE
    the `permission.ask` hook.
 4. Tools: `builtinTools` + `skill` (if any skills) + custom tools + `extraTools` (MCP). Then
    `filterTools` (agent policy) → `gateTools` (generic gate for anything not self-gated) →
-   `portableSchemas` → plugin `wrapTools`.
+   `portableSchemas` → plugin `wrapTools`. The tool context gets the UI's hooks from
+   `RunOptions` unchanged: `ask` (the `ask` tool, and `find_item` is only built when it is
+   there) and `showItems` (lets `find_item` open the live identify screen). A headless run passes
+   neither.
 5. If `config.lazyTools`, a `createLoadout` decides which schemas go on the wire each step, and
    `tool_search` is added when anything is deferred (see [tools](../tools/README.md)).
 6. `streamText` runs with `stopWhen: stepCountIs(config.maxSteps)`, `prepareStep` returning the

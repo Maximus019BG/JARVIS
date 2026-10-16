@@ -294,6 +294,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
   // The agent checks out branches and edits files, so a value read once at startup goes stale
   // mid-session. Refreshed between turns instead: one spawn per turn, never during one.
   const [git, setGit] = useState(() => readGit(cwd))
+  const showItems = useRef<(item?: string) => void>(() => {})
 
   const turn = useTurn({
     config,
@@ -305,6 +306,8 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     notes,
     agent,
     model,
+    // Through a ref: `openVision` needs `turn`, which does not exist yet.
+    showItems: (item) => showItems.current(item),
   })
   const editor = useRef<EditorHandle>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
@@ -838,6 +841,11 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
     },
     [turn],
   )
+  // `find_item` opens the screen too, unless something else owns it. An open one is left be:
+  // swapping it would throw away a teach half done.
+  showItems.current = (item) => {
+    if (!vision && !picker && !panel && !setup && !pairing && blueprintView !== "full") openVision({ kind: "find", item })
+  }
 
   const setGestures = useCallback((on?: boolean) => setGesturesOn((current) => on ?? !current), [])
 

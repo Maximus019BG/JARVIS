@@ -1,6 +1,6 @@
 # Teach and find items
 
-Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-15 @ aff1145
+Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-15 @ 9d82895
 
 ## Who and why
 
@@ -45,8 +45,12 @@ workstation, so every device paired to it can find them.
    at a time. `findItems` posts the raw JPEG to `POST /api/vision/detect?item=&threshold=` with the
    hand ticket (`jvh_`, see [Hand gestures and drawing](hand-gestures-and-drawing.md)), not the device
    token. A ticket check is an HMAC, so a live find saves a database round trip per frame. On a 401 the
-   ticket is refreshed and the request retried once. Found items are outlined in the preview with their
-   score. `q` or escape closes the overlay.
+   ticket is refreshed and the request retried once. The screen fills the terminal, laid out like the
+   blueprint editor. Each found item is outlined (an unfilled rectangle) where it is, in its own colour,
+   with its name and score. The side panel lists every taught item with a swatch in the same colour and
+   its place ("left · top"), or "not in view". A colour belongs to an item by its place in the taught list
+   sorted by name, so it holds still between frames. `↑`/`↓` and `enter` find only one item, `a` finds all
+   again, and `q` or escape closes the screen.
 9. **Locate** (`web/src/app/api/vision/detect/route.ts` → `POST`). The caller needs `vision:read`, from the
    ticket's scopes or the device's (`callerFor`). The item query and the embedding run in parallel.
    `item` matches an id or a name. Without it, every item in the workstation is checked. For each item,
@@ -58,7 +62,9 @@ workstation, so every device paired to it can find them.
     permission first (`find_item` defaults to `ask` in `tui/src/permission.ts`). Then it takes one
     snapshot (700 ms after the camera starts, so exposure settles) and calls `findItems`. Each item
     becomes one line: "mug: in view, left · top (0.81)" or "mug: not in view (closest 0.48)". The
-    position is in thirds of the mirrored view, from the user's side.
+    position is in thirds of the mirrored view, from the user's side. In the TUI it then opens the find
+    screen from step 8 on the same item (or all of them), so the user sees the items marked. It doesn't
+    open the screen when another overlay is open, and it never replaces one that is already open.
 11. **List and forget.** `/items` lists names and shot counts (`GET /api/vision/items`, `vision:read`).
     `/forget <name>` looks the name up, then deletes by id (`DELETE /api/vision/items?id=`,
     `vision:write`).

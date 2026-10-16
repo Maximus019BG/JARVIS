@@ -45,6 +45,11 @@ export type ToolContext = {
    * model never offers to consult a user who is not there.
    */
   ask?: (question: string, options: string[]) => Promise<string>
+  /**
+   * Opens the live camera screen with taught items outlined, on `item` or all of them. Absent
+   * when nobody is watching, like `ask`; `find_item` answers in text either way.
+   */
+  showItems?: (item?: string) => void
 }
 
 /**

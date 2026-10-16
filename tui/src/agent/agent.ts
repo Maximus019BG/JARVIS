@@ -64,6 +64,8 @@ export type RunOptions = {
    * nobody will see.
    */
   ask?: (question: string, options: string[]) => Promise<string>
+  /** Opens the live identify screen on `item` (or everything). Only the interactive UI supplies one. */
+  showItems?: (item?: string) => void
 }
 
 export type RunResult = {
@@ -227,6 +229,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     sessionID,
     spawn,
     ask: options.ask,
+    showItems: options.showItems,
   }
   const builtins = builtinTools(ctx, spawn ? spawnableAgents(agents) : [])
   const custom = customTools(extensions.tools, ctx)

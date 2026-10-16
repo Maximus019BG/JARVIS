@@ -1,6 +1,6 @@
 # UI: commands and keys
 
-Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-13 @ c292f2f
+Code: `tui/src/ui/builtin-commands.ts`, `tui/src/ui/provider-command.ts`, `tui/src/ui/stats-command.ts`, `tui/src/ui/code-command.ts`, `tui/src/ui/blueprint-command.ts`, `tui/src/ui/speak-command.ts`, `tui/src/config/keybinds.ts` · Verified: 2026-10-15 @ 9d82895
 
 Part of the [UI module](README.md). User-facing usage is in [`tui/README.md`](../../../../tui/README.md).
 
@@ -50,7 +50,7 @@ All rows are cases in `runCommand` unless another symbol is named.
 | `/voice` | — | Opens the provider wizard for transcription. | `tui/src/ui/app.tsx` → `openVoiceSetup` |
 | `/speak` | `on` · `off` · `toggle` · `test` · `setup` (bare toggles) | Turns spoken replies on or off (persisted globally), speaks a test line, or opens the speech-provider wizard. Turning on with nothing able to speak opens the wizard. | `tui/src/ui/speak-command.ts` → `runSpeak`, `speakAction` |
 | `/learn` | `<name>` | Opens the camera overlay to teach an item. Needs pairing. | `tui/src/ui/app.tsx` → `openVision` |
-| `/find` | `[name]` | Opens the camera overlay finding taught items (one, or all). Needs pairing. | `tui/src/ui/app.tsx` → `openVision` |
+| `/find` | `[name]` | Opens the full-screen camera finding taught items (one, or all), each outlined in its own colour. Needs pairing. | `tui/src/ui/app.tsx` → `openVision` |
 | `/items` | — | Notes the taught items and their shot counts. | `itemsCommand` (module-private), `tui/src/pi/items-client.ts` → `listItems` |
 | `/forget` | `<name>` | Forgets a taught item. | `itemsCommand`, `tui/src/pi/items-client.ts` → `forgetItem` |
 | `/gestures` | `on` · `off` (bare toggles) | Hand gestures as commands; the camera runs only while on. | `tui/src/ui/app.tsx` → `setGestures` |
@@ -127,7 +127,7 @@ Each overlay owns the keyboard while open (`App`'s handler returns early), excep
 | `Wizard` (provider setup) | `enter` next (toggles on the models step), `ctrl+b` back, `tab` switch between pasting a key and an env var, `esc` cancel | `tui/src/ui/components/wizard.tsx` → `Wizard` |
 | `PairWizard` | `enter` next, `tab` skip email, `ctrl+b` back, `esc` cancel | `tui/src/ui/components/pair-wizard.tsx` → `PairWizard` |
 | `VisionView` (learn) | `space` shot, `backspace` drop last shot, `enter` teach, arrows move the box, `+` / `-` resize, `esc` close | `tui/src/ui/components/vision-view.tsx` → `VisionView` |
-| `VisionView` (find) | `esc` or `q` close | same |
+| `VisionView` (find) | `↑` / `↓` pick an item, `enter` find only that one, `a` find all, `esc` or `q` close | same |
 | `BlueprintEditor` | tool keys from `tui/src/blueprint/draw.ts` → `TOOLS` (`v` select, `f` hand on/off, `l` line, `p` polyline, `r` rect, `c` circle, `a` arc, `t` text, `d` dimension, `s` symbol), arrows move the cursor (`shift` ×10), `ctrl+arrows` pan, `enter` start/finish a shape or select, `n` connect ports, `A` arrange, `x` delete selection, `u` undo, `ctrl+r` redo, `w` save, `tab` next layer, `+` / `-` zoom, `0` fit, `g` grid, `esc` or `q` backs out one level then closes (saving) | `tui/src/ui/components/blueprint-editor.tsx` → `BlueprintEditor` |
 
 Polyline and arc need three points and report "needs the web editor" from the terminal.

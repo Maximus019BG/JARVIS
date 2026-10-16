@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test"
-import { forgetItem, listItems } from "../src/pi/items-client.ts"
+import { forgetItem, ITEM_COLOURS, itemColours, listItems } from "../src/pi/items-client.ts"
 
 /** Stand-in for `GET` / `DELETE /api/vision/items`: a list, and a delete by id only. */
 const items = [
@@ -27,4 +27,15 @@ test("lists taught items, and forgets one by name through its id", async () => {
   expect(deleted).toEqual([])
   expect(await forgetItem(credentials, "mug")).toBe(true)
   expect(deleted).toEqual(["i1"])
+})
+
+test("gives each item a stable colour: by name, whatever order they arrive in, wrapping after the palette", () => {
+  const taught = Array.from({ length: ITEM_COLOURS.length + 1 }, (_, index) => ({ id: `i${index}`, name: `item ${String.fromCharCode(97 + index)}` }))
+  const forward = itemColours(taught)
+  const backward = itemColours([...taught].reverse())
+  for (const item of taught) expect(backward(item.id)).toEqual(forward(item.id))
+  expect(forward("i0")).toEqual(ITEM_COLOURS[0]!)
+  expect(forward("i1")).toEqual(ITEM_COLOURS[1]!)
+  expect(forward(`i${ITEM_COLOURS.length}`)).toEqual(ITEM_COLOURS[0]!)
+  expect(ITEM_COLOURS).toContainEqual(forward("taught-since"))
 })
