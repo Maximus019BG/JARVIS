@@ -33,6 +33,14 @@ const MAX_BOXES = 8
  * request, and `best` in the answer says how close a miss came.
  */
 export const DEFAULT_THRESHOLD = 0.65
+/**
+ * How far under the bar a patch may score and still join a group whose strongest patch
+ * reaches it. Another lamp or room knocks an item's weak patches (edges, plain sides) under
+ * the bar while its core holds, and the 2×2 group used to fall apart under `MIN_PATCHES`.
+ * 0.65 − 0.1 still sits above the 0.46 other objects topped out at.
+ * ponytail: a calibration knob, from synthetic scenes; untuned on real cameras.
+ */
+export const GROW = 0.1
 
 /** One photo as the model sees it: `cols × rows` unit vectors, row-major, and the photo size they map back to. */
 export type Patches = { vectors: Float32Array; cols: number; rows: number; camera: Camera }
@@ -63,6 +71,25 @@ export function toPixelValues(rgb: Uint8Array, camera: Camera, size = 448) {
     }
   }
   return { data, cols, rows }
+}
+
+/** Another light on the same photo: a gamma, then a gain per channel. */
+export type Light = { gain: readonly [number, number, number]; gamma: number }
+/**
+ * The lights every boxed teach shot is also seen in, so `pos` is not one lamp's worth of
+ * item: dim and warm (a lamp at night), brighter and cool (daylight).
+ * ponytail: two fixed global lights, untuned; no shadows, glare or noise. Random jitter
+ * per shot if these two do not cover a real room.
+ */
+export const LIGHTS: readonly Light[] = [
+  { gain: [0.69, 0.6, 0.45], gamma: 1.15 },
+  { gain: [1.1, 1.25, 1.4], gamma: 0.9 },
+]
+
+/** Packed RGB under `light`, through one 256-entry table per channel. */
+export function relight(rgb: Uint8Array, { gain, gamma }: Light): Uint8Array {
+  const tables = gain.map((g) => Uint8Array.from({ length: 256 }, (_, v) => Math.round(255 * Math.min(1, g * (v / 255) ** gamma))))
+  return rgb.map((v, i) => tables[i % 3]![v]!)
 }
 
 /** Scales each `DIMS`-wide vector to unit length in place, so cosine is a plain dot product. */
@@ -127,13 +154,17 @@ const join = (list: readonly Float32Array[]) => {
  * is background. The box is always bigger than the item, so what is behind the item lands
  * in `pos` too; any `pos` patch that matches a background patch is dropped. Without that,
  * the empty spot matched the item at the same place once the item was gone.
+ *
+ * `relit` are the same boxed photo under `LIGHTS`, same grid. Their box patches join `pos`
+ * alongside the original's, and go with it when it is pruned.
  * ponytail: the prune is pos × every neg patch × 384 (~1 s for 7 photos); once per teach.
  */
-export function learn(samples: readonly { patches: Patches; box: Roi | null }[]): Item {
-  const pos: Float32Array[] = []
+export function learn(samples: readonly { patches: Patches; box: Roi | null; relit?: readonly Patches[] }[]): Item {
+  /** One box patch per entry: the original first, then its copy under each light. */
+  const pos: Float32Array[][] = []
   const neg: Float32Array[] = []
   if (!samples.some((sample) => sample.box)) throw new ItemError("no photo has the item in a box")
-  samples.forEach(({ patches, box }, photo) => {
+  samples.forEach(({ patches, box, relit = [] }, photo) => {
     const { cols, rows, camera } = patches
     const pw = camera.width / cols
     const ph = camera.height / rows
@@ -145,7 +176,7 @@ export function learn(samples: readonly { patches: Patches; box: Roi | null }[])
         const vector = vectorAt(patches.vectors, r * cols + c)
         if (!box) neg.push(vector)
         else if (c * pw >= box.x && (c + 1) * pw <= box.x + box.w && r * ph >= box.y && (r + 1) * ph <= box.y + box.h) {
-          pos.push(vector)
+          pos.push([vector, ...relit.map((copy) => vectorAt(copy.vectors, r * cols + c))])
           inside++
         } else if (x < box.x - pw || x >= box.x + box.w + pw || y < box.y - ph || y >= box.y + box.h + ph) {
           neg.push(vector)
@@ -159,11 +190,27 @@ export function learn(samples: readonly { patches: Patches; box: Roi | null }[])
   // Against every background patch, not the packed bank: packing keeps 256 of thousands and
   // would usually drop the very spot behind the item.
   const background = join(neg)
-  const item = pos.filter((vector) => nearest(vector, background) < BACKGROUND_SIM)
-  if (item.length < MIN_PATCHES) {
+  const kept = pos.filter(([original]) => nearest(original!, background) < BACKGROUND_SIM)
+  if (kept.length < MIN_PATCHES) {
     throw new ItemError("the item looks like what is behind it — try a plainer background or a tighter box")
   }
+  // Light by light, not patch by patch: with 3 lights and a stride of exactly 3, an even
+  // sample of interleaved [a, a', a'', b, …] would keep only the originals.
+  const item: Float32Array[] = []
+  const lights = Math.max(...kept.map((group) => group.length))
+  for (let light = 0; light < lights; light++) for (const group of kept) if (group[light]) item.push(group[light]!)
   return { pos: pack(item), neg: pack(neg) }
+}
+
+/**
+ * One item from two teaches of it, say in two rooms: both banks pooled and sampled again,
+ * so each teach keeps a share in proportion to its patches.
+ * ponytail: every add halves the older teaches' share; a per-teach cap or a bigger
+ * `MAX_BANK` if a third or fourth room fades.
+ */
+export function merge(a: Item, b: Item): Item {
+  const vectors = (bank: Float32Array) => Array.from({ length: bank.length / DIMS }, (_, i) => vectorAt(bank, i))
+  return { pos: pack([...vectors(a.pos), ...vectors(b.pos)]), neg: pack([...vectors(a.neg), ...vectors(b.neg)]) }
 }
 
 /** Highest dot product of `vector` against every vector in `bank`; -Infinity for an empty bank. */
@@ -179,6 +226,7 @@ function nearest(vector: Float32Array, bank: Float32Array): number {
 
 /**
  * Where the item is in a scene: one box per connected group of item patches, best first.
+ * A group needs one patch at `threshold`; the rest may be up to `GROW` under it.
  * The groups are disjoint by construction, so there is nothing for NMS to do.
  *
  * `best` is the strongest patch that beat the background, found or not, the same way
@@ -192,13 +240,14 @@ export function locate(scene: Patches, item: Item, threshold = DEFAULT_THRESHOLD
   const score = new Float32Array(count)
   const on = new Uint8Array(count)
   let best = 0
+  const grow = threshold - GROW
   for (let i = 0; i < count; i++) {
     const vector = vectorAt(scene.vectors, i)
     const p = nearest(vector, item.pos)
     if (p <= nearest(vector, item.neg)) continue
     score[i] = p
     best = Math.max(best, p)
-    if (p >= threshold) on[i] = 1
+    if (p >= grow) on[i] = 1
   }
 
   const pw = camera.width / cols
@@ -209,7 +258,7 @@ export function locate(scene: Patches, item: Item, threshold = DEFAULT_THRESHOLD
     if (!on[start] || seen[start]) continue
     seen[start] = 1
     const stack = [start]
-    let left = cols, right = -1, top = rows, bottom = -1, sum = 0, size = 0
+    let left = cols, right = -1, top = rows, bottom = -1, sum = 0, size = 0, peak = 0
     while (stack.length > 0) {
       const i = stack.pop()!
       const r = Math.floor(i / cols)
@@ -219,6 +268,7 @@ export function locate(scene: Patches, item: Item, threshold = DEFAULT_THRESHOLD
       top = Math.min(top, r)
       bottom = Math.max(bottom, r)
       sum += score[i]!
+      peak = Math.max(peak, score[i]!)
       size++
       for (const j of [c > 0 ? i - 1 : -1, c < cols - 1 ? i + 1 : -1, i - cols, i + cols]) {
         if (j >= 0 && j < count && on[j] && !seen[j]) {
@@ -227,7 +277,7 @@ export function locate(scene: Patches, item: Item, threshold = DEFAULT_THRESHOLD
         }
       }
     }
-    if (size < MIN_PATCHES) continue
+    if (size < MIN_PATCHES || peak < threshold) continue
     boxes.push({ x: left * pw, y: top * ph, w: (right - left + 1) * pw, h: (bottom - top + 1) * ph, score: sum / size })
   }
   boxes.sort((a, b) => b.score - a.score)

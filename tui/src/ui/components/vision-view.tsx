@@ -3,9 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { Credentials } from "../../blueprint/credentials.ts"
 import type { Theme } from "../../config/theme.ts"
 import { findCalibrationPath, matrixOf, toScreen, usableCalibration, type Homography } from "../../pi/calibration.ts"
-import { openFeed, type Feed } from "../../pi/camera.ts"
+import { openFeed, SETTLE_MS, snapshot, type Feed } from "../../pi/camera.ts"
 import { findItems, itemColours, listItems, teachItem, VisionError, where, type Box, type Found, type Taught } from "../../pi/items-client.ts"
+import type { MotionLevel } from "../motion.ts"
 import { CameraCanvas, fit, hexRgb, rgbHex, type Mark } from "./camera-canvas.tsx"
+import { Picker } from "./dialog.tsx"
 import { Projection, Screen, SIDE, type Spot } from "./projection.tsx"
 
 /** `calibrate` is its own screen (`calibrate-view.tsx`); the other two are this one. */
@@ -56,6 +58,7 @@ export function VisionView({
   camera: cameraView,
   threshold,
   theme,
+  motion,
   paused,
   onClose,
   onTaught,
@@ -66,6 +69,7 @@ export function VisionView({
   camera?: boolean
   threshold?: number
   theme: Theme
+  motion: MotionLevel
   /** Something else owns the screen for now: draw nothing, take no keys, keep the shots. */
   paused?: boolean
   onClose: () => void
@@ -90,6 +94,8 @@ export function VisionView({
   const [hasBackground, setHasBackground] = useState(false)
   const lastShot = useRef(0)
   const [teaching, setTeaching] = useState(false)
+  /** Enter on a name already taught: add these shots to it, or start it over? */
+  const [asking, setAsking] = useState(false)
   const [status, setStatus] = useState<string>()
 
   // Find mode.
@@ -121,7 +127,8 @@ export function VisionView({
       let seq = -1
       while (!stopped) {
         try {
-          const shot = await feed.next(seq)
+          // The first frame waits out a cold camera's exposure, the rest come as they are.
+          const shot = seq < 0 ? await snapshot(feed) : await feed.next(seq)
           seq = shot.seq
           const result = await findItems(credentials, shot.jpeg, { item: findItem, threshold })
           if (stopped) return
@@ -177,6 +184,7 @@ export function VisionView({
     const shot = feed?.latest()
     const now = performance.now()
     if (!shot) return setStatus("no picture from the camera yet")
+    if (shot.at - feed!.since < SETTLE_MS) return setStatus("the camera is still adjusting — a moment")
     if (now - lastShot.current < SHOT_GAP_MS || shots.current.length >= MAX_SHOTS) return
     lastShot.current = now
     shots.current.push({ jpeg: shot.jpeg, box })
@@ -184,14 +192,15 @@ export function VisionView({
     setStatus(undefined)
   }
 
-  const teach = async (name: string) => {
+  const teach = async (name: string, add?: boolean) => {
     if (!shots.current.some((shot) => !shot.box)) return setStatus("first a shot with nothing in the box — press b")
     const missing = MIN_SHOTS - shots.current.filter((shot) => shot.box).length
     if (missing > 0) return setStatus(`${missing} more shot${missing === 1 ? "" : "s"} first`)
+    if (add === undefined && taught?.some((item) => item.name === name)) return setAsking(true)
     setTeaching(true)
-    setStatus(`teaching ${name}…`)
+    setStatus(`${add ? "adding to" : "teaching"} ${name}…`)
     try {
-      const done = await teachItem(credentials, name, shots.current)
+      const done = await teachItem(credentials, name, shots.current, { add })
       shots.current = []
       counted()
       setStatus(undefined)
@@ -206,7 +215,7 @@ export function VisionView({
   }
 
   useKeyboard((key) => {
-    if (paused) return
+    if (paused || asking) return
     const stop = () => key.stopPropagation()
     if (key.name === "escape" || (mode.kind === "find" && key.name === "q")) {
       onClose()
@@ -309,6 +318,25 @@ export function VisionView({
     </>
   )
 
+  // Over either view, so the question lands on the table too when projected.
+  const popup = asking && mode.kind === "learn" && (
+    <Picker
+      title={`${mode.name} is already taught`}
+      prompt="Add these shots to it (another room or light), or start it over?"
+      choices={[
+        { value: "add", label: "add to it", hint: "keeps what it knows" },
+        { value: "replace", label: "replace it", hint: "forgets the old shots" },
+      ]}
+      theme={theme}
+      motion={motion}
+      onPick={(value) => {
+        setAsking(false)
+        void teach(mode.name, value === "add")
+      }}
+      onCancel={() => setAsking(false)}
+    />
+  )
+
   if (!showCamera) {
     const spots: Spot[] =
       mode.kind === "learn"
@@ -320,31 +348,39 @@ export function VisionView({
               label: index === 0 ? ` ${item.name} ` : undefined,
             })),
           )
-    return <Projection spots={spots} side={panel} status={footer} keys={keys} colour={footerColour} theme={theme} />
+    return (
+      <>
+        <Projection spots={spots} side={panel} status={footer} keys={keys} colour={footerColour} theme={theme} />
+        {popup}
+      </>
+    )
   }
 
   return (
-    <Screen
-      picture={
-        <box style={{ flexGrow: 1, flexDirection: "column", alignItems: "center", paddingLeft: 1 }}>
-          {feed && (
-            <CameraCanvas
-              feed={feed}
-              columns={view.columns}
-              rows={view.rows}
-              marks={marks}
-              theme={theme}
-              onLive={() => setLive(true)}
-              onError={setCameraError}
-            />
-          )}
-        </box>
-      }
-      side={panel}
-      status={footer}
-      keys={keys}
-      colour={footerColour}
-      theme={theme}
-    />
+    <>
+      <Screen
+        picture={
+          <box style={{ flexGrow: 1, flexDirection: "column", alignItems: "center", paddingLeft: 1 }}>
+            {feed && (
+              <CameraCanvas
+                feed={feed}
+                columns={view.columns}
+                rows={view.rows}
+                marks={marks}
+                theme={theme}
+                onLive={() => setLive(true)}
+                onError={setCameraError}
+              />
+            )}
+          </box>
+        }
+        side={panel}
+        status={footer}
+        keys={keys}
+        colour={footerColour}
+        theme={theme}
+      />
+      {popup}
+    </>
   )
 }

@@ -1,6 +1,6 @@
 # Pi vision
 
-Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-16 @ 8cde74a
+Code: `tui/src/pi/`, `tui/assets/pi/` · Verified: 2026-10-16 @ 3a9c2d9
 
 ## Purpose
 Turns a camera into hands, and hands into actions. It drives three features: drawing on a
@@ -116,11 +116,13 @@ web app runs it.
   - Patches whose centre is more than one patch outside the box go to `neg`.
   - Edge patches go to neither, because including them made the training backgrounds match too.
   - A sample with `box: null` (the overlay's empty shot) goes wholly to `neg`.
+  - A sample's `relit` copies (the same photo through `relight` under each of `LIGHTS`: dim/warm and bright/cool) add their inside patches to `pos` with the original's.
 
-  Then every `pos` patch whose `nearest` against the whole unpacked `neg` list reaches `BACKGROUND_SIM` (0.7) is dropped: it is the background seen through the box, and left in, it matched the empty spot once the item was gone. Each bank keeps at most `MAX_BANK` (256), sampled evenly, after the prune. A box with fewer than `MIN_PATCHES` (4) patches inside, fewer than 4 `pos` patches left, or no boxed photo at all throws `ItemError`.
-- `locate` marks a scene patch when its nearest `pos` match beats its nearest `neg` match and reaches `threshold` (`DEFAULT_THRESHOLD` 0.65). It returns one box per connected group of at least 4 patches (up to 8 boxes), plus `best`, the closest score even when nothing was found.
+  Then every `pos` patch whose `nearest` against the whole unpacked `neg` list reaches `BACKGROUND_SIM` (0.7) is dropped, its relit copies with it: it is the background seen through the box, and left in, it matched the empty spot once the item was gone. Each bank keeps at most `MAX_BANK` (256), sampled evenly, after the prune. `pos` is laid out light by light before sampling, because with 3 lights an even sample of interleaved copies at stride 3 would keep only the originals. A box with fewer than `MIN_PATCHES` (4) patches inside, fewer than 4 `pos` patches left, or no boxed photo at all throws `ItemError`.
+- `merge(a, b)` pools two items' banks and samples each back to `MAX_BANK`: the teach route's `add`, for the same item taught in another room.
+- `locate` marks a scene patch when its nearest `pos` match beats its nearest `neg` match and reaches `threshold − GROW` (0.65 − 0.1). It returns one box per connected group of at least 4 patches whose strongest patch reaches `threshold` (up to 8 boxes), plus `best`, the closest score even when nothing was found. Seeding at the bar and growing under it keeps an item whose weak patches dropped under a new light from breaking into groups too small to count.
 - `items-client.ts` is the TUI client:
-  - `teachItem`, `listItems`, `forgetItem` and `deleteItem` call `/api/vision/items` with the device token through `blueprint/sync.ts` → `call`. A `teachItem` shot with `box: null` is the empty shot. `forgetItem` looks the name up first and then calls `deleteItem`, because the route deletes by id. `/forget`'s picker calls `deleteItem` directly.
+  - `teachItem`, `listItems`, `forgetItem` and `deleteItem` call `/api/vision/items` with the device token through `blueprint/sync.ts` → `call`. A `teachItem` shot with `box: null` is the empty shot, and `{add: true}` adds to an item of that name instead of replacing it. `forgetItem` looks the name up first and then calls `deleteItem`, because the route deletes by id. `/forget`'s picker calls `deleteItem` directly.
   - `findItems` POSTs a JPEG to `/api/vision/detect` with the hand ticket. On a 401 or a 403 it fetches a fresh ticket and retries once: a ticket carries the scopes it was minted with, so a vision scope granted a moment ago needs a new one.
   - A 5xx with no message reads "the server failed (500) — see the web server log", because a route that threw answers with an empty body.
   - `describeFound` and `where` turn a box into "left · top" (thirds of the mirrored view).
@@ -246,7 +248,10 @@ Default label map (`DEFAULT_GESTURE_MAP`):
 - **Other `ponytail:` shortcuts:**
   - `cropToTensor` samples nearest-neighbour.
   - `toPixelValues` samples nearest-neighbour.
-  - `DEFAULT_THRESHOLD` was tuned only on synthetic scenes, and `BACKGROUND_SIM` is untuned on real cameras.
+  - `DEFAULT_THRESHOLD` and `GROW` were tuned only on synthetic scenes, and `BACKGROUND_SIM` is untuned on real cameras.
+  - `LIGHTS` are two fixed global lights, untuned: no shadows, glare or noise.
+  - `merge` halves the older teaches' share on every add.
+  - `camera.ts` → `SETTLE_MS` (700 ms) is a guess at how long a cold camera's exposure takes.
   - `learn`'s background prune is brute force, `pos` × every `neg` patch × 384, once per teach.
   - `locate` is a brute-force nearest-neighbour search, about 150M multiply-adds per item at 448 px.
 - **`remoteSource` refuses non-https URLs** other than localhost (`assertSecureUrl`), and so do `teachItem` and `findItems`.

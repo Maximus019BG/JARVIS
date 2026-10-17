@@ -1700,6 +1700,7 @@ export function App({ cwd, mcp, extensions, keymap, notes, motion, ...initial }:
           camera={vision.camera}
           threshold={config.vision.threshold}
           theme={theme}
+          motion={motion}
           // Hidden, not closed, while a prompt is up: closing would drop the shots taken so far.
           paused={Boolean(turn.permission || turn.question)}
           onClose={() => setVision(null)}

@@ -377,7 +377,7 @@ export const ConfigSchema = z
         cooldownMs: z.number().default(800),
         /** Turn gestures on at launch. */
         autostart: z.boolean().default(false),
-        /** How alike a patch must be to count as the item; the server's default when unset. */
+        /** How alike a found group's best patch must be to the item; the server's default when unset. */
         threshold: z.number().min(0).max(1).optional(),
         /**
          * Camera command writing MJPEG to stdout, replacing the probe (rpicam-vid on a Pi, then

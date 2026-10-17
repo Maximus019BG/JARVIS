@@ -1,4 +1,4 @@
-import { DIMS, ItemError, learn, locate, type Patches } from "@pi/items.ts";
+import { DIMS, ItemError, learn, LIGHTS, locate, MAX_BANK, merge, relight, type Patches } from "@pi/items.ts";
 import { packBank, unpackBank } from "~/server/vision";
 
 /** A unit vector along axis `axis`. */
@@ -75,6 +75,96 @@ describe("vision items", () => {
     expect(boxes).toHaveLength(1);
     expect(boxes[0]).toMatchObject({ x: 200, y: 75, w: 200, h: 150 });
     expect(boxes[0]!.score).toBeCloseTo(1);
+  });
+
+  it("keeps an item whose weak patches fell under the bar, as long as one still reaches it", () => {
+    // Cosine 0.6 to the item and 0 to the background: under the 0.65 bar, over 0.65 - GROW.
+    const dim = new Float32Array(DIMS);
+    dim[0] = 0.6;
+    dim[2] = 0.8;
+    const lit = photo(8, 8, 800, 600, { "2,2": ITEM, "3,2": dim, "2,3": dim, "3,3": dim });
+    const { boxes } = locate(lit, taught);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]).toMatchObject({ x: 200, y: 150, w: 200, h: 150 });
+    expect(boxes[0]!.score).toBeCloseTo((1 + 3 * 0.6) / 4);
+
+    // Without a seed the same 2×2 is nothing: the bar was not just lowered.
+    const dark = photo(8, 8, 800, 600, { "2,2": dim, "3,2": dim, "2,3": dim, "3,3": dim });
+    const missed = locate(dark, taught);
+    expect(missed.boxes).toEqual([]);
+    expect(missed.best).toBeCloseTo(0.6);
+  });
+
+  it("finds an item in a light it was only taught as a relit copy, and prunes copies with their originals", () => {
+    const DIM_ITEM = unit(3);
+    const POSTER = unit(2);
+    const DIM_POSTER = unit(4);
+    const poster = ["5,3", "5,4", "5,5", "4,5", "3,5"];
+    const paint = (item: Float32Array, behind: Float32Array) => ({
+      "3,3": item,
+      "4,3": item,
+      "3,4": item,
+      "4,4": item,
+      ...Object.fromEntries(poster.map((at) => [at, behind])),
+    });
+    const item = learn([
+      { patches: photo(8, 8, 800, 800, Object.fromEntries(poster.map((at) => [at, POSTER]))), box: null },
+      {
+        patches: photo(8, 8, 800, 800, paint(ITEM, POSTER)),
+        box: box(300, 300, 300, 300),
+        relit: [photo(8, 8, 800, 800, paint(DIM_ITEM, DIM_POSTER))],
+      },
+    ]);
+    expect(locate(photo(8, 8, 800, 800, { "3,3": DIM_ITEM, "4,3": DIM_ITEM, "3,4": DIM_ITEM, "4,4": DIM_ITEM }), item).boxes).toHaveLength(1);
+    // The poster was pruned as background, so its dim copy must not have slipped into the item.
+    const dimPoster = photo(8, 8, 800, 800, Object.fromEntries(poster.map((at) => [at, DIM_POSTER])));
+    expect(locate(dimPoster, item).boxes).toEqual([]);
+  });
+
+  // 18×18 patches of 100px; the box holds 16×16 = 256 of them, a full bank on its own.
+  const everywhere = (vector: Float32Array) =>
+    Object.fromEntries(Array.from({ length: 18 * 18 }, (_, i) => [`${i % 18},${Math.floor(i / 18)}`, vector]));
+  const full = learn([
+    { patches: photo(18, 18, 1800, 1800), box: null },
+    {
+      patches: photo(18, 18, 1800, 1800, everywhere(ITEM)),
+      box: box(100, 100, 1600, 1600),
+      relit: [photo(18, 18, 1800, 1800, everywhere(unit(3)))],
+    },
+  ]);
+
+  it("keeps every light's share when the bank is full", () => {
+    const axes = Array.from({ length: full.pos.length / DIMS }, (_, i) => full.pos.subarray(i * DIMS, (i + 1) * DIMS).indexOf(1));
+    expect(axes).toHaveLength(MAX_BANK);
+    expect(axes.filter((axis) => axis === 0)).toHaveLength(MAX_BANK / 2);
+    expect(axes.filter((axis) => axis === 3)).toHaveLength(MAX_BANK / 2);
+  });
+
+  it("merges a teach in another room into the item, within the bank cap", () => {
+    // Room B: the item reads differently there, on a different table.
+    const ROOM_ITEM = unit(5);
+    const ROOM_TABLE = unit(6);
+    const table = (paint: Record<string, Float32Array> = {}) => photo(8, 8, 800, 800, { ...everywhere(ROOM_TABLE), ...paint });
+    const roomB = learn([
+      { patches: table(), box: null },
+      { patches: table({ "3,3": ROOM_ITEM, "4,3": ROOM_ITEM, "3,4": ROOM_ITEM, "4,4": ROOM_ITEM }), box: box(300, 300, 200, 200) },
+    ]);
+    const both = merge(taught, roomB);
+    expect(locate(table({ "1,1": ROOM_ITEM, "2,1": ROOM_ITEM, "1,2": ROOM_ITEM, "2,2": ROOM_ITEM }), both).boxes).toHaveLength(1);
+    expect(locate(photo(8, 8, 800, 800, { "1,1": ITEM, "2,1": ITEM, "1,2": ITEM, "2,2": ITEM }), both).boxes).toHaveLength(1);
+    expect(locate(table({ "1,1": ROOM_ITEM, "2,1": ROOM_ITEM, "1,2": ROOM_ITEM, "2,2": ROOM_ITEM }), taught).boxes).toEqual([]);
+
+    const capped = merge(full, full);
+    expect(capped.pos.length / DIMS).toBe(MAX_BANK);
+    expect(capped.neg.length / DIMS).toBe(MAX_BANK);
+  });
+
+  it("relights a photo darker and warmer, then brighter and cooler", () => {
+    const grey = Uint8Array.of(128, 128, 128);
+    const [r, g, b] = relight(grey, LIGHTS[0]!);
+    expect(r! < 128 && g! < r! && b! < g!).toBe(true);
+    const [r2, g2, b2] = relight(grey, LIGHTS[1]!);
+    expect(r2! < g2! && g2! < b2!).toBe(true);
   });
 
   it("finds nothing in a scene without the item", () => {

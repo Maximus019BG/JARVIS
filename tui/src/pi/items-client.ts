@@ -35,13 +35,15 @@ async function attempt<T>(request: () => ReturnType<typeof call<T>>): ReturnType
 }
 
 /**
- * Teaches (or re-teaches, replacing) `name` from photos with the item boxed in each. A null
- * box is a shot of the empty background, which keeps what is behind the item out of it.
+ * Teaches `name` from photos with the item boxed in each. A null box is a shot of the empty
+ * background, which keeps what is behind the item out of it. Re-teaching a name replaces
+ * it, or with `add` adds these photos to it: the same item in another room or light.
  */
 export async function teachItem(
   credentials: Credentials,
   name: string,
   shots: readonly { jpeg: Uint8Array; box: Box | null }[],
+  options: { add?: boolean } = {},
 ): Promise<{ id: string; name: string; samples: number }> {
   assertSecureUrl(credentials.baseUrl)
   const images = shots.map(({ jpeg, box }) => ({
@@ -51,7 +53,7 @@ export async function teachItem(
   const result = await attempt(() =>
     call<{ id: string; name: string; samples: number }>(credentials, "/api/vision/items", {
       method: "POST",
-      body: JSON.stringify({ name, images }),
+      body: JSON.stringify({ name, images, add: options.add }),
     }),
   )
   if (!result.ok) throw new VisionError(problem(result.status, result.body))

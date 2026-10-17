@@ -1,6 +1,6 @@
 # Config
 
-Code: `tui/src/config/`, `tui/scripts/emit-schema.ts`, `tui/jarvis.jsonc` · Verified: 2026-10-16 @ a86e287
+Code: `tui/src/config/`, `tui/scripts/emit-schema.ts`, `tui/jarvis.jsonc` · Verified: 2026-10-16 @ 3a9c2d9
 
 ## Purpose
 Loads and validates `jarvis.jsonc`, defines every config key (one zod schema), resolves the XDG
@@ -92,7 +92,7 @@ option, and classifies it `ok`/`empty`/`absent`. `explainAuth` turns an auth-sha
 | `blueprint` | see schema | `dir`, `workspace`, `pi.{port, sketch, camera, gestures, fit}` |
 | `voice` | — | `model`, `recorder`, `capture`, `stream`, `speak`, `speakModel`, `speakVoice`, `synth`, `wake.*`, `speaker.*` |
 | `sound` | — | `earcons`, `player`, `afterSeconds` |
-| `vision` | see schema | `gestures`, `minScore`, `holdMs`, `cooldownMs`, `autostart`, `threshold`, `camera` |
+| `vision` | see schema | `gestures`, `minScore`, `holdMs`, `cooldownMs`, `autostart`, `threshold` (the bar a found item's best patch must reach; the rest of it may be `GROW` under), `camera` |
 | `maxSteps` | `200` | tool steps per turn |
 | `lazyTools` | `true` | deferred tool schemas |
 | `maxCost` | `0` | USD per session before asking; 0 = off |

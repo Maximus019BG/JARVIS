@@ -325,11 +325,14 @@ export function openFeed(camera: Camera = REMOTE_CAMERA, options: { capture?: ()
   }
 }
 
+/** How long a cold camera takes to settle its exposure and white balance. */
+export const SETTLE_MS = 700
+
 /**
  * A frame worth looking at: the first one at least `settleMs` after the camera started, so
  * a cold webcam has finished adjusting its exposure. A warm camera answers at once.
  */
-export async function snapshot(feed: Feed, settleMs = 700): Promise<Shot> {
+export async function snapshot(feed: Feed, settleMs = SETTLE_MS): Promise<Shot> {
   let shot = await feed.next()
   while (shot.at - feed.since < settleMs) shot = await feed.next(shot.seq)
   return shot

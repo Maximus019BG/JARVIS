@@ -1,6 +1,6 @@
 # Vision
 
-Code: `web/src/server/vision.ts`, `web/src/server/hand/`, `web/src/app/api/vision/`, `web/src/app/api/device/hand/`, `web/models/` · Verified: 2026-10-16 @ 8cde74a
+Code: `web/src/server/vision.ts`, `web/src/server/hand/`, `web/src/app/api/vision/`, `web/src/app/api/device/hand/`, `web/models/` · Verified: 2026-10-16 @ 3a9c2d9
 
 ## Purpose
 Runs the camera models for paired devices, so a laptop or a Pi needs no ONNX runtime and no
@@ -49,10 +49,10 @@ frame becomes landmarks.
 
 ### Items (`/api/vision/items`, `/api/vision/detect`)
 - **Teach** (`POST /api/vision/items`):
-  1. Each base64 JPEG is decoded (`decodeJpeg`, capped at 4 MP) and embedded.
+  1. Each base64 JPEG is decoded (`decodeJpeg`, capped at 4 MP) and embedded. A boxed one is embedded again under each of `LIGHTS` (`relight`), two more model runs, so the item is known under other lights too.
   2. `learn(samples)` builds the `pos` and `neg` banks. A photo whose `box` is `null` is an empty shot and goes wholly to `neg`. Then `pos` patches that match the background are dropped (`BACKGROUND_SIM`).
   3. Each bank is packed by `packBank`: each unit vector component × 127 as int8, then base64. That is a quarter of the size of float32, with rounding error far below any useful threshold.
-  4. The item is upserted into `vision_item` on `(workstationId, name)`, so teaching a name again replaces it.
+  4. The item is upserted into `vision_item` on `(workstationId, name)`, so teaching a name again replaces it. With `add: true`, the stored row is selected first (one more query, only then) and `merge`d with the new banks, and the sample counts are summed.
 - **Find** (`POST /api/vision/detect`): the item query and the embedding run in parallel. Each item's banks are unpacked (`unpackBank`) and passed to `locate`. Coordinates are rounded, and `best` is returned even on a miss so the threshold can be tuned per camera.
 
 ## Files
@@ -78,7 +78,7 @@ frame becomes landmarks.
 |---|---|---|---|
 | `POST /api/device/hand/ticket` | Device token (`authenticateDevice`); no scope check | — | `{ticket, expiresAt}` (ms epoch) |
 | `POST /api/device/hand` | Ticket only (`verifyTicket`); scopes not checked | Body `image/jpeg` ≤ 300 KB. Headers `x-hand-detect: 0\|1`, `x-hand-roi`, `x-hand-trail` | `{hands: Hand[], rois?, trail?, motion?, ms}` |
-| `POST /api/vision/items` | Device token + `vision:write` (`deviceFor`) | JSON ≤ 10 MB: `{name (1–64), images: [{jpeg: base64, box: [x,y,w,h] \| null}] (1–20, at least one boxed)}` | `{id, name, samples}` |
+| `POST /api/vision/items` | Device token + `vision:write` (`deviceFor`) | JSON ≤ 10 MB: `{name (1–64), images: [{jpeg: base64, box: [x,y,w,h] \| null}] (1–20, at least one boxed), add?: boolean}` | `{id, name, samples}` |
 | `GET /api/vision/items` | Device token + `vision:read` | — | `{items: [{id, name, samples, updatedAt}]}`, ordered by name |
 | `DELETE /api/vision/items?id=` | Device token + `vision:write` | `id` query | `{success: true}` or 404 `not_found` |
 | `POST /api/vision/detect?item=&threshold=` | Ticket or device token + `vision:read` (`callerFor`) | Body `image/jpeg` ≤ 2 MB. `item` is an id or name; `threshold` is in [0,1] | `{items: [{id, name, found, best, boxes: [{x,y,w,h,score}]}], ms}` |
@@ -146,7 +146,7 @@ Model sources and retraining: [web/models/hand/README.md](../../../../web/models
 
 | File | Covers |
 |---|---|
-| `web/src/__tests__/vision-items.test.ts` | `@pi/items.ts` → `learn` (edge ring, too-small box, empty shot and background prune, all-background and box-less teaches), `locate` (connected boxes, no false match), `packBank`/`unpackBank` round trip |
+| `web/src/__tests__/vision-items.test.ts` | `@pi/items.ts` → `learn` (edge ring, too-small box, empty shot and background prune, all-background and box-less teaches), `learn` relit copies (found under the copy's light, pruned with their original, every light kept in a full bank), `merge` (both rooms found, capped), `relight`, `locate` (connected boxes, seed-and-grow groups, no false match), `packBank`/`unpackBank` round trip |
 | `web/src/__tests__/hand-ticket.test.ts` | `signTicket`/`verifyTicket`: round trip, legacy ticket without workstation, expiry, tampered payload, wrong secret, device tokens refused |
 
 The routes themselves have no tests. The tracker is covered on the TUI side (`tui/test/pi-track.test.ts`, `tui/test/pi-detect.test.ts`).

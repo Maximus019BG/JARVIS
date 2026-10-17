@@ -1,6 +1,6 @@
 # UI
 
-Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 29accf1
+Code: `tui/src/ui/` (except `tui/src/ui/voice.ts`, `tui/src/ui/speak.ts`, `tui/src/ui/speak-command.ts`, `tui/src/ui/sound.ts`) · Verified: 2026-10-16 @ 3a9c2d9
 
 ## Purpose
 
@@ -205,7 +205,9 @@ visual mode, `:` commands, search.
   (pinch-to-draw from `tui/src/pi/gestures.ts`, One-Euro smoothed, `fitStroke` on release).
 - `tui/src/ui/components/vision-view.tsx` → `VisionView`: the full screen for `/learn`
   (aim a box, take one empty shot with `b` and the item shots with space, `teachItem`) and `/find` (`findItems` on the newest frame, one request
-  in flight). Two views, `c` switching between them. The **projector view** (`/learn`, `/find`, and
+  in flight). Shots and the first find frame wait out `SETTLE_MS` after the camera starts. Enter on a
+  name already taught opens a `Picker` ("add to it" / "replace it"), so `VisionView` takes the app's
+  `motion`; while it is up, the screen ignores keys. Two views, `c` switching between them. The **projector view** (`/learn`, `/find`, and
   `find_item`) is for the terminal projected over a table: `components/projection.tsx` → `Projection`
   draws a black picture with only heavy-bordered rectangles, the guide box or each found item in its
   colour, placed by `tui/src/pi/calibration.ts` → `toScreen` through `/calibrate`'s mapping (a plain

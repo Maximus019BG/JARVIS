@@ -1,6 +1,6 @@
 # Teach and find items
 
-Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 29accf1
+Modules: [web/vision](../modules/web/vision/README.md), [tui/pi-vision](../modules/tui/pi-vision/README.md), [tui/tools](../modules/tui/tools/README.md) · Verified: 2026-10-16 @ 3a9c2d9
 
 ## Who and why
 
@@ -28,38 +28,49 @@ workstation, so every device paired to it can find them.
    First the user clears the box and presses `b`: one **empty shot** of whatever is behind the item
    (a table, a wall, a shelf, lights). Then they hold the item inside the box and press space for each
    shot, turning it between shots. Backspace drops the last shot of either kind. Enter teaches. The
-   overlay asks for the empty shot and at least 3 item shots, and suggests 6.
+   overlay asks for the empty shot and at least 3 item shots, and suggests 6. A shot taken in the
+   camera's first 700 ms (`SETTLE_MS`) is refused ("the camera is still adjusting"), because its
+   exposure has not settled. If the name is already taught, Enter opens a popup: **add to it** keeps
+   what the item knows and adds these shots (the same item in another room or light), **replace it**
+   starts it over, and escape keeps the shots and teaches nothing.
 2. **Upload.** `tui/src/pi/items-client.ts` → `teachItem` sends `POST /api/vision/items` with the device token.
    The body is JSON: `{name, images: [{jpeg: base64, box: [x, y, w, h] | null}]}`, with the box in that
-   photo's pixels. `null` marks the empty shot.
+   photo's pixels. `null` marks the empty shot. `add: true` is set when the popup's "add to it" was chosen.
 3. **Check** (`web/src/app/api/vision/items/route.ts` → `POST`). The device token is looked up in the
    database and must hold `vision:write` (`web/src/server/vision.ts` → `deviceFor`). Then the body size,
    the schema and the model load are checked.
 4. **Embed.** Each photo is decoded (`decodeJpeg`) and embedded (`getEmbedder` →
    `tui/src/pi/items.ts` → `createEmbedder`). The long side is scaled to 448 px and the aspect is kept,
    rounded to whole 14 px patches. Each patch becomes one unit-length vector of 384 numbers. The
-   class token is dropped.
+   class token is dropped. Each boxed photo is also embedded twice more under other lights (`LIGHTS`,
+   via `relight`): dim and warm, and brighter and cool. The item was seen under one lamp, and these
+   copies keep it found when the light changes. That is two extra model runs per boxed photo, about
+   1 s more per teach.
 5. **Sort patches** (`learn`). For each photo:
    - a patch wholly inside the box goes to the **pos** bank (what the item looks like);
    - a patch whose centre is more than one patch outside the box goes to the **neg** bank (what it
      was photographed against);
    - edge patches go to neither, because they are part item and part table;
-   - every patch of an empty shot (no box) goes to **neg**.
+   - every patch of an empty shot (no box) goes to **neg**;
+   - the relit copies of an inside patch go to **pos** with it.
 
    The box is always bigger than the item, so what is behind the item lands in pos too, at the same
    place in every shot. Left there, that spot matched the item once the item was gone. So each pos
    patch whose nearest neg patch (all of them, before sampling) reaches `BACKGROUND_SIM` (0.7) is
-   dropped. A box that covers fewer than 4 whole patches fails the request, and so does an item with
+   dropped, and its relit copies with it. A box that covers fewer than 4 whole patches fails the request, and so does an item with
    fewer than 4 patches left after the drop, or a teach with no boxed photo. Each bank keeps at most 256 vectors,
-   sampled evenly so every photo stays represented.
+   sampled evenly so every photo and every light stays represented.
 6. **Pack and store.** `packBank` multiplies each component by 127, stores it as int8, and encodes the
    result as base64. That is a quarter of the float32 size, and the rounding is at most 1/254 per
    component. The row is upserted into `vision_item` on `(workstation_id, name)`. Teaching a name again
-   replaces its banks, sample count, device and `updatedAt`. The answer is `{id, name, samples}`.
+   replaces its banks, sample count, device and `updatedAt`. With `add`, the stored row is read first
+   (one more query), its banks are pooled with the new ones and sampled back to 256 each (`merge`),
+   and the sample counts are summed. Every add halves the share of the teaches before it. The answer
+   is `{id, name, samples}`.
 7. **Land in find mode.** After teaching, the screen switches to find mode on that item, in the same
    view, so the user sees it work at once.
 8. **Find: `/find [name]`.** The overlay loops: take the newest frame and call `findItems`, one request
-   at a time. `findItems` posts the raw JPEG to `POST /api/vision/detect?item=&threshold=` with the
+   at a time. The first frame waits until the camera has run for 700 ms, so its exposure has settled. `findItems` posts the raw JPEG to `POST /api/vision/detect?item=&threshold=` with the
    hand ticket (`jvh_`, see [Hand gestures and drawing](hand-gestures-and-drawing.md)), not the device
    token. A ticket check is an HMAC, so a live find saves a database round trip per frame. On a 401 the
    ticket is refreshed and the request retried once. Both views fill the terminal, laid out like the
@@ -75,8 +86,10 @@ workstation, so every device paired to it can find them.
    ticket's scopes or the device's (`callerFor`). The item query and the embedding run in parallel.
    `item` matches an id or a name. Without it, every item in the workstation is checked. For each item,
    `unpackBank` restores the banks and `locate` marks a scene patch when its nearest pos match beats its
-   nearest neg match and reaches the threshold. Each 4-connected group of 4 or more marked patches
-   becomes a box. Up to 8 boxes are returned, best first. `best` is the strongest patch that beat the
+   nearest neg match and reaches the threshold less `GROW` (0.1). Each 4-connected group of 4 or more
+   marked patches, at least one of which reaches the full threshold, becomes a box. Another light or
+   room lowers an item's weak patches (edges, plain sides) more than its core, so a group used to
+   break apart under 4 patches while its best patch still cleared the bar. Up to 8 boxes are returned, best first. `best` is the strongest patch that beat the
    background, even on a miss, so the threshold can be tuned per camera.
 10. **Agent: `find_item`.** `tui/src/tools/vision.ts` → `findItemTool` takes an optional `item`. It asks
     permission first (`find_item` defaults to `ask` in `tui/src/permission.ts`). Then it takes one
@@ -104,7 +117,11 @@ workstation, so every device paired to it can find them.
 | Background in the box | a pos patch at cosine ≥ 0.7 (`BACKGROUND_SIM`) to any neg patch is dropped | `tui/src/pi/items.ts` → `learn` |
 | Photo decode | at most 4 MP and 64 MB | `web/src/server/vision.ts` → `decodeJpeg` |
 | Find body | `image/jpeg` only (415), 1 byte to 2,000,000 bytes (413) | `web/src/app/api/vision/detect/route.ts` |
-| Threshold | default 0.65 (`DEFAULT_THRESHOLD`); must be in [0, 1]; the TUI sends `vision.threshold` when set | `tui/src/pi/items.ts`, `tui/src/config/config.ts` |
+| Threshold | default 0.65 (`DEFAULT_THRESHOLD`); must be in [0, 1]; the TUI sends `vision.threshold` when set. One patch per group must reach it | `tui/src/pi/items.ts`, `tui/src/config/config.ts` |
+| Grow | the other patches of a group may score up to 0.1 under the threshold (`GROW`) | `tui/src/pi/items.ts` → `locate` |
+| Teach lights | each boxed photo is also learned under 2 fixed lights (`LIGHTS`) | `tui/src/pi/items.ts`, `web/src/app/api/vision/items/route.ts` |
+| Re-teach | replace by default; `add: true` pools the new banks with the stored ones (`merge`), and the TUI asks which | `web/src/app/api/vision/items/route.ts`, `tui/src/ui/components/vision-view.tsx` |
+| Camera settle | teach shots and the first find frame wait 700 ms after the camera starts (`SETTLE_MS`) | `tui/src/pi/camera.ts` |
 | Box too small | fewer than 4 whole patches inside → 400 | `tui/src/pi/items.ts` → `MIN_PATCHES` |
 | Bank size | at most 256 vectors per bank (`MAX_BANK`) | `tui/src/pi/items.ts` |
 | Boxes per item | at most 8, groups of 4+ patches | `tui/src/pi/items.ts` → `locate` |
@@ -139,7 +156,7 @@ those cannot be turned back into a picture.
   is too small, send a closer shot". Or the item looks like the empty shot everywhere: "the item looks
   like what is behind it". Use a plainer background or a tighter box.
 - **Found where it is not.** An item taught before the empty shot existed still holds the background
-  behind it. Teach it again under the same name, which replaces it.
+  behind it. Teach it again under the same name and pick **replace it** in the popup.
 - **404 on find.** "no items taught yet" or "no such item". The overlay stops polling. `find_item` turns
   both into advice to run `/learn <name>`.
 - **413 / 415.** Too large or not a JPEG. Downscale before sending.
@@ -147,6 +164,9 @@ those cannot be turned back into a picture.
   retries the load on the next request.
 - **Not found, but close.** `best` tells how close the miss came. Lower `vision.threshold` or teach more
   shots from the angle the camera sees.
+- **Not found in another room.** The item's features shift with what is around it, and the background
+  bank only knows the room it was taught in. Run `/learn <same name>` there, take an empty shot and
+  item shots, and pick **add to it** in the popup. It is then found in both rooms.
 - **Other errors during `/find`.** Network trouble shows the error and retries after 1 s. A
   `VisionError` (a status from the server) stops the loop, because asking again would get the same answer.
 

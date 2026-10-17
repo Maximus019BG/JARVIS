@@ -9,7 +9,7 @@ import { callerFor, decodeJpeg, getEmbedder, modelMissing, unpackBank } from "~/
  * Finds taught items in one photo: a raw `image/jpeg` body in, boxes in its pixels out.
  *
  *   ?item=<id or name>  only that item (default: every item in the workstation)
- *   ?threshold=0.65     how alike a patch must be to count (`DEFAULT_THRESHOLD`); `best` in
+ *   ?threshold=0.65     how alike a group's best patch must be (`DEFAULT_THRESHOLD`; the rest may be `GROW` under it); `best` in
  *                       the answer says how close a miss came, so this can be tuned per camera
  *
  * Auth is the device token or, faster, the hand ticket: a live find calls this every frame
